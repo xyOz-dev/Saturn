@@ -7,4 +7,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Reference Include="OpenRouterSharp">
+      <HintPath>..\..\OpenRouterSharp\OpenRouterSharp\bin\Debug\net9.0\OpenRouterSharp.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>
