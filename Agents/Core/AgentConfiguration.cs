@@ -1,4 +1,5 @@
 using OpenRouterSharp;
+using System.Collections.Generic;
 
 namespace Saturn.Agents.Core
 {
@@ -7,7 +8,7 @@ namespace Saturn.Agents.Core
         public required string Name { get; set; }
         public required string SystemPrompt { get; set; }
         public required OpenRouterClient Client { get; set; }
-        public string Model { get; set; } = "gpt-4";
+        public string Model { get; set; } = "gpt-4.1";
         public double? Temperature { get; set; }
         public int? MaxTokens { get; set; }
         public double? TopP { get; set; }
@@ -16,5 +17,7 @@ namespace Saturn.Agents.Core
         public string[]? StopSequences { get; set; }
         public int? MaxHistoryMessages { get; set; } = 20;
         public bool MaintainHistory { get; set; } = true;
+        public List<string> ToolNames { get; set; } = new List<string>();
+        public bool EnableTools { get; set; } = false;
     }
 }
