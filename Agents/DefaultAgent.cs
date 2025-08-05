@@ -1,10 +1,7 @@
-﻿using OpenRouterSharp;
 using OpenRouterSharp.Models.Requests;
 using Saturn.Agents.Core;
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Saturn.Agents
@@ -40,27 +37,24 @@ namespace Saturn.Agents
                 };
             }
 
-            ChatRequest chatRequest = new ChatRequest()
+            var responseMessage = await ExecuteWithTools(messagesToSend);
+            
+            Message finalMessage = null;
+            if (responseMessage != null)
             {
-                Model = Configuration.Model,
-                Messages = messagesToSend,
-                Temperature = Configuration.Temperature,
-                MaxTokens = Configuration.MaxTokens,
-                TopP = Configuration.TopP,
-                FrequencyPenalty = Configuration.FrequencyPenalty,
-                PresencePenalty = Configuration.PresencePenalty,
-                Stop = Configuration.StopSequences
-            };
-
-            var response = await Configuration.Client.Chat.CreateCompletionAsync(chatRequest);
-            var assistantMessage = response.Choices.FirstOrDefault()?.Message;
-
-            if (Configuration.MaintainHistory && assistantMessage != null)
-            {
-                ChatHistory.Add(assistantMessage);
+                finalMessage = new Message 
+                { 
+                    Role = responseMessage.Role ?? "assistant",
+                    Content = responseMessage.Content?.ToString() ?? ""
+                };
+                
+                if (Configuration.MaintainHistory)
+                {
+                    ChatHistory.Add(finalMessage);
+                }
             }
 
-            return (T)(object)assistantMessage!;
+            return (T)(object)(finalMessage ?? new Message { Role = "assistant", Content = "I'm sorry, I couldn't process your request." });
         }
     }
 }
