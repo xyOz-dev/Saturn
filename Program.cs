@@ -27,7 +27,7 @@ namespace Saturn
                 MaintainHistory = true,
                 MaxHistoryMessages = 10,
                 EnableTools = true,
-                ToolNames = new List<string>() { "apply_diff", "grep", "glob", "read_file" },
+                ToolNames = new List<string>() { "apply_diff", "grep", "glob", "read_file", "list_files" },
                 
             };
 
