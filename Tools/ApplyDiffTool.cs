@@ -13,26 +13,44 @@ namespace Saturn.Tools
     {
         public override string Name => "apply_diff";
         
-        public override string Description => @"Apply unified diff-style patches to files. Supports adding, updating, and deleting files with context-aware patching.
+        public override string Description => @"Use this tool to make changes to files - adding, updating, or deleting. This is your primary tool for modifying code and text files.
 
-Patch format:
-- Add file: *** Add File: path/to/file.txt
-  +line 1 content
-  +line 2 content
-  
-- Update file: *** Update File: path/to/file.txt
-  @@ context line to find location @@
-   keep this line unchanged
-  -remove this line
-  +add this line
-  
-- Delete file: *** Delete File: path/to/file.txt
+When to use:
+- Making code changes, fixes, or improvements
+- Adding new files or features
+- Removing outdated or unnecessary files
+- Updating configuration files
+- Applying any text modifications
 
-Important:
-- Files to be updated MUST be read first using read_file tool
-- Context lines must be unique enough to avoid ambiguity
-- Use space prefix for unchanged lines, - for removals, + for additions
-- Multiple operations can be combined in one patch";
+How to use:
+1. ALWAYS read the file first with read_file tool (for updates)
+2. Create a patch with clear context and changes
+3. Use unique context lines to identify where changes go
+
+Patch format examples:
+
+Adding a new file:
+*** Add File: src/NewFeature.cs
++using System;
++
++public class NewFeature
++{
++    public void Method() { }
++}
+
+Updating existing file:
+*** Update File: src/Existing.cs
+@@ public void ExistingMethod() @@
+ {
+-    var old = true;
++    var updated = false;
++    var newLine = GetValue();
+ }
+
+Deleting a file:
+*** Delete File: src/OldFile.cs
+
+Important: The context line (@@ ... @@) must be unique in the file!";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
