@@ -13,7 +13,30 @@ namespace Saturn.Tools
     {
         public override string Name => "glob";
         
-        public override string Description => "Find files and directories by name using glob patterns like *.cs or **/*.txt";
+        public override string Description => @"Use this tool to find files by name patterns. This is your tool for discovering file locations and understanding project structure.
+
+When to use:
+- Finding all files of a certain type (e.g., all .cs files)
+- Locating specific files when you know part of the name
+- Discovering project structure and organization
+- Finding test files, configuration files, or documentation
+- Checking if certain files exist in the project
+
+How to use:
+- Set 'pattern' to your glob pattern (supports *, ?, ** wildcards)
+- Use 'path' to search from a specific directory (optional)
+- Set 'includeDirectories' to true to also list folders
+- Use 'exclude' patterns to filter out unwanted results
+- Set 'caseSensitive' based on your needs
+
+Examples:
+- Find all C# files: pattern='**/*.cs'
+- Find test files: pattern='**/*Test.cs' or pattern='**/test/**/*'
+- Find config files: pattern='**/*.{json,xml,config}'
+- Find specific file: pattern='**/UserService.cs'
+- Find all in folder: pattern='src/models/**/*'
+
+Note: Use this before grep when you need to find files first, then search within them.";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
