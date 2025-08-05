@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security;
 using System.Text;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
@@ -128,7 +129,7 @@ Important:
         private List<string> IdentifyFilesNeeded(string patchText)
         {
             var files = new List<string>();
-            var lines = patchText.Split('\n');
+            var lines = patchText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
             
             foreach (var line in lines)
             {
@@ -152,7 +153,7 @@ Important:
         private List<string> IdentifyFilesAdded(string patchText)
         {
             var files = new List<string>();
-            var lines = patchText.Split('\n');
+            var lines = patchText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
             
             foreach (var line in lines)
             {
@@ -177,6 +178,7 @@ Important:
         {
             foreach (var filePath in files)
             {
+                ValidatePathSecurity(filePath);
                 var absPath = Path.GetFullPath(filePath);
                 
                 if (!File.Exists(absPath))
@@ -198,6 +200,7 @@ Important:
         {
             foreach (var filePath in files)
             {
+                ValidatePathSecurity(filePath);
                 var absPath = Path.GetFullPath(filePath);
                 
                 if (File.Exists(absPath))
@@ -215,6 +218,7 @@ Important:
             
             foreach (var filePath in files)
             {
+                ValidatePathSecurity(filePath);
                 var absPath = Path.GetFullPath(filePath);
                 var content = await File.ReadAllTextAsync(absPath);
                 currentFiles[filePath] = content;
@@ -226,7 +230,7 @@ Important:
         private (List<PatchOperation> operations, int fuzz) ParsePatchText(string patchText, Dictionary<string, string> currentFiles)
         {
             var operations = new List<PatchOperation>();
-            var lines = patchText.Split('\n');
+            var lines = patchText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
             var fuzz = 0;
             var i = 0;
             
@@ -236,7 +240,13 @@ Important:
                 
                 if (line.StartsWith("*** Update File:"))
                 {
-                    var filePath = line.Split(':', 2)[1]?.Trim();
+                    var parts = line.Split(':', 2);
+                    if (parts.Length < 2)
+                    {
+                        i++;
+                        continue;
+                    }
+                    var filePath = parts[1]?.Trim();
                     if (string.IsNullOrEmpty(filePath))
                     {
                         i++;
@@ -284,7 +294,13 @@ Important:
                 }
                 else if (line.StartsWith("*** Add File:"))
                 {
-                    var filePath = line.Split(':', 2)[1]?.Trim();
+                    var parts = line.Split(':', 2);
+                    if (parts.Length < 2)
+                    {
+                        i++;
+                        continue;
+                    }
+                    var filePath = parts[1]?.Trim();
                     if (string.IsNullOrEmpty(filePath))
                     {
                         i++;
@@ -313,10 +329,14 @@ Important:
                 }
                 else if (line.StartsWith("*** Delete File:"))
                 {
-                    var filePath = line.Split(':', 2)[1]?.Trim();
-                    if (!string.IsNullOrEmpty(filePath))
+                    var parts = line.Split(':', 2);
+                    if (parts.Length >= 2)
                     {
-                        operations.Add(new PatchOperation { Type = OperationType.Delete, FilePath = filePath });
+                        var filePath = parts[1]?.Trim();
+                        if (!string.IsNullOrEmpty(filePath))
+                        {
+                            operations.Add(new PatchOperation { Type = OperationType.Delete, FilePath = filePath });
+                        }
                     }
                     i++;
                 }
@@ -354,7 +374,7 @@ Important:
                 else if (op.Type == OperationType.Update && op.Hunks != null)
                 {
                     var originalContent = currentFiles.ContainsKey(op.FilePath) ? currentFiles[op.FilePath] : "";
-                    var lines = originalContent.Split('\n').ToList();
+                    var lines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
                     
                     foreach (var hunk in op.Hunks)
                     {
@@ -390,7 +410,7 @@ Important:
                     {
                         Type = ChangeType.Update,
                         OldContent = originalContent,
-                        NewContent = string.Join('\n', lines)
+                        NewContent = string.Join(Environment.NewLine, lines)
                     };
                 }
             }
@@ -404,6 +424,7 @@ Important:
             {
                 var filePath = kvp.Key;
                 var change = kvp.Value;
+                ValidatePathSecurity(filePath);
                 var absPath = Path.GetFullPath(filePath);
                 
                 if (change.Type == ChangeType.Delete)
@@ -437,8 +458,8 @@ Important:
                 var filePath = Path.GetFullPath(kvp.Key);
                 stats.ChangedFiles.Add(filePath);
                 
-                var oldLines = (kvp.Value.OldContent ?? "").Split('\n').Length;
-                var newLines = (kvp.Value.NewContent ?? "").Split('\n').Length;
+                var oldLines = (kvp.Value.OldContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Length;
+                var newLines = (kvp.Value.NewContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Length;
                 
                 if (kvp.Value.Type == ChangeType.Add)
                 {
@@ -518,6 +539,34 @@ Important:
             public List<string> ChangedFiles { get; set; }
             public int Additions { get; set; }
             public int Removals { get; set; }
+        }
+        
+        private void ValidatePathSecurity(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException("File path cannot be null or empty");
+            }
+            
+            if (filePath.Contains("..") || filePath.Contains("~") || Path.IsPathRooted(filePath) && filePath.StartsWith("/"))
+            {
+                throw new SecurityException($"Invalid file path: {filePath}. Path traversal attempts are not allowed.");
+            }
+            
+            try
+            {
+                var fullPath = Path.GetFullPath(filePath);
+                var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
+                
+                if (!fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new SecurityException($"Access denied: Path '{filePath}' is outside the working directory.");
+                }
+            }
+            catch (Exception ex) when (!(ex is SecurityException))
+            {
+                throw new ArgumentException($"Invalid file path: {filePath}", ex);
+            }
         }
     }
 }
