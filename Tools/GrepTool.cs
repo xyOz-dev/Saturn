@@ -12,7 +12,28 @@ namespace Saturn.Tools
     {
         public override string Name => "grep";
         
-        public override string Description => "Search for text patterns inside files using regular expressions";
+        public override string Description => @"Use this tool to search for text patterns inside files. This is your primary tool for finding code, comments, or any text content across the codebase.
+
+When to use:
+- Finding function/class definitions (e.g., search for 'class UserController')
+- Locating specific code patterns or implementations
+- Finding TODO comments or specific annotations
+- Searching for error messages or string literals
+- Finding all usages of a particular method or variable
+
+How to use:
+- Set 'pattern' to your regex search term (supports full regex syntax)
+- Use 'path' to limit search to specific directory (optional)
+- Use 'filePattern' to search only certain file types (e.g., '*.cs')
+- Set 'caseSensitive' to false for case-insensitive search
+- Set 'recursive' to true to search subdirectories
+- Use 'maxResults' to limit output for broad searches
+
+Examples:
+- To find a class: pattern='class\\s+UserService'
+- To find TODOs: pattern='TODO|FIXME|HACK'
+- To find a method: pattern='GetUserById\\s*\\('
+- To find imports: pattern='using\\s+System\\.'";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
