@@ -98,8 +98,8 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 await ValidateFilesForAdding(filesToAdd);
                 
                 var currentFiles = await LoadCurrentFiles(filesNeeded);
-                
-                var operations = ParsePatchText(patchText, currentFiles)
+
+                var operations = ParsePatchText(patchText, currentFiles);
                 
                 var allFiles = filesNeeded.Union(filesToAdd).ToList();
                 
