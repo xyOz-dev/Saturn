@@ -12,7 +12,7 @@ namespace Saturn.Tools
     {
         public override string Name => "grep";
         
-        public override string Description => "Search for patterns in files using regular expressions";
+        public override string Description => "Search for text patterns inside files using regular expressions";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -39,7 +39,7 @@ namespace Saturn.Tools
                 { "filePattern", new Dictionary<string, object>
                     {
                         { "type", "string" },
-                        { "description", "File pattern to filter (e.g., *.cs, *.txt)" }
+                        { "description", "File name pattern to filter which files to search in. Default is * for all files" }
                     }
                 },
                 { "ignoreCase", new Dictionary<string, object>
@@ -69,7 +69,7 @@ namespace Saturn.Tools
             var recursive = GetParameter<bool>(parameters, "recursive", false);
             var filePattern = GetParameter<string>(parameters, "filePattern", "*");
             var ignoreCase = GetParameter<bool>(parameters, "ignoreCase", false);
-            var maxResults = GetParameter<int>(parameters, "maxResults", 100);
+            var maxResults = GetParameter<int>(parameters, "maxResults", 1000);
             
             if (string.IsNullOrEmpty(pattern))
             {
