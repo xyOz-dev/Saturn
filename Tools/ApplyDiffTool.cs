@@ -76,6 +76,9 @@ Important: The context line (@@ ... @@) must be unique in the file!";
             return new[] { "patchText" };
         }
         
+        private const long MaxFileSize = 100 * 1024 * 1024;
+        private static readonly HashSet<string> FileLocks = new HashSet<string>();
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var patchText = GetParameter<string>(parameters, "patchText");
@@ -96,14 +99,26 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 
                 var currentFiles = await LoadCurrentFiles(filesNeeded);
                 
-                var (operations, fuzz) = ParsePatchText(patchText, currentFiles);
+                var operations = ParsePatchText(patchText, currentFiles)
                 
-                if (fuzz > 3)
+                var allFiles = filesNeeded.Union(filesToAdd).ToList();
+                
+                foreach (var file in allFiles)
                 {
-                    return CreateErrorResult($"Patch contains fuzzy matches (fuzz level: {fuzz}). Please make your context lines more precise");
+                    var absPath = Path.GetFullPath(file);
+                    lock (FileLocks)
+                    {
+                        if (FileLocks.Contains(absPath))
+                        {
+                            return CreateErrorResult($"File is currently being modified by another operation: {file}");
+                        }
+                        FileLocks.Add(absPath);
+                    }
                 }
                 
-                var commit = ConvertToCommit(operations, currentFiles);
+                try
+                {
+                    var commit = ConvertToCommit(operations, currentFiles);
                 
                 var stats = CalculateStatistics(commit);
                 
@@ -136,7 +151,18 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 
                 var formattedOutput = $"Patch applied successfully. {stats.ChangedFiles.Count} files changed, {stats.Additions} additions, {stats.Removals} removals";
                 
-                return CreateSuccessResult(result, formattedOutput);
+                    return CreateSuccessResult(result, formattedOutput);
+                }
+                finally
+                {
+                    lock (FileLocks)
+                    {
+                        foreach (var file in allFiles)
+                        {
+                            FileLocks.Remove(Path.GetFullPath(file));
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -209,6 +235,11 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 {
                     throw new InvalidOperationException($"Path is a directory, not a file: {absPath}");
                 }
+                
+                if (fileInfo.Length > MaxFileSize)
+                {
+                    throw new InvalidOperationException($"File too large ({fileInfo.Length} bytes). Maximum size is {MaxFileSize} bytes: {absPath}");
+                }
             }
             
             await Task.CompletedTask;
@@ -245,11 +276,10 @@ Important: The context line (@@ ... @@) must be unique in the file!";
             return currentFiles;
         }
         
-        private (List<PatchOperation> operations, int fuzz) ParsePatchText(string patchText, Dictionary<string, string> currentFiles)
+        private List<PatchOperation> ParsePatchText(string patchText, Dictionary<string, string> currentFiles)
         {
             var operations = new List<PatchOperation>();
             var lines = patchText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
-            var fuzz = 0;
             var i = 0;
             
             while (i < lines.Length)
@@ -261,14 +291,12 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                     var parts = line.Split(':', 2);
                     if (parts.Length < 2)
                     {
-                        i++;
-                        continue;
+                        throw new InvalidOperationException($"Invalid update file declaration at line {i + 1}: missing file path");
                     }
                     var filePath = parts[1]?.Trim();
                     if (string.IsNullOrEmpty(filePath))
                     {
-                        i++;
-                        continue;
+                        throw new InvalidOperationException($"Invalid update file declaration at line {i + 1}: empty file path");
                     }
                     
                     var hunks = new List<PatchHunk>();
@@ -276,9 +304,13 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                     
                     while (i < lines.Length && !lines[i].StartsWith("***"))
                     {
-                        if (lines[i].StartsWith("@@"))
+                        if (lines[i].StartsWith("@@") && lines[i].EndsWith("@@") && lines[i].Length > 4)
                         {
-                            var contextLine = lines[i].Substring(2).Trim();
+                            var contextLine = lines[i].Substring(2, lines[i].Length - 4).Trim();
+                            if (string.IsNullOrEmpty(contextLine))
+                            {
+                                throw new InvalidOperationException($"Empty context line at line {i + 1}");
+                            }
                             var changes = new List<PatchChange>();
                             i++;
                             
@@ -315,14 +347,12 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                     var parts = line.Split(':', 2);
                     if (parts.Length < 2)
                     {
-                        i++;
-                        continue;
+                        throw new InvalidOperationException($"Invalid add file declaration at line {i + 1}: missing file path");
                     }
                     var filePath = parts[1]?.Trim();
                     if (string.IsNullOrEmpty(filePath))
                     {
-                        i++;
-                        continue;
+                        throw new InvalidOperationException($"Invalid add file declaration at line {i + 1}: empty file path");
                     }
                     
                     var content = new StringBuilder();
@@ -364,7 +394,7 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 }
             }
             
-            return (operations, fuzz);
+            return operations;
         }
         
         private Commit ConvertToCommit(List<PatchOperation> operations, Dictionary<string, string> currentFiles)
@@ -392,11 +422,17 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 else if (op.Type == OperationType.Update && op.Hunks != null)
                 {
                     var originalContent = currentFiles.ContainsKey(op.FilePath) ? currentFiles[op.FilePath] : "";
+                    var lineEnding = DetectLineEnding(originalContent);
                     var lines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
                     
                     foreach (var hunk in op.Hunks)
                     {
-                        var contextIndex = lines.FindIndex(line => line.Contains(hunk.ContextLine));
+                        if (hunk.ContextLine == null)
+                        {
+                            throw new InvalidOperationException("Context line cannot be null");
+                        }
+                        
+                        var contextIndex = lines.FindIndex(line => line.Trim() == hunk.ContextLine.Trim());
                         if (contextIndex == -1)
                         {
                             throw new InvalidOperationException($"Context line not found: {hunk.ContextLine}");
@@ -418,7 +454,7 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                             }
                             else if (change.Type == ChangeType.Add)
                             {
-                                lines.Insert(currentIndex, change.Content);
+                                lines.Insert(currentIndex, change.Content ?? "");
                                 currentIndex++;
                             }
                         }
@@ -428,7 +464,7 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                     {
                         Type = ChangeType.Update,
                         OldContent = originalContent,
-                        NewContent = string.Join(Environment.NewLine, lines)
+                        NewContent = string.Join(lineEnding, lines)
                     };
                 }
             }
@@ -476,27 +512,40 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 var filePath = Path.GetFullPath(kvp.Key);
                 stats.ChangedFiles.Add(filePath);
                 
-                var oldLines = (kvp.Value.OldContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Length;
-                var newLines = (kvp.Value.NewContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Length;
-                
                 if (kvp.Value.Type == ChangeType.Add)
                 {
+                    var newLines = (kvp.Value.NewContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Length;
                     stats.Additions += newLines;
                 }
                 else if (kvp.Value.Type == ChangeType.Delete)
                 {
+                    var oldLines = (kvp.Value.OldContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Length;
                     stats.Removals += oldLines;
                 }
                 else if (kvp.Value.Type == ChangeType.Update)
                 {
-                    var diff = newLines - oldLines;
-                    if (diff > 0)
+                    var oldLines = (kvp.Value.OldContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    var newLines = (kvp.Value.NewContent ?? "").Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                    
+                    var maxLines = Math.Max(oldLines.Length, newLines.Length);
+                    for (int i = 0; i < maxLines; i++)
                     {
-                        stats.Additions += diff;
-                    }
-                    else
-                    {
-                        stats.Removals += Math.Abs(diff);
+                        var oldLine = i < oldLines.Length ? oldLines[i] : null;
+                        var newLine = i < newLines.Length ? newLines[i] : null;
+                        
+                        if (oldLine == null && newLine != null)
+                        {
+                            stats.Additions++;
+                        }
+                        else if (oldLine != null && newLine == null)
+                        {
+                            stats.Removals++;
+                        }
+                        else if (oldLine != newLine)
+                        {
+                            stats.Additions++;
+                            stats.Removals++;
+                        }
                     }
                 }
             }
@@ -585,6 +634,37 @@ Important: The context line (@@ ... @@) must be unique in the file!";
             {
                 throw new ArgumentException($"Invalid file path: {filePath}", ex);
             }
+        }
+        
+        private string DetectLineEnding(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+            {
+                return Environment.NewLine;
+            }
+            
+            var crlfCount = 0;
+            var lfCount = 0;
+            
+            for (int i = 0; i < content.Length - 1; i++)
+            {
+                if (content[i] == '\r' && content[i + 1] == '\n')
+                {
+                    crlfCount++;
+                    i++;
+                }
+                else if (content[i] == '\n')
+                {
+                    lfCount++;
+                }
+            }
+            
+            if (content[content.Length - 1] == '\n' && (content.Length == 1 || content[content.Length - 2] != '\r'))
+            {
+                lfCount++;
+            }
+            
+            return crlfCount >= lfCount ? "\r\n" : "\n";
         }
     }
 }
