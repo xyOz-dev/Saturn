@@ -11,7 +11,30 @@ namespace Saturn.Tools
     {
         public override string Name => "read_file";
         
-        public override string Description => "Read and analyze file contents with support for line ranges, encoding detection, and metadata extraction";
+        public override string Description => @"Use this tool to read file contents. This is essential before editing files or when you need to understand code structure and implementation details.
+
+When to use:
+- ALWAYS before using apply_diff to edit a file
+- When examining code implementation details
+- To understand file structure and content
+- When debugging or analyzing specific code sections
+- To read configuration files, documentation, or data files
+
+How to use:
+- Set 'filePath' to the file you want to read
+- Use 'startLine' and 'endLine' for reading specific sections of large files
+- Default reads entire file if no line range specified
+- Line numbers are shown with each line for easy reference
+
+Important rules:
+- You MUST read a file before attempting to edit it with apply_diff
+- For very large files, use line ranges to read relevant sections
+- The tool shows line numbers which you'll need for apply_diff context
+
+Examples:
+- Read entire file: filePath='src/UserService.cs'
+- Read lines 50-100: filePath='src/UserService.cs', startLine=50, endLine=100
+- Read from line 200 onward: filePath='src/UserService.cs', startLine=200";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
