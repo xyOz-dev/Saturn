@@ -1,7 +1,9 @@
 using OpenRouterSharp.Models.Requests;
 using Saturn.Agents.Core;
+using Saturn.Services;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Saturn.Agents
@@ -12,8 +14,32 @@ namespace Saturn.Agents
         {
             if (Configuration.MaintainHistory && !ChatHistory.Any(m => m.Role == "system"))
             {
-                ChatHistory.Add(new Message { Role = "system", Content = Configuration.SystemPrompt });
+                var systemPrompt = BuildSystemPrompt();
+                ChatHistory.Add(new Message { Role = "system", Content = systemPrompt });
             }
+        }
+        
+        private string BuildSystemPrompt()
+        {
+            var sb = new StringBuilder(Configuration.SystemPrompt);
+            
+            if (Configuration.DynamicPromptProvider != null)
+            {
+                sb.AppendLine().AppendLine(Configuration.DynamicPromptProvider());
+            }
+            else if (Configuration.IncludeWorkspaceTree)
+            {
+                var tree = WorkspaceManager.Instance.GetWorkspaceTreeAsync(3).Result;
+                if (tree != null)
+                {
+                    sb.AppendLine().AppendLine("Current Workspace Structure:");
+                    sb.AppendLine("```");
+                    sb.Append(WorkspaceManager.Instance.GenerateTreeString(tree));
+                    sb.AppendLine("```");
+                }
+            }
+            
+            return sb.ToString();
         }
 
         public override async Task<T> Execute<T>(object input)
