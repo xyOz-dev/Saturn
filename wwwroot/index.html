@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saturn Agent Interface</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Saturn Agent</h1>
+            <div class="status">
+                <span id="status-indicator" class="status-indicator"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <div class="chat-container">
+            <div id="messages" class="messages"></div>
+            
+            <div class="input-container">
+                <textarea 
+                    id="message-input" 
+                    class="message-input" 
+                    placeholder="Type your message here..."
+                    rows="3"
+                ></textarea>
+                <div class="button-group">
+                    <button id="send-btn" class="btn btn-primary">Send</button>
+                    <button id="clear-btn" class="btn btn-secondary">Clear History</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
