@@ -89,7 +89,6 @@ Safety features:
             
             try
             {
-                ValidatePathSecurity(path);
                 var fullPath = Path.GetFullPath(path);
                 
                 var deletionInfo = await AnalyzeDeletion(fullPath, pattern, recursive);
@@ -114,8 +113,8 @@ Safety features:
                     TotalSize = deletedItems.Sum(i => i.Size),
                     Items = deletedItems.Select(i => i.Path).ToList()
                 };
-                
-                var message = $"Deleted {result.DeletedFiles} files and {result.DeletedDirectories} directories ({FormatFileSize(result.TotalSize)})"
+
+                var message = $"Deleted {result.DeletedFiles} files and {result.DeletedDirectories} directories ({FormatFileSize(result.TotalSize)})";
                 
                 return CreateSuccessResult(result, message);
             }
@@ -287,34 +286,6 @@ Safety features:
             }
             
             return message;
-        }
-        
-        private void ValidatePathSecurity(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                throw new ArgumentException("Path cannot be null or empty");
-            }
-            
-            var fullPath = Path.GetFullPath(path);
-            var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-            
-            if (!fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new SecurityException($"Access denied: Path '{path}' is outside the working directory");
-            }
-            
-            var protectedPaths = new[] { ".git", ".vs", "node_modules", "packages", "bin", "obj" };
-            var relativePath = Path.GetRelativePath(currentDirectory, fullPath);
-            
-            foreach (var protectedPath in protectedPaths)
-            {
-                if (relativePath.Equals(protectedPath, StringComparison.OrdinalIgnoreCase) ||
-                    relativePath.StartsWith(protectedPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new SecurityException($"Cannot delete protected path: {protectedPath}");
-                }
-            }
         }
         
         private string FormatFileSize(long bytes)
