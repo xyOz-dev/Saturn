@@ -24,13 +24,68 @@ namespace Saturn.Agents.Core
         {
             Configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             ChatHistory = new List<Message>();
+            InitializeSystemPrompt();
         }
 
-        public abstract Task<T> Execute<T>(object input);
+        public virtual async Task<T> Execute<T>(object input)
+        {
+            var messages = PrepareMessages(input.ToString());
+            var responseMessage = await ExecuteWithTools(messages);
+            var finalMessage = ProcessResponse(responseMessage);
+            return (T)(object)finalMessage;
+        }
+
+        protected virtual void InitializeSystemPrompt()
+        {
+            if (Configuration.MaintainHistory && !ChatHistory.Any(m => m.Role == "system"))
+            {
+                ChatHistory.Add(new Message { Role = "system", Content = Configuration.SystemPrompt });
+            }
+        }
+
+        protected virtual List<Message> PrepareMessages(string userInput)
+        {
+            var userMessage = new Message { Role = "user", Content = userInput };
+            
+            if (Configuration.MaintainHistory)
+            {
+                ChatHistory.Add(userMessage);
+                TrimHistory();
+                return new List<Message>(ChatHistory);
+            }
+            
+            return new List<Message>
+            {
+                new Message { Role = "system", Content = Configuration.SystemPrompt },
+                userMessage
+            };
+        }
+
+        protected virtual Message ProcessResponse(ResponseMessage responseMessage)
+        {
+            if (responseMessage == null)
+            {
+                return new Message { Role = "assistant", Content = "I'm sorry, I couldn't process your request." };
+            }
+            
+            var finalMessage = new Message 
+            { 
+                Role = responseMessage.Role ?? "assistant",
+                Content = responseMessage.Content?.ToString() ?? ""
+            };
+            
+            if (Configuration.MaintainHistory)
+            {
+                ChatHistory.Add(finalMessage);
+            }
+            
+            return finalMessage;
+        }
 
         public virtual void ClearHistory()
         {
             ChatHistory.Clear();
+            InitializeSystemPrompt();
         }
 
         public virtual List<Message> GetHistory()
