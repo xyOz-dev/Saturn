@@ -14,51 +14,10 @@ namespace Saturn
     {
         static async Task Main(string[] args)
         {
-            var webMode = args.Contains("--web") || args.Contains("-w");
-            var port = 8080;
-            
-            var portArg = args.FirstOrDefault(a => a.StartsWith("--port="));
-            if (portArg != null && int.TryParse(portArg.Substring(7), out var customPort))
-            {
-                port = customPort;
-            }
 
-            if (webMode)
-            {
-                RunWebMode(port);
-            }
-            else
-            {
-                await RunConsoleMode();
-            }
+            await RunConsoleMode();
         }
-
-        static void RunWebMode(int port)
-        {
-            var server = new HttpServer(port);
-            
-            try
-            {
-                server.Start();
-                Console.WriteLine("Press 'q' to quit the web server...");
-                
-                while (true)
-                {
-                    var key = Console.ReadKey(true);
-                    if (key.KeyChar == 'q' || key.KeyChar == 'Q')
-                    {
-                        break;
-                    }
-                }
-                
-                server.Stop();
-                Console.WriteLine("Server stopped.");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to start web server: {ex.Message}");
-            }
-        }
+        
 
         static async Task RunConsoleMode()
         {
