@@ -71,14 +71,14 @@ namespace Saturn.Web
 
             if (!Directory.Exists(_webRoot))
             {
-                Console.WriteLine($"Warning: wwwroot directory not found at: {_webRoot}");
+                System.Console.WriteLine($"Warning: wwwroot directory not found at: {_webRoot}");
                 await SendErrorResponse(response, 404, $"Static files directory not found. Expected at: {_webRoot}");
                 return;
             }
 
             if (!File.Exists(filePath))
             {
-                Console.WriteLine($"File not found: {filePath}");
+                System.Console.WriteLine($"File not found: {filePath}");
                 await SendErrorResponse(response, 404, $"File not found: {path}");
                 return;
             }

@@ -32,14 +32,14 @@ namespace Saturn.Web
             try
             {
                 _listener.Start();
-                Console.WriteLine($"Web UI: http://localhost:{_port}");
+                System.Console.WriteLine($"Web UI: http://localhost:{_port}");
                 
                 _cancellationTokenSource = new CancellationTokenSource();
                 _listenerTask = Task.Run(() => HandleRequests(_cancellationTokenSource.Token));
             }
             catch (HttpListenerException ex)
             {
-                Console.WriteLine($"Failed to start HTTP server: {ex.Message}");
+                System.Console.WriteLine($"Failed to start HTTP server: {ex.Message}");
                 throw;
             }
         }
@@ -72,7 +72,7 @@ namespace Saturn.Web
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error handling request: {ex.Message}");
+                    System.Console.WriteLine($"Error handling request: {ex.Message}");
                 }
             }
         }

@@ -162,7 +162,7 @@ Examples:
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error reading file {filePath}: {ex.Message}");
+                System.Console.WriteLine($"Error reading file {filePath}: {ex.Message}");
             }
         }
         
