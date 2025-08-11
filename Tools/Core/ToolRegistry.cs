@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Saturn.OpenRouter.Models.Api.Chat;
+using Saturn.Agents.Tools.Core;
 
 namespace Saturn.Tools.Core
 {
@@ -84,30 +86,24 @@ namespace Saturn.Tools.Core
         {
             return _tools.Keys;
         }
-        
-        public List<OpenRouterSharp.Models.Requests.Tool> GetOpenRouterTools(params string[] toolNames)
+
+        /// <summary>
+        /// Returns OpenRouter-ready tool definitions for all registered tools.
+        /// </summary>
+        public List<ToolDefinition> GetOpenRouterToolDefinitions()
         {
-            var tools = new List<OpenRouterSharp.Models.Requests.Tool>();
-            
-            var selectedTools = toolNames?.Length > 0 
+            return OpenRouterToolAdapter.ToOpenRouterTools(GetAll());
+        }
+
+        /// <summary>
+        /// Returns OpenRouter-ready tool definitions filtered by provided tool names.
+        /// </summary>
+        public List<ToolDefinition> GetOpenRouterToolDefinitions(params string[] toolNames)
+        {
+            var selected = toolNames != null && toolNames.Length > 0
                 ? toolNames.Select(Get).Where(t => t != null)
                 : GetAll();
-            
-            foreach (var tool in selectedTools)
-            {
-                tools.Add(new OpenRouterSharp.Models.Requests.Tool
-                {
-                    Type = "function",
-                    Function = new OpenRouterSharp.Models.Requests.Function
-                    {
-                        Name = tool.Name,
-                        Description = tool.Description,
-                        Parameters = tool.GetParameters()
-                    }
-                });
-            }
-            
-            return tools;
+            return OpenRouterToolAdapter.ToOpenRouterTools(selected!);
         }
         
         public void Clear()
