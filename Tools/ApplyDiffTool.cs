@@ -102,22 +102,24 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 var operations = ParsePatchText(patchText, currentFiles);
                 
                 var allFiles = filesNeeded.Union(filesToAdd).ToList();
-                
-                foreach (var file in allFiles)
-                {
-                    var absPath = Path.GetFullPath(file);
-                    lock (FileLocks)
-                    {
-                        if (FileLocks.Contains(absPath))
-                        {
-                            return CreateErrorResult($"File is currently being modified by another operation: {file}");
-                        }
-                        FileLocks.Add(absPath);
-                    }
-                }
+                var lockedFiles = new List<string>();
                 
                 try
                 {
+                    foreach (var file in allFiles)
+                    {
+                        var absPath = Path.GetFullPath(file);
+                        lock (FileLocks)
+                        {
+                            if (FileLocks.Contains(absPath))
+                            {
+                                return CreateErrorResult($"File is currently being modified by another operation: {file}");
+                            }
+                            FileLocks.Add(absPath);
+                            lockedFiles.Add(absPath);
+                        }
+                    }
+                    
                     var commit = ConvertToCommit(operations, currentFiles);
                 
                 var stats = CalculateStatistics(commit);
@@ -157,9 +159,9 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 {
                     lock (FileLocks)
                     {
-                        foreach (var file in allFiles)
+                        foreach (var file in lockedFiles)
                         {
-                            FileLocks.Remove(Path.GetFullPath(file));
+                            FileLocks.Remove(file);
                         }
                     }
                 }
@@ -615,7 +617,7 @@ Important: The context line (@@ ... @@) must be unique in the file!";
                 throw new ArgumentException("File path cannot be null or empty");
             }
             
-            if (filePath.Contains("..") || filePath.Contains("~") || Path.IsPathRooted(filePath) && filePath.StartsWith("/"))
+            if (filePath.Contains("..") || filePath.Contains("~"))
             {
                 throw new SecurityException($"Invalid file path: {filePath}. Path traversal attempts are not allowed.");
             }
