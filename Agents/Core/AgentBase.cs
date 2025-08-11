@@ -13,7 +13,7 @@ using Saturn.Tools.Core;
 
 namespace Saturn.Agents.Core
 {
-    public abstract class AgentBase : IStreamingAgent
+    public abstract class AgentBase
     {
         public string Id { get; } = Guid.NewGuid().ToString();
         public AgentConfiguration Configuration { get; protected set; }
@@ -183,8 +183,6 @@ namespace Saturn.Agents.Core
                 {
                     var toolResults = await HandleToolCalls(responseMessage.ToolCalls);
 
-                    // The provider requires that tool result messages are preceded by an assistant message
-                    // containing the tool_calls array. Content must be null in that assistant message.
                     var assistantToolCalls = responseMessage.ToolCalls
                         .Select(tc => new ToolCallRequest
                         {
@@ -201,7 +199,6 @@ namespace Saturn.Agents.Core
                     var assistantMessage = new Message
                     {
                         Role = "assistant",
-                        // Set content to JSON null
                         Content = JsonDocument.Parse("null").RootElement,
                         ToolCalls = assistantToolCalls
                     };
@@ -531,8 +528,6 @@ namespace Saturn.Agents.Core
             await onChunk(new StreamChunk { IsComplete = true });
             return finalResponse;
         }
-
-        // Helpers
 
         protected static JsonElement JString(string value)
         {
