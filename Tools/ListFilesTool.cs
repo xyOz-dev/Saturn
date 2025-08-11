@@ -65,38 +65,38 @@ The output shows a visual tree structure making it easy to understand file organ
                 { "pattern", new Dictionary<string, object>
                     {
                         { "type", "string" },
-                        { "description", "File pattern filter (glob syntax). Examples: *.cs, **/*.json, src/**/*.{cs,ts}" }
+                        { "description", "Glob applied to the item’s name only (no path segments). Examples: \"*.cs\", \"*Test.cs\", \"*.{cs,ts}\". Note: Patterns containing \"/\" or \"**/\" will not match because only names (not paths) are tested. When a pattern is provided, only directories whose names match are traversed during recursion." }
                     }
                 },
                 { "sortBy", new Dictionary<string, object>
                     {
                         { "type", "string" },
                         { "enum", new[] { "name", "size", "modified", "created", "type" } },
-                        { "description", "Sort files by specified criteria. Default is 'name'." }
+                        { "description", "One of \"name\", \"size\", \"modified\", \"created\", \"type\". For \"type\", files appear before directories" }
                     }
                 },
                 { "sortDescending", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Sort in descending order. Default is false." }
+                        { "description", "Sort order. Note: The tree is displayed in path order; sorting affects which items are kept when maxResults is used, not the on-screen tree order." }
                     }
                 },
                 { "maxDepth", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "description", "Maximum recursion depth. Default is unlimited." }
+                        { "description", "Maximum recursion depth. Depth starts at 0 for the starting directory. Items are included only when currentDepth < maxDepth. Tips:\r\n  - Base level only: leave recursive=false, or set maxDepth=1 with recursive=true\r\n  - One level deep: set maxDepth=2 with recursive=true" }
                     }
                 },
                 { "includeMetadata", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Include file metadata (size, dates) in output. Default is false." }
+                        { "description", "Show file size, last modified (UTC), and flags (readonly/hidden). Default is false." }
                     }
                 },
                 { "maxResults", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "description", "Maximum number of items to return. Default is unlimited." }
+                        { "description", "Limit the number of items considered (after sorting), which may produce a partial tree." }
                     }
                 },
                 { "filesOnly", new Dictionary<string, object>
@@ -108,7 +108,7 @@ The output shows a visual tree structure making it easy to understand file organ
                 { "directoriesOnly", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Show only directories, not files. Default is false." }
+                        { "description", "Include only directories. Cannot be true at the same time as filesOnly. Default is false." }
                     }
                 }
             };
