@@ -32,7 +32,7 @@ namespace Saturn
             var agentConfig = new AgentConfiguration
             {
                 Name = "Code Assistant",
-                SystemPrompt = "Your primary goal is to COMPLETE the users task using the provided tools.",
+                SystemPrompt = await SystemPrompt.Create("Your primary goal is to COMPLETE the users task using the provided tools."),
                 Client = client,
                 Model = "openai/gpt-4.1",
                 Temperature = 0.15,
