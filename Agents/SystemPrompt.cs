@@ -10,8 +10,8 @@ namespace Saturn.Agents
     public static class SystemPrompt
     {
         private const int MaxDirectoryResults = 200;
-        private const string DirectorySectionStart = "<current_directory>";
-        private const string DirectorySectionEnd = "</current_directory>";
+        private const string DirectorySectionStart = "\n<current_directory>";
+        private const string DirectorySectionEnd = "</current_directory>\n";
 
         public static async Task<string> Create(string prompt, bool includeDirectories = true)
         {
