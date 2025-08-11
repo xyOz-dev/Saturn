@@ -14,31 +14,36 @@ namespace Saturn.Tools
     {
         public override string Name => "list_files";
         
-        public override string Description => @"Use this tool to explore directory structure and list files in a tree view. Perfect for understanding project organization and finding files.
+        public override string Description => @"Explore a directory and render its contents as a visual tree. Useful for quickly understanding project structure, seeing what files/folders exist, and checking organization before making changes.
 
-When to use:
-- Exploring project structure and organization
-- Understanding directory hierarchy
-- Finding what files exist in a directory
-- Checking file organization before making changes
-- Getting an overview of a codebase section
+When to use
+- Get an overview of a folder or codebase section
+- Inspect structure before refactoring or adding files
+- Find files by name pattern at the current level
+- Summarize file counts and total size
 
-How to use:
-- Set 'path' to the directory to explore (defaults to current)
-- Use 'recursive' to include subdirectories
-- Use 'pattern' to filter files (e.g., '*.cs', '**/*.json')
-- Set 'includeMetadata' to see file sizes and dates
-- Use 'sortBy' to organize results (name, size, date, type)
-- Use 'maxDepth' to limit recursion depth
+What it returns
+- A text tree of the directory (using ASCII connectors)
+- Optional metadata next to each item (size for files, last modified in UTC, flags)
+- Summary stats: total files, total directories, total size, and total items considered
 
-Examples:
+Important notes
+- Security: Paths containing "".."" or ""~"" are rejected. Access outside the current working directory is blocked.
+- Pattern scope: The pattern matches names only, not full relative paths. Avoid patterns with ""/"" or ""**"". For recursive searches by extension, consider omitting pattern and post-filtering from the output text if needed.
+- Recursion with pattern: When a pattern is set, directories that do not match the pattern are skipped and not traversed.
+- Display order: The printed tree is grouped by path. Sorting does not change the visual tree order but does affect which items remain when maxResults is set.
+- filesOnly/directoriesOnly: If filesOnly=true, files nested in subdirectories may not appear in the tree unless their parent directories are also included (which requires directories to be listed).
+- Hidden detection: On Unix-like systems, names starting with ""."" are treated as hidden.
+- Symlinks: Reparse points are resolved and cycles are avoided.
+
+Examples
 - List current directory: (no parameters)
-- List src folder recursively: path='src', recursive=true
-- Find all tests: pattern='**/*Test.cs', recursive=true
-- List with details: includeMetadata=true, sortBy='size'
-- Explore 2 levels deep: recursive=true, maxDepth=2
-
-The output shows a visual tree structure making it easy to understand file organization.";
+- List a folder recursively: path=""src"", recursive=true
+- Show details with UTC timestamps: includeMetadata=true
+- Limit depth to two levels: recursive=true, maxDepth=2
+- Include hidden entries: includeHidden=true
+- Keep only the 100 largest items, then render their tree: recursive=true, sortBy=""size"", sortDescending=true, maxResults=100
+- Find test files by name (single level): pattern=""*Test.cs""";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -65,38 +70,38 @@ The output shows a visual tree structure making it easy to understand file organ
                 { "pattern", new Dictionary<string, object>
                     {
                         { "type", "string" },
-                        { "description", "File pattern filter (glob syntax). Examples: *.cs, **/*.json, src/**/*.{cs,ts}" }
+                        { "description", "Glob applied to the item’s name only (no path segments). Examples: \"*.cs\", \"*Test.cs\", \"*.{cs,ts}\". Note: Patterns containing \"/\" or \"**/\" will not match because only names (not paths) are tested. When a pattern is provided, only directories whose names match are traversed during recursion." }
                     }
                 },
                 { "sortBy", new Dictionary<string, object>
                     {
                         { "type", "string" },
                         { "enum", new[] { "name", "size", "modified", "created", "type" } },
-                        { "description", "Sort files by specified criteria. Default is 'name'." }
+                        { "description", "One of \"name\", \"size\", \"modified\", \"created\", \"type\". For \"type\", files appear before directories" }
                     }
                 },
                 { "sortDescending", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Sort in descending order. Default is false." }
+                        { "description", "Sort order. Note: The tree is displayed in path order; sorting affects which items are kept when maxResults is used, not the on-screen tree order." }
                     }
                 },
                 { "maxDepth", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "description", "Maximum recursion depth. Default is unlimited." }
+                        { "description", "Maximum recursion depth. Depth starts at 0 for the starting directory. Items are included only when currentDepth < maxDepth. Tips:\r\n  - Base level only: leave recursive=false, or set maxDepth=1 with recursive=true\r\n  - One level deep: set maxDepth=2 with recursive=true" }
                     }
                 },
                 { "includeMetadata", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Include file metadata (size, dates) in output. Default is false." }
+                        { "description", "Show file size, last modified (UTC), and flags (readonly/hidden). Default is false." }
                     }
                 },
                 { "maxResults", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "description", "Maximum number of items to return. Default is unlimited." }
+                        { "description", "Limit the number of items considered (after sorting), which may produce a partial tree." }
                     }
                 },
                 { "filesOnly", new Dictionary<string, object>
@@ -108,7 +113,7 @@ The output shows a visual tree structure making it easy to understand file organ
                 { "directoriesOnly", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Show only directories, not files. Default is false." }
+                        { "description", "Include only directories. Cannot be true at the same time as filesOnly. Default is false." }
                     }
                 }
             };
