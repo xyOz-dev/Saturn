@@ -31,7 +31,6 @@ namespace Saturn.OpenRouter.Http
                 Timeout = options.Timeout
             };
 
-            // Normalize and set BaseAddress
             var baseUrl = string.IsNullOrWhiteSpace(options.BaseUrl)
                 ? "https://openrouter.ai/api/v1"
                 : options.BaseUrl;
@@ -51,16 +50,13 @@ namespace Saturn.OpenRouter.Http
         {
             if (string.IsNullOrWhiteSpace(path)) throw new ArgumentNullException(nameof(path));
 
-            // Use relative path; HttpClient.BaseAddress handles the base.
             var request = new HttpRequestMessage(method, path);
 
-            // Authorization (if API key present)
             if (!string.IsNullOrWhiteSpace(_options.ApiKey))
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
             }
 
-            // Apply default headers first (but don't override if already set)
             foreach (var kvp in _options.DefaultHeaders)
             {
                 if (!request.Headers.Contains(kvp.Key))
@@ -69,19 +65,15 @@ namespace Saturn.OpenRouter.Http
                 }
             }
 
-            // Attribution headers from options, but never override explicit per-call headers
             AppAttributionHeaders.Append(request, _options, headers);
 
-            // Per-call explicit headers override anything above
             if (headers != null)
             {
                 foreach (var kvp in headers)
                 {
-                    // Special-case content-type later on content, not here.
                     if (string.Equals(kvp.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    // Remove existing header of same name to ensure override takes effect
                     if (request.Headers.Contains(kvp.Key))
                         request.Headers.Remove(kvp.Key);
 
@@ -89,7 +81,6 @@ namespace Saturn.OpenRouter.Http
                 }
             }
 
-            // Accept
             var acceptValue = acceptSse ? "text/event-stream" : "application/json";
             if (!request.Headers.Accept.Any())
             {
@@ -112,7 +103,6 @@ namespace Saturn.OpenRouter.Http
         {
             var request = CreateRequest(method, path, headers, acceptSse: false);
 
-            // Attach JSON body if provided
             if (body != null)
             {
                 var json = Json.Serialize(body, _options.CreateJsonOptions());
@@ -124,10 +114,9 @@ namespace Saturn.OpenRouter.Http
             if (!response.IsSuccessStatusCode)
             {
                 await ThrowForErrorAsync(response, cancellationToken).ConfigureAwait(false);
-                return default; // Unreachable
+                return default;
             }
 
-            // No content or empty body
             if (response.Content is null)
                 return default;
 
@@ -135,7 +124,6 @@ namespace Saturn.OpenRouter.Http
             if (stream == Stream.Null)
                 return default;
             var resp = await Json.DeserializeAsync<TResponse>(stream, _options.CreateJsonOptions(), cancellationToken).ConfigureAwait(false);
-            Console.WriteLine(resp.ToString());
             return resp;
         }
 
@@ -187,7 +175,6 @@ namespace Saturn.OpenRouter.Http
 
             if (content != null)
             {
-                // Respect content type if provided externally; otherwise default to application/json
                 if (content.Headers.ContentType is null)
                 {
                     content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
@@ -203,7 +190,7 @@ namespace Saturn.OpenRouter.Http
             if (!response.IsSuccessStatusCode)
             {
                 await ThrowForErrorAsync(response, cancellationToken).ConfigureAwait(false);
-                yield break; // Unreachable after throw
+                yield break;
             }
 
             var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -226,7 +213,7 @@ namespace Saturn.OpenRouter.Http
             }
             catch
             {
-                // Ignore read errors here; fallthrough to generic message
+
             }
 
             try
@@ -238,7 +225,6 @@ namespace Saturn.OpenRouter.Http
                     var message = parsed?.Error?.Message ?? $"Request failed with status {(int)status} {response.ReasonPhrase}.";
                     var metadata = parsed?.Error?.Metadata;
 
-                    // Enrich message with provider metadata for easier debugging
                     if (metadata != null && metadata.Count > 0)
                     {
                         try
@@ -263,7 +249,7 @@ namespace Saturn.OpenRouter.Http
                         }
                         catch
                         {
-                            // best-effort enrichment; ignore failures
+
                         }
                     }
 
@@ -276,7 +262,7 @@ namespace Saturn.OpenRouter.Http
             }
             catch
             {
-                // Parsing failed - fall back to generic
+
             }
 
             var generic = $"Request failed with status {(int)status} {response.ReasonPhrase}.";
