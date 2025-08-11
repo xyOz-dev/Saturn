@@ -14,31 +14,36 @@ namespace Saturn.Tools
     {
         public override string Name => "list_files";
         
-        public override string Description => @"Use this tool to explore directory structure and list files in a tree view. Perfect for understanding project organization and finding files.
+        public override string Description => @"Explore a directory and render its contents as a visual tree. Useful for quickly understanding project structure, seeing what files/folders exist, and checking organization before making changes.
 
-When to use:
-- Exploring project structure and organization
-- Understanding directory hierarchy
-- Finding what files exist in a directory
-- Checking file organization before making changes
-- Getting an overview of a codebase section
+When to use
+- Get an overview of a folder or codebase section
+- Inspect structure before refactoring or adding files
+- Find files by name pattern at the current level
+- Summarize file counts and total size
 
-How to use:
-- Set 'path' to the directory to explore (defaults to current)
-- Use 'recursive' to include subdirectories
-- Use 'pattern' to filter files (e.g., '*.cs', '**/*.json')
-- Set 'includeMetadata' to see file sizes and dates
-- Use 'sortBy' to organize results (name, size, date, type)
-- Use 'maxDepth' to limit recursion depth
+What it returns
+- A text tree of the directory (using ASCII connectors)
+- Optional metadata next to each item (size for files, last modified in UTC, flags)
+- Summary stats: total files, total directories, total size, and total items considered
 
-Examples:
+Important notes
+- Security: Paths containing "".."" or ""~"" are rejected. Access outside the current working directory is blocked.
+- Pattern scope: The pattern matches names only, not full relative paths. Avoid patterns with ""/"" or ""**"". For recursive searches by extension, consider omitting pattern and post-filtering from the output text if needed.
+- Recursion with pattern: When a pattern is set, directories that do not match the pattern are skipped and not traversed.
+- Display order: The printed tree is grouped by path. Sorting does not change the visual tree order but does affect which items remain when maxResults is set.
+- filesOnly/directoriesOnly: If filesOnly=true, files nested in subdirectories may not appear in the tree unless their parent directories are also included (which requires directories to be listed).
+- Hidden detection: On Unix-like systems, names starting with ""."" are treated as hidden.
+- Symlinks: Reparse points are resolved and cycles are avoided.
+
+Examples
 - List current directory: (no parameters)
-- List src folder recursively: path='src', recursive=true
-- Find all tests: pattern='**/*Test.cs', recursive=true
-- List with details: includeMetadata=true, sortBy='size'
-- Explore 2 levels deep: recursive=true, maxDepth=2
-
-The output shows a visual tree structure making it easy to understand file organization.";
+- List a folder recursively: path=""src"", recursive=true
+- Show details with UTC timestamps: includeMetadata=true
+- Limit depth to two levels: recursive=true, maxDepth=2
+- Include hidden entries: includeHidden=true
+- Keep only the 100 largest items, then render their tree: recursive=true, sortBy=""size"", sortDescending=true, maxResults=100
+- Find test files by name (single level): pattern=""*Test.cs""";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
