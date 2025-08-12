@@ -240,6 +240,7 @@ namespace Saturn.UI
                 inputField.SetFocus();
                 return false;
             });
+        }
 
         private string GetWelcomeMessage()
         {
