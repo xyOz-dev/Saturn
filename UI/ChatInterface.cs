@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Terminal.Gui;
@@ -19,7 +21,10 @@ namespace Saturn.UI
         private TextView inputField = null!;
         private Button sendButton = null!;
         private Toplevel app = null!;
-        private FrameView rightPanel = null!;
+        private FrameView toolCallsPanel = null!;
+        private FrameView agentStatusPanel = null!;
+        private TextView toolCallsView = null!;
+        private TextView agentStatusView = null!;
         private Agent agent;
         private bool isProcessing;
         private CancellationTokenSource? cancellationTokenSource;
@@ -32,6 +37,8 @@ namespace Saturn.UI
             agent = aiAgent ?? throw new ArgumentNullException(nameof(aiAgent));
             openRouterClient = client ?? agent.Configuration.Client as OpenRouterClient;
             isProcessing = false;
+            
+            agent.OnToolCall += (toolName, args) => UpdateToolCall(toolName, args);
             currentConfig = new AgentConfiguration
             {
                 Model = agent.Configuration.Model,
@@ -55,13 +62,14 @@ namespace Saturn.UI
             app = CreateMainWindow();
             var mainContainer = CreateChatContainer();
             var inputContainer = CreateInputContainer();
-            rightPanel = CreateRightPanel();
+            toolCallsPanel = CreateToolCallsPanel();
+            agentStatusPanel = CreateAgentStatusPanel();
             
             SetupScrollBar(mainContainer);
             SetupInputHandlers();
             
             inputContainer.Add(inputField, sendButton);
-            app.Add(menu, mainContainer, inputContainer, rightPanel);
+            app.Add(menu, mainContainer, inputContainer, toolCallsPanel, agentStatusPanel);
             
             SetInitialFocus();
         }
@@ -106,6 +114,8 @@ namespace Saturn.UI
                             chatView.Text = GetWelcomeMessage();
                             chatView.CursorPosition = new Point(0, 0);
                             agent?.ClearHistory();
+                            toolCallsView.Text = "No tool calls yet...\n";
+                            UpdateAgentStatus("Ready");
                         }
                     }),
                     new MenuItem("_Quit", "", () =>
@@ -211,18 +221,18 @@ namespace Saturn.UI
             return inputContainer;
         }
 
-        private FrameView CreateRightPanel()
+        private FrameView CreateToolCallsPanel()
         {
-            var panel = new FrameView("Information")
+            var panel = new FrameView("Tool Calls")
             {
                 X = Pos.Percent(75),
                 Y = 1,
                 Width = Dim.Fill(),
-                Height = Dim.Fill(),
+                Height = Dim.Percent(50) - 2,
                 ColorScheme = Colors.Base
             };
 
-            var infoText = new TextView()
+            toolCallsView = new TextView()
             {
                 X = 0,
                 Y = 0,
@@ -230,25 +240,131 @@ namespace Saturn.UI
                 Height = Dim.Fill(),
                 ReadOnly = true,
                 WordWrap = true,
-                Text = GetPanelContent(),
+                Text = "No tool calls yet...\n",
                 ColorScheme = Colors.Base
             };
 
-            panel.Add(infoText);
+            panel.Add(toolCallsView);
             return panel;
         }
 
-        private string GetPanelContent()
+        private FrameView CreateAgentStatusPanel()
         {
-            var content = "Panel Content\n";
-            content += "═════════════\n\n";
-            content += "This panel will contain:\n\n";
-            content += "• Context information\n";
-            content += "• Tool outputs\n";
-            content += "• Status updates\n";
-            content += "• Additional controls\n\n";
-            content += "More features coming soon!";
-            return content;
+            var panel = new FrameView("Agent Status")
+            {
+                X = Pos.Percent(75),
+                Y = Pos.Percent(50) - 1,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(),
+                ColorScheme = Colors.Base
+            };
+
+            agentStatusView = new TextView()
+            {
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(),
+                ReadOnly = true,
+                WordWrap = true,
+                Text = GetInitialAgentStatus(),
+                ColorScheme = Colors.Base
+            };
+
+            panel.Add(agentStatusView);
+            return panel;
+        }
+
+        private string GetInitialAgentStatus()
+        {
+            var status = "Main Agent: Ready\n";
+            status += "═════════════════\n\n";
+            status += "Status: Idle\n";
+            status += "Tasks: 0 pending\n\n";
+            status += "Sub-agents:\n";
+            status += "• None active\n\n";
+            status += "Multi-agent system\n";
+            status += "coming soon...";
+            return status;
+        }
+
+        public void UpdateToolCall(string toolName, string arguments)
+        {
+            Application.MainLoop.Invoke(() =>
+            {
+                var timestamp = DateTime.Now.ToString("HH:mm:ss");
+                var currentText = toolCallsView.Text.ToString();
+                
+                if (currentText == "No tool calls yet...\n")
+                {
+                    currentText = "";
+                }
+                
+                var newEntry = $"[{timestamp}] {toolName}\n";
+                
+                try
+                {
+                    var jsonDoc = JsonDocument.Parse(arguments);
+                    using var stream = new System.IO.MemoryStream();
+                    using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+                    jsonDoc.WriteTo(writer);
+                    writer.Flush();
+                    var prettyJson = Encoding.UTF8.GetString(stream.ToArray());
+                    
+                    var lines = prettyJson.Split('\n');
+                    foreach (var line in lines.Take(10))
+                    {
+                        newEntry += $"  {line}\n";
+                    }
+                    if (lines.Length > 10)
+                    {
+                        newEntry += $"  ... ({lines.Length - 10} more lines)\n";
+                    }
+                }
+                catch
+                {
+                    newEntry += $"  Args: {arguments.Substring(0, Math.Min(arguments.Length, 100))}\n";
+                    if (arguments.Length > 100)
+                    {
+                        newEntry += $"  ... ({arguments.Length - 100} more chars)\n";
+                    }
+                }
+                
+                newEntry += "───────────────\n";
+                
+                toolCallsView.Text = newEntry + currentText;
+                
+                if (toolCallsView.Text.Length > 5000)
+                {
+                    toolCallsView.Text = toolCallsView.Text.Substring(0, 4000);
+                }
+            });
+        }
+
+        public void UpdateAgentStatus(string status, int pendingTasks = 0, List<string>? subAgents = null)
+        {
+            Application.MainLoop.Invoke(() =>
+            {
+                var statusText = $"Main Agent: {status}\n";
+                statusText += "═════════════════\n\n";
+                statusText += $"Status: {status}\n";
+                statusText += $"Tasks: {pendingTasks} pending\n\n";
+                statusText += "Sub-agents:\n";
+                
+                if (subAgents != null && subAgents.Count > 0)
+                {
+                    foreach (var agent in subAgents)
+                    {
+                        statusText += $"• {agent}\n";
+                    }
+                }
+                else
+                {
+                    statusText += "• None active\n";
+                }
+                
+                agentStatusView.Text = statusText;
+            });
         }
 
         private void SetupInputHandlers()
@@ -322,6 +438,7 @@ namespace Saturn.UI
 
                 sendButton.Text = " Stop";
                 inputField.ReadOnly = true;
+                UpdateAgentStatus("Processing", 1);
                 Application.Refresh();
 
                 chatView.Text += "Assistant: ";
@@ -402,6 +519,7 @@ namespace Saturn.UI
                 isProcessing = false;
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = null;
+                UpdateAgentStatus("Ready");
                 inputField.SetFocus();
                 Application.Refresh();
             }
@@ -751,6 +869,7 @@ namespace Saturn.UI
                 };
 
                 agent = new Agent(newConfig);
+                agent.OnToolCall += (toolName, args) => UpdateToolCall(toolName, args);
                 chatView.Text = GetWelcomeMessage();
                 chatView.CursorPosition = new Point(0, 0);
                 Application.Refresh();
