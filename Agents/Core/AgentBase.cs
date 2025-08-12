@@ -18,6 +18,8 @@ namespace Saturn.Agents.Core
         public string Id { get; } = Guid.NewGuid().ToString();
         public AgentConfiguration Configuration { get; protected set; }
         public List<Message> ChatHistory { get; protected set; }
+        
+        public event Action<string, string>? OnToolCall;
 
         public string Name => Configuration.Name;
         public string SystemPrompt => Configuration.SystemPrompt;
@@ -254,6 +256,8 @@ namespace Saturn.Agents.Core
             {
                 if (toolCall.Type == "function" && toolCall.Function != null)
                 {
+                    OnToolCall?.Invoke(toolCall.Function.Name, toolCall.Function.Arguments ?? "{}");
+                    
                     var tool = ToolRegistry.Instance.Get(toolCall.Function.Name);
 
                     if (tool != null)
