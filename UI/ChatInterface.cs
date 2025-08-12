@@ -452,6 +452,23 @@ namespace Saturn.UI
                 return false;
             });
         }
+        
+        private void ScrollChatToBottom()
+        {
+            if (chatView != null && chatView.Lines > 0)
+            {
+                var lastLine = Math.Max(0, chatView.Lines - 1);
+                chatView.CursorPosition = new Point(0, lastLine);
+                
+                if (chatView.Frame.Height > 0)
+                {
+                    var topRow = Math.Max(0, chatView.Lines - chatView.Frame.Height);
+                    chatView.TopRow = topRow;
+                }
+                
+                chatView.PositionCursor();
+            }
+        }
 
         private string GetWelcomeMessage()
         {
@@ -487,14 +504,17 @@ namespace Saturn.UI
             {
                 chatView.Text += $"You: {message}\n";
                 inputField.Text = "";
-                chatView.CursorPosition = new Point(0, chatView.Lines);
-
+                
                 sendButton.Text = " Stop";
                 inputField.ReadOnly = true;
                 UpdateAgentStatus("Processing", 1);
+                
+                ScrollChatToBottom();
                 Application.Refresh();
+                ScrollChatToBottom();
 
                 chatView.Text += "Assistant: ";
+                ScrollChatToBottom();
                 var startPosition = chatView.Text.Length;
                 var responseBuilder = new StringBuilder();
 
@@ -516,7 +536,7 @@ namespace Saturn.UI
                                             var currentText = chatView.Text.Substring(0, startPosition);
                                             var renderedResponse = markdownRenderer.RenderToTerminal(responseBuilder.ToString());
                                             chatView.Text = currentText + renderedResponse;
-                                            chatView.CursorPosition = new Point(0, chatView.Lines);
+                                            ScrollChatToBottom();
                                             Application.Refresh();
                                         });
                                     }
@@ -526,7 +546,7 @@ namespace Saturn.UI
                             Application.MainLoop.Invoke(() =>
                             {
                                 chatView.Text += "\n\n";
-                                chatView.CursorPosition = new Point(0, chatView.Lines);
+                                ScrollChatToBottom();
                             });
                         }
                         else
@@ -538,7 +558,7 @@ namespace Saturn.UI
                             Application.MainLoop.Invoke(() =>
                             {
                                 chatView.Text += renderedResponse + "\n\n";
-                                chatView.CursorPosition = new Point(0, chatView.Lines);
+                                ScrollChatToBottom();
                             });
                         }
                     }
@@ -547,7 +567,7 @@ namespace Saturn.UI
                         Application.MainLoop.Invoke(() =>
                         {
                             chatView.Text += " [Cancelled]\n\n";
-                            chatView.CursorPosition = new Point(0, chatView.Lines);
+                            ScrollChatToBottom();
                         });
                     }
                     catch (Exception ex)
@@ -555,7 +575,7 @@ namespace Saturn.UI
                         Application.MainLoop.Invoke(() =>
                         {
                             chatView.Text += $"[Error: {ex.Message}]\n\n";
-                            chatView.CursorPosition = new Point(0, chatView.Lines);
+                            ScrollChatToBottom();
                         });
                     }
                 });
@@ -563,6 +583,7 @@ namespace Saturn.UI
             catch (Exception ex)
             {
                 chatView.Text += $"\n[Error processing message: {ex.Message}]\n\n";
+                ScrollChatToBottom();
             }
             finally
             {
@@ -646,7 +667,6 @@ namespace Saturn.UI
 
             dialog.Add(listView, infoLabel, okButton, cancelButton);
             
-            // Show initial selection info
             if (models.Count > 0 && currentIndex >= 0)
             {
                 var initialModel = models[currentIndex];
