@@ -210,14 +210,19 @@ Report your progress clearly and concisely."),
         
         public async Task<bool> WaitForTask(string taskId, int timeoutMs = 30000)
         {
+            if (_completedTasks.ContainsKey(taskId))
+            {
+                return true;
+            }
+            
             var startTime = DateTime.Now;
             while ((DateTime.Now - startTime).TotalMilliseconds < timeoutMs)
             {
+                await Task.Delay(100);
                 if (_completedTasks.ContainsKey(taskId))
                 {
                     return true;
                 }
-                await Task.Delay(100);
             }
             return false;
         }
@@ -225,14 +230,38 @@ Report your progress clearly and concisely."),
         public async Task<List<AgentTaskResult>> WaitForAllTasks(List<string> taskIds, int timeoutMs = 60000)
         {
             var results = new List<AgentTaskResult>();
-            var tasks = taskIds.Select(id => WaitForTask(id, timeoutMs)).ToArray();
-            await Task.WhenAll(tasks);
+            var pendingTaskIds = new List<string>();
             
+            // First check which tasks are already complete
             foreach (var taskId in taskIds)
             {
                 if (_completedTasks.TryGetValue(taskId, out var result))
                 {
                     results.Add(result);
+                }
+                else
+                {
+                    pendingTaskIds.Add(taskId);
+                }
+            }
+            
+            if (pendingTaskIds.Count == 0)
+            {
+                return results;
+            }
+            
+            var startTime = DateTime.Now;
+            while (pendingTaskIds.Count > 0 && (DateTime.Now - startTime).TotalMilliseconds < timeoutMs)
+            {
+                await Task.Delay(100);
+                
+                for (int i = pendingTaskIds.Count - 1; i >= 0; i--)
+                {
+                    if (_completedTasks.TryGetValue(pendingTaskIds[i], out var result))
+                    {
+                        results.Add(result);
+                        pendingTaskIds.RemoveAt(i);
+                    }
                 }
             }
             
