@@ -163,7 +163,7 @@ Operating Principles
                     "apply_diff", "grep", "glob", "read_file", "list_files", 
                     "write_file", "search_and_replace", "delete_file",
                     "create_agent", "hand_off_to_agent", "get_agent_status", 
-                    "wait_for_agent", "get_task_result"
+                    "wait_for_agent", "get_task_result", "execute_command"
                 },
             };
 
