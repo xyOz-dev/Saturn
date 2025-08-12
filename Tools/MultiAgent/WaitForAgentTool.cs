@@ -60,7 +60,9 @@ namespace Saturn.Tools.MultiAgent
                     Convert.ToInt32(parameters["timeout_seconds"]) : 30;
                 var timeoutMs = timeoutSeconds * 1000;
                 
+                var startTime = DateTime.Now;
                 var results = await AgentManager.Instance.WaitForAllTasks(taskIds, timeoutMs);
+                var elapsedMs = (DateTime.Now - startTime).TotalMilliseconds;
                 
                 if (!results.Any())
                 {
@@ -78,6 +80,16 @@ namespace Saturn.Tools.MultiAgent
                 }).ToList();
                 
                 var formatted = "Task Results:\n";
+                
+                if (elapsedMs < 200 && results.Count == taskIds.Count)
+                {
+                    formatted += "(All tasks were already complete - returned immediately)\n";
+                }
+                else if (elapsedMs < 1000)
+                {
+                    formatted += $"(Retrieved in {elapsedMs:F0}ms)\n";
+                }
+                
                 foreach (var result in results)
                 {
                     formatted += $"\n{result.AgentName} (Task: {result.TaskId}):\n";
@@ -90,6 +102,10 @@ namespace Saturn.Tools.MultiAgent
                 if (pendingTasks.Any())
                 {
                     formatted += $"\nTasks still pending: {string.Join(", ", pendingTasks)}";
+                    if (elapsedMs >= timeoutMs - 100)
+                    {
+                        formatted += $" (Timeout reached after {timeoutSeconds}s)";
+                    }
                 }
                 
                 return CreateSuccessResult(
