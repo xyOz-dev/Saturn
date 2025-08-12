@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Terminal.Gui;
 using Saturn.Agents;
 using Saturn.Agents.Core;
+using Saturn.Agents.MultiAgent;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Models;
@@ -51,6 +52,41 @@ namespace Saturn.UI
                 SystemPrompt = agent.Configuration.SystemPrompt?.ToString() ?? ""
             };
             markdownRenderer = new MarkdownRenderer();
+            InitializeAgentManager();
+        }
+        
+        private void InitializeAgentManager()
+        {
+            AgentManager.Instance.Initialize(openRouterClient!);
+            
+            AgentManager.Instance.OnAgentCreated += (agentId, name) =>
+            {
+                UpdateAgentStatus("Managing sub-agents", 1, new List<string> { $"{name} ({agentId})" });
+            };
+            
+            AgentManager.Instance.OnAgentStatusChanged += (agentId, name, status) =>
+            {
+                var agents = AgentManager.Instance.GetAllAgentStatuses();
+                var agentList = agents.Select(a => $"{a.Name}: {a.Status}").ToList();
+                UpdateAgentStatus("Active", agents.Count(a => !a.IsIdle), agentList);
+            };
+            
+            AgentManager.Instance.OnTaskCompleted += (taskId, result) =>
+            {
+                Application.MainLoop.Invoke(() =>
+                {
+                    var timestamp = DateTime.Now.ToString("HH:mm:ss");
+                    var currentText = toolCallsView.Text.ToString();
+                    
+                    var newEntry = $"[{timestamp}] Task Completed: {taskId}\n";
+                    newEntry += $"  Agent: {result.AgentName}\n";
+                    newEntry += $"  Status: {(result.Success ? "Success" : "Failed")}\n";
+                    newEntry += $"  Duration: {result.Duration.TotalSeconds:F1}s\n";
+                    newEntry += "───────────────\n";
+                    
+                    toolCallsView.Text = newEntry + currentText;
+                });
+            };
         }
 
         public void Initialize()
@@ -341,17 +377,34 @@ namespace Saturn.UI
             });
         }
 
-        public void UpdateAgentStatus(string status, int pendingTasks = 0, List<string>? subAgents = null)
+        public void UpdateAgentStatus(string status, int activeTasks = 0, List<string>? subAgents = null)
         {
             Application.MainLoop.Invoke(() =>
             {
+                var agents = AgentManager.Instance.GetAllAgentStatuses();
+                var completedTasks = agents.Sum(a => a.CurrentTask != null ? 1 : 0);
+                
                 var statusText = $"Main Agent: {status}\n";
                 statusText += "═════════════════\n\n";
                 statusText += $"Status: {status}\n";
-                statusText += $"Tasks: {pendingTasks} pending\n\n";
+                statusText += $"Active Tasks: {activeTasks}\n";
+                statusText += $"Total Agents: {agents.Count}\n\n";
                 statusText += "Sub-agents:\n";
                 
-                if (subAgents != null && subAgents.Count > 0)
+                if (agents.Any())
+                {
+                    foreach (var agent in agents)
+                    {
+                        statusText += $"• {agent.Name}\n";
+                        statusText += $"  Status: {agent.Status}\n";
+                        if (!string.IsNullOrEmpty(agent.CurrentTask))
+                        {
+                            statusText += $"  Task: {agent.CurrentTask}\n";
+                            statusText += $"  Time: {agent.RunningTime.TotalSeconds:F1}s\n";
+                        }
+                    }
+                }
+                else if (subAgents != null && subAgents.Count > 0)
                 {
                     foreach (var agent in subAgents)
                     {
