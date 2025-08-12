@@ -19,6 +19,7 @@ namespace Saturn.UI
         private TextView inputField = null!;
         private Button sendButton = null!;
         private Toplevel app = null!;
+        private FrameView rightPanel = null!;
         private Agent agent;
         private bool isProcessing;
         private CancellationTokenSource? cancellationTokenSource;
@@ -54,12 +55,13 @@ namespace Saturn.UI
             app = CreateMainWindow();
             var mainContainer = CreateChatContainer();
             var inputContainer = CreateInputContainer();
+            rightPanel = CreateRightPanel();
             
             SetupScrollBar(mainContainer);
             SetupInputHandlers();
             
             inputContainer.Add(inputField, sendButton);
-            app.Add(menu, mainContainer, inputContainer);
+            app.Add(menu, mainContainer, inputContainer, rightPanel);
             
             SetInitialFocus();
         }
@@ -143,7 +145,7 @@ namespace Saturn.UI
             {
                 X = 0,
                 Y = 1,
-                Width = Dim.Fill(),
+                Width = Dim.Percent(75),
                 Height = Dim.Fill(3),
                 ColorScheme = Colors.Base
             };
@@ -183,7 +185,7 @@ namespace Saturn.UI
             {
                 X = 0,
                 Y = Pos.AnchorEnd(3),
-                Width = Dim.Fill(),
+                Width = Dim.Percent(75),
                 Height = 3,
                 ColorScheme = Colors.Base
             };
@@ -207,6 +209,46 @@ namespace Saturn.UI
             };
 
             return inputContainer;
+        }
+
+        private FrameView CreateRightPanel()
+        {
+            var panel = new FrameView("Information")
+            {
+                X = Pos.Percent(75),
+                Y = 1,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(),
+                ColorScheme = Colors.Base
+            };
+
+            var infoText = new TextView()
+            {
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill(),
+                ReadOnly = true,
+                WordWrap = true,
+                Text = GetPanelContent(),
+                ColorScheme = Colors.Base
+            };
+
+            panel.Add(infoText);
+            return panel;
+        }
+
+        private string GetPanelContent()
+        {
+            var content = "Panel Content\n";
+            content += "═════════════\n\n";
+            content += "This panel will contain:\n\n";
+            content += "• Context information\n";
+            content += "• Tool outputs\n";
+            content += "• Status updates\n";
+            content += "• Additional controls\n\n";
+            content += "More features coming soon!";
+            return content;
         }
 
         private void SetupInputHandlers()
