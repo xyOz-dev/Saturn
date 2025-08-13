@@ -5,6 +5,27 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    
+    <!-- NuGet Package Configuration -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>saturn</ToolCommandName>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+    
+    <!-- Package Metadata -->
+    <PackageId>Saturn.CLI</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>xyOz-dev</Authors>
+    <Description>CLI-based coding assistant with multi-agent orchestration capabilities powered by OpenRouter</Description>
+    <PackageProjectUrl>https://github.com/xyOz-dev/Saturn</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/xyOz-dev/Saturn</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>cli;ai;assistant;openrouter;agent;coding;llm</PackageTags>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    
+    <!-- Build Configuration -->
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
