@@ -10,6 +10,10 @@ namespace Saturn.OpenRouter.Models.Api.Chat
         /// <summary>Unique call id.</summary>
         [JsonPropertyName("id")]
         public string? Id { get; set; }
+        
+        /// <summary>Index for streaming updates (used to identify which tool call to update).</summary>
+        [JsonPropertyName("index")]
+        public int? Index { get; set; }
 
         /// <summary>Type discriminator; "function".</summary>
         [JsonPropertyName("type")]
