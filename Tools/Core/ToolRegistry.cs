@@ -67,6 +67,11 @@ namespace Saturn.Tools.Core
             return tool;
         }
         
+        public ITool GetTool(string name)
+        {
+            return Get(name);
+        }
+        
         public T Get<T>(string name) where T : class, ITool
         {
             return Get(name) as T;
