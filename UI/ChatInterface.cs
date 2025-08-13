@@ -586,7 +586,7 @@ namespace Saturn.UI
                 Application.Refresh();
                 ScrollChatToBottom();
 
-                chatView.Text += "Assistant: ";
+                chatView.Text += "\nAssistant: ";
                 ScrollChatToBottom();
                 var startPosition = chatView.Text.Length;
                 var responseBuilder = new StringBuilder();
