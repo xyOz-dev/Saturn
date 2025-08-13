@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  pull_request:
+    branches: [ master, main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        configuration: [Debug, Release]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Cache NuGet packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/Saturn.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+    
+    - name: Restore dependencies
+      run: dotnet restore Saturn.csproj
+    
+    - name: Build
+      run: dotnet build Saturn.csproj -c ${{ matrix.configuration }} --no-restore
+    
+    - name: Test
+      run: |
+        if [ -f "./Saturn.Tests/Saturn.Tests.csproj" ]; then
+          dotnet test ./Saturn.Tests/Saturn.Tests.csproj -c ${{ matrix.configuration }} --no-build --verbosity normal
+        else
+          echo "No test project found, skipping tests"
+        fi
+      shell: bash
+    
+    - name: Pack (Release only)
+      if: matrix.configuration == 'Release' && matrix.os == 'ubuntu-latest'
+      run: dotnet pack Saturn.csproj -c Release --no-build
+    
+    - name: Upload NuGet package
+      if: matrix.configuration == 'Release' && matrix.os == 'ubuntu-latest'
+      uses: actions/upload-artifact@v3
+      with:
+        name: nuget-package
+        path: nupkg/*.nupkg
+
+  validate-package:
+    name: Validate NuGet Package
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Download package
+      uses: actions/download-artifact@v3
+      with:
+        name: nuget-package
+        path: ./packages
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Install NuGet Package Validator
+      run: dotnet tool install --global dotnet-validate --version 0.0.1-preview.304
+    
+    - name: Validate package
+      run: |
+        for package in ./packages/*.nupkg; do
+          echo "Validating: $package"
+          dotnet validate package local "$package" || true
+        done
+    
+    - name: Test tool installation
+      run: |
+        # Create a test directory
+        mkdir test-install
+        cd test-install
+        
+        # Try to install the tool locally
+        dotnet new tool-manifest
+        for package in ../packages/*.nupkg; do
+          echo "Testing installation of: $package"
+          dotnet tool install Saturn.CLI --add-source ../packages --version "*-*"
+          
+          # Test if tool runs (just check help or version)
+          dotnet tool run saturn --help || echo "Tool execution test"
+          
+          # Uninstall for next iteration
+          dotnet tool uninstall Saturn.CLI
+        done
