@@ -2,6 +2,7 @@
 using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent;
 using Saturn.Configuration;
+using Saturn.Core;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.UI;
@@ -18,6 +19,22 @@ namespace Saturn
         {
             try
             {
+                if (!GitManager.IsRepository())
+                {
+                    Console.Clear();
+                    var shouldContinue = await GitRepositoryPrompt.ShowPrompt();
+                    
+                    if (!shouldContinue)
+                    {
+                        Console.WriteLine("Exiting Saturn. A Git repository is required for operation.");
+                        Environment.Exit(0);
+                    }
+                    
+                    Console.Clear();
+                    Console.WriteLine("Git repository initialized successfully. Starting Saturn...\n");
+                    await Task.Delay(1000);
+                }
+
                 var (agent, client) = await CreateAgent();
                 var chatInterface = new ChatInterface(agent, client);
                 chatInterface.Initialize();
