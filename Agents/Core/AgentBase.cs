@@ -181,6 +181,7 @@ namespace Saturn.Agents.Core
                     FrequencyPenalty = Configuration.FrequencyPenalty,
                     PresencePenalty = Configuration.PresencePenalty,
                     Stop = Configuration.StopSequences,
+                    Transforms = new string[] { "middle-out" },
                     ToolChoice = ToolChoice.Auto(),
                     Usage = new UsageOption { Include = true }
                 };
@@ -422,7 +423,7 @@ namespace Saturn.Agents.Core
                     Console.WriteLine("Warning: Invalid tool message sequence detected. Cleaning up messages.");
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
-                
+
                 var request = new ChatCompletionRequest
                 {
                     Model = Configuration.Model,
@@ -433,6 +434,7 @@ namespace Saturn.Agents.Core
                     FrequencyPenalty = Configuration.FrequencyPenalty,
                     PresencePenalty = Configuration.PresencePenalty,
                     Stop = Configuration.StopSequences,
+                    Transforms = new string[] { "middle-out" },
                     ToolChoice = ToolChoice.Auto(),
                     Stream = true,
                     Usage = new UsageOption { Include = true }
