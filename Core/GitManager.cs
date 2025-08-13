@@ -93,30 +93,6 @@ namespace Saturn.Core
 
         private static void HandleWindowsNulFile(string path)
         {
-            try
-            {
-                var nulVariations = new[] { "nul", "NUL", "Nul" };
-                foreach (var nulName in nulVariations)
-                {
-                    var nulPath = Path.Combine(path, nulName);
-                    try
-                    {
-                        if (File.Exists(nulPath))
-                        {
-                            var safeName = $"{nulName}.renamed";
-                            File.Move(nulPath, Path.Combine(path, safeName));
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore errors - the file might not exist or might be a device
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore any errors in handling nul files
-            }
         }
 
         private static async Task<bool> CheckUserConfig()
@@ -177,16 +153,33 @@ namespace Saturn.Core
 
         private static async Task<(bool success, string output)> CreateInitialCommit(string path)
         {
-            await ExecuteGitCommand("rm --cached nul", path);
-            await ExecuteGitCommand("rm --cached NUL", path);
+            string addCommand;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                addCommand = "add --all . -- ':!nul' ':!NUL' ':!nul.*' ':!NUL.*'";
+            }
+            else
+            {
+                addCommand = "add .";
+            }
             
-            var addResult = await ExecuteGitCommand("add .", path);
+            var addResult = await ExecuteGitCommand(addCommand, path);
             if (!addResult.success)
             {
-                var selectiveAddResult = await ExecuteGitCommand("add --all -- ':!nul' ':!NUL'", path);
-                if (!selectiveAddResult.success)
+                var statusResult = await ExecuteGitCommand("status --porcelain", path);
+                if (statusResult.success && string.IsNullOrWhiteSpace(statusResult.output))
                 {
-                    return addResult;
+                    var gitkeepPath = Path.Combine(path, ".gitkeep");
+                    await File.WriteAllTextAsync(gitkeepPath, "");
+                    addResult = await ExecuteGitCommand("add .gitkeep", path);
+                    if (!addResult.success)
+                    {
+                        return addResult;
+                    }
+                }
+                else
+                {
+                    return (false, $"Failed to add files: {addResult.output}");
                 }
             }
 
