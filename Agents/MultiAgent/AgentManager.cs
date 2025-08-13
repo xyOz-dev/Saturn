@@ -281,6 +281,16 @@ Report your progress clearly and concisely."),
         {
             _completedTasks.Clear();
         }
+        
+        public void TerminateAllAgents()
+        {
+            var agentIds = _runningAgents.Keys.ToList();
+            foreach (var agentId in agentIds)
+            {
+                TerminateAgent(agentId);
+            }
+            _completedTasks.Clear();
+        }
     }
     
     public class SubAgentContext
