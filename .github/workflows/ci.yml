@@ -45,15 +45,27 @@ jobs:
           ${{ runner.os }}-nuget-
     
     - name: Restore dependencies
-      run: dotnet restore Saturn.csproj
+      run: |
+        dotnet restore Saturn.csproj
+        if [ -f "./Saturn.Tests/Saturn.Tests.csproj" ]; then
+          dotnet restore ./Saturn.Tests/Saturn.Tests.csproj
+        fi
+      shell: bash
     
     - name: Build
       run: dotnet build Saturn.csproj -c ${{ matrix.configuration }} --no-restore
     
+    - name: Build Tests
+      run: |
+        if [ -f "./Saturn.Tests/Saturn.Tests.csproj" ]; then
+          dotnet build ./Saturn.Tests/Saturn.Tests.csproj -c ${{ matrix.configuration }} --no-restore
+        fi
+      shell: bash
+    
     - name: Test
       run: |
         if [ -f "./Saturn.Tests/Saturn.Tests.csproj" ]; then
-          dotnet test ./Saturn.Tests/Saturn.Tests.csproj -c ${{ matrix.configuration }} --no-build --verbosity normal
+          dotnet test ./Saturn.Tests/Saturn.Tests.csproj -c ${{ matrix.configuration }} --no-build --no-restore --verbosity normal
         else
           echo "No test project found, skipping tests"
         fi
