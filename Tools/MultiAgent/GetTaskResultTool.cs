@@ -29,6 +29,12 @@ namespace Saturn.Tools.MultiAgent
             return new[] { "task_id" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var taskId = GetParameter<string>(parameters, "task_id", "");
+            return $"Getting result for task {taskId}";
+        }
+        
         public override Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             try

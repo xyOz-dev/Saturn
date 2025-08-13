@@ -30,6 +30,19 @@ namespace Saturn.Tools.MultiAgent
             return new string[0];
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var agentId = GetParameter<string>(parameters, "agent_id", "all");
+            if (agentId == "all" || string.IsNullOrEmpty(agentId))
+            {
+                return "Checking status of all agents";
+            }
+            else
+            {
+                return $"Checking status of {agentId}";
+            }
+        }
+        
         public override Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             try

@@ -39,6 +39,14 @@ namespace Saturn.Tools.MultiAgent
             return new[] { "agent_id", "task" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var agentId = GetParameter<string>(parameters, "agent_id", "");
+            var task = GetParameter<string>(parameters, "task", "");
+            var displayTask = TruncateString(task, 30);
+            return $"Delegating to {agentId}: {displayTask}";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             try

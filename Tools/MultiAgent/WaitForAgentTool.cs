@@ -36,6 +36,20 @@ namespace Saturn.Tools.MultiAgent
             return new[] { "task_ids" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var taskIdsObj = GetParameter<object>(parameters, "task_ids", null);
+            var timeout = GetParameter<int>(parameters, "timeout_seconds", 30);
+            
+            string agentInfo = "agents";
+            if (taskIdsObj is List<object> objList && objList.Count > 0)
+            {
+                agentInfo = objList.Count == 1 ? "1 agent" : $"{objList.Count} agents";
+            }
+            
+            return $"Waiting for {agentInfo} (timeout: {timeout}s)";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             try

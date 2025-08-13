@@ -44,6 +44,14 @@ namespace Saturn.Tools.MultiAgent
             return new[] { "name", "purpose" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var name = GetParameter<string>(parameters, "name", "");
+            var purpose = GetParameter<string>(parameters, "purpose", "");
+            var displayPurpose = TruncateString(purpose, 30);
+            return $"Creating agent '{name}' for: {displayPurpose}";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             try
