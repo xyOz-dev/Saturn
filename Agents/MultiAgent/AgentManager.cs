@@ -17,6 +17,7 @@ namespace Saturn.Agents.MultiAgent
         private readonly ConcurrentDictionary<string, SubAgentContext> _runningAgents;
         private readonly ConcurrentDictionary<string, AgentTaskResult> _completedTasks;
         private OpenRouterClient _client = null!;
+        private const int MaxConcurrentAgents = 25;
         
         public static AgentManager Instance => _instance ??= new AgentManager();
         
@@ -38,12 +39,22 @@ namespace Saturn.Agents.MultiAgent
             }
         }
         
-        public async Task<string> CreateSubAgent(
+        public async Task<(bool success, string result, List<string>? runningTaskIds)> TryCreateSubAgent(
             string name, 
             string purpose, 
             string model = "anthropic/claude-3.5-sonnet",
             bool enableTools = true)
         {
+            if (_runningAgents.Count >= MaxConcurrentAgents)
+            {
+                var runningTasks = _runningAgents
+                    .Where(kvp => kvp.Value.CurrentTask != null)
+                    .Select(kvp => kvp.Value.CurrentTask!.Id)
+                    .ToList();
+                
+                return (false, $"Maximum concurrent agent limit ({MaxConcurrentAgents}) reached", runningTasks);
+            }
+            
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
             
             var config = new AgentConfiguration
@@ -78,7 +89,7 @@ Report your progress clearly and concisely."),
             OnAgentCreated?.Invoke(agentId, name);
             OnAgentStatusChanged?.Invoke(agentId, name, "Idle");
             
-            return agentId;
+            return (true, agentId, null);
         }
         
         public async Task<string> HandOffTask(string agentId, string task, Dictionary<string, object>? context = null)
@@ -290,6 +301,16 @@ Report your progress clearly and concisely."),
                 TerminateAgent(agentId);
             }
             _completedTasks.Clear();
+        }
+        
+        public int GetCurrentAgentCount()
+        {
+            return _runningAgents.Count;
+        }
+        
+        public int GetMaxConcurrentAgents()
+        {
+            return MaxConcurrentAgents;
         }
     }
     
