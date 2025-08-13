@@ -9,6 +9,7 @@ namespace Saturn.Tools.Core
         string Description { get; }
         Dictionary<string, object> GetParameters();
         Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters);
+        string GetDisplaySummary(Dictionary<string, object> parameters);
     }
     
     public class ToolResult
