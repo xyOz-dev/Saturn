@@ -342,8 +342,6 @@ namespace Saturn.UI
             status += "Tasks: 0 pending\n\n";
             status += "Sub-agents:\n";
             status += "• None active\n\n";
-            status += "Multi-agent system\n";
-            status += "coming soon...";
             return status;
         }
 
@@ -441,12 +439,14 @@ namespace Saturn.UI
             {
                 var agents = AgentManager.Instance.GetAllAgentStatuses();
                 var completedTasks = agents.Sum(a => a.CurrentTask != null ? 1 : 0);
+                var currentCount = AgentManager.Instance.GetCurrentAgentCount();
+                var maxCount = AgentManager.Instance.GetMaxConcurrentAgents();
                 
                 var statusText = $"Main Agent: {status}\n";
                 statusText += "═════════════════\n\n";
                 statusText += $"Status: {status}\n";
                 statusText += $"Active Tasks: {activeTasks}\n";
-                statusText += $"Total Agents: {agents.Count}\n\n";
+                statusText += $"Total Agents: {currentCount}/{maxCount}\n\n";
                 statusText += "Sub-agents:\n";
                 
                 if (agents.Any())
