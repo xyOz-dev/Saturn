@@ -618,7 +618,44 @@ namespace Saturn.UI
 
                             Application.MainLoop.Invoke(() =>
                             {
-                                chatView.Text += "\n\n";
+                                var currentText = chatView.Text;
+                                var lastResponse = responseBuilder.ToString().TrimEnd();
+                                
+                                if (!string.IsNullOrEmpty(lastResponse))
+                                {
+                                    bool endsWithNewline = currentText.EndsWith("\n");
+                                    bool endsWithDoubleNewline = currentText.EndsWith("\n\n");
+                                    
+                                    char lastChar = lastResponse.Length > 0 ? lastResponse[lastResponse.Length - 1] : '\0';
+                                    bool endsWithPunctuation = ".!?:;)]}\"'`".Contains(lastChar);
+                                    
+                                    if (!endsWithNewline)
+                                    {
+                                        if (endsWithPunctuation)
+                                        {
+                                            chatView.Text += "\n\n";
+                                        }
+                                        else
+                                        {
+                                            chatView.Text += " ";
+                                        }
+                                    }
+                                    else if (!endsWithDoubleNewline)
+                                    {
+                                        chatView.Text += "\n";
+                                    }
+                                }
+                                else
+                                {
+                                    if (!currentText.EndsWith("\n\n"))
+                                    {
+                                        if (currentText.EndsWith("\n"))
+                                            chatView.Text += "\n";
+                                        else
+                                            chatView.Text += "\n\n";
+                                    }
+                                }
+                                
                                 ScrollChatToBottom();
                             });
                         }
@@ -630,7 +667,34 @@ namespace Saturn.UI
 
                             Application.MainLoop.Invoke(() =>
                             {
-                                chatView.Text += renderedResponse + "\n\n";
+                                var currentText = chatView.Text;
+                                
+                                chatView.Text += renderedResponse;
+                                
+                                var updatedText = chatView.Text;
+                                bool endsWithNewline = updatedText.EndsWith("\n\n");
+                                bool endsWithDoubleNewline = updatedText.EndsWith("\n\n");
+                                
+                                var trimmedResponse = renderedResponse.TrimEnd();
+                                char lastChar = trimmedResponse.Length > 0 ? trimmedResponse[trimmedResponse.Length - 1] : '\0';
+                                bool endsWithPunctuation = ".!?:;)]}\"'`".Contains(lastChar);
+                                
+                                if (!endsWithNewline)
+                                {
+                                    if (endsWithPunctuation)
+                                    {
+                                        chatView.Text += "\n\n";
+                                    }
+                                    else
+                                    {
+                                        chatView.Text += " ";
+                                    }
+                                }
+                                else if (!endsWithDoubleNewline)
+                                {
+                                    chatView.Text += "\n";
+                                }
+                                
                                 ScrollChatToBottom();
                             });
                         }
