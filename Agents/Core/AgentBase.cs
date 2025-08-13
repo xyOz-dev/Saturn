@@ -20,6 +20,14 @@ namespace Saturn.Agents.Core
         public List<Message> ChatHistory { get; protected set; }
         
         public event Action<string, string>? OnToolCall;
+        
+        private class StreamingToolCall
+        {
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public JsonStreamAccumulator ArgumentsAccumulator { get; } = new JsonStreamAccumulator();
+            public bool IsComplete => ArgumentsAccumulator.IsComplete;
+        }
 
         public string Name => Configuration.Name;
         public string SystemPrompt => Configuration.SystemPrompt;
@@ -254,6 +262,11 @@ namespace Saturn.Agents.Core
 
             foreach (var toolCall in toolCalls)
             {
+                if (string.IsNullOrEmpty(toolCall.Id))
+                {
+                    continue; // Skip tool calls without IDs
+                }
+                
                 if (toolCall.Type == "function" && toolCall.Function != null)
                 {
                     OnToolCall?.Invoke(toolCall.Function.Name, toolCall.Function.Arguments ?? "{}");
@@ -272,20 +285,36 @@ namespace Saturn.Agents.Core
                             }
                             else
                             {
-                                var jsonElement = JsonSerializer.Deserialize<JsonElement>(toolCall.Function.Arguments);
-                                parameters = new Dictionary<string, object>();
-
-                                if (jsonElement.ValueKind == JsonValueKind.Object)
+                                try
                                 {
-                                    foreach (var property in jsonElement.EnumerateObject())
+                                    var jsonElement = JsonSerializer.Deserialize<JsonElement>(toolCall.Function.Arguments);
+                                    parameters = new Dictionary<string, object>();
+
+                                    if (jsonElement.ValueKind == JsonValueKind.Object)
                                     {
-                                        parameters[property.Name] = ConvertJsonElement(property.Value);
+                                        foreach (var property in jsonElement.EnumerateObject())
+                                        {
+                                            parameters[property.Name] = ConvertJsonElement(property.Value);
+                                        }
                                     }
+                                }
+                                catch (JsonException)
+                                {
+                                    parameters = new Dictionary<string, object>();
                                 }
                             }
 
                             var toolResult = await tool.ExecuteAsync(parameters);
                             results.Add((toolCall.Function.Name, toolCall.Id, toolResult));
+                        }
+                        catch (JsonException jsonEx)
+                        {
+                            results.Add((toolCall.Function.Name, toolCall.Id, new ToolResult
+                            {
+                                Success = false,
+                                Error = $"JSON parsing error: {jsonEx.Message}",
+                                FormattedOutput = $"Error: Invalid JSON in tool arguments - {jsonEx.Message}"
+                            }));
                         }
                         catch (Exception ex)
                         {
@@ -417,15 +446,53 @@ namespace Saturn.Agents.Core
                             {
                                 foreach (var toolCall in delta.ToolCalls)
                                 {
-                                    var existing = toolCallBuffer.FirstOrDefault(tc => tc.Id == toolCall.Id);
-                                    if (existing != null && toolCall.Function?.Arguments != null)
+                                    ToolCall existing = null;
+                                    
+                                    if (toolCall.Index.HasValue)
                                     {
-                                        // append streamed args
-                                        existing.Function!.Arguments = (existing.Function.Arguments ?? string.Empty) + toolCall.Function.Arguments;
+                                        while (toolCallBuffer.Count <= toolCall.Index.Value)
+                                        {
+                                            toolCallBuffer.Add(new ToolCall { Function = new ToolCall.FunctionCall() });
+                                        }
+                                        existing = toolCallBuffer[toolCall.Index.Value];
+                                    }
+                                    else if (!string.IsNullOrEmpty(toolCall.Id))
+                                    {
+                                        existing = toolCallBuffer.FirstOrDefault(tc => tc.Id == toolCall.Id);
+                                        if (existing == null)
+                                        {
+                                            existing = new ToolCall
+                                            {
+                                                Id = toolCall.Id,
+                                                Type = toolCall.Type ?? "function",
+                                                Function = new ToolCall.FunctionCall()
+                                            };
+                                            toolCallBuffer.Add(existing);
+                                        }
                                     }
                                     else
                                     {
-                                        toolCallBuffer.Add(toolCall);
+                                        continue;
+                                    }
+                                    
+                                    if (existing.Function == null)
+                                    {
+                                        existing.Function = new ToolCall.FunctionCall();
+                                    }
+                                    
+                                    if (!string.IsNullOrEmpty(toolCall.Id))
+                                    {
+                                        existing.Id = toolCall.Id;
+                                    }
+                                    
+                                    if (!string.IsNullOrEmpty(toolCall.Function?.Name))
+                                    {
+                                        existing.Function.Name = toolCall.Function.Name;
+                                    }
+                                    
+                                    if (toolCall.Function?.Arguments != null)
+                                    {
+                                        existing.Function.Arguments = (existing.Function.Arguments ?? string.Empty) + toolCall.Function.Arguments;
                                     }
 
                                     await onChunk(new StreamChunk
@@ -463,10 +530,17 @@ namespace Saturn.Agents.Core
 
                 if (finalResponse?.ToolCalls != null && finalResponse.ToolCalls.Length > 0)
                 {
-                    var toolResults = await HandleToolCalls(finalResponse.ToolCalls);
+                    var validatedToolCalls = ValidateStreamedToolCalls(finalResponse.ToolCalls);
+                    if (validatedToolCalls.Count == 0)
+                    {
+                        continueProcessing = false;
+                        continue;
+                    }
+                    
+                    var toolResults = await HandleToolCalls(validatedToolCalls.ToArray());
 
                     // Precede tool_result messages with an assistant message that includes tool_calls
-                    var streamedToolCalls = finalResponse.ToolCalls?
+                    var streamedToolCalls = validatedToolCalls
                         .Select(tc => new ToolCallRequest
                         {
                             Id = tc.Id,
@@ -541,6 +615,36 @@ namespace Saturn.Agents.Core
         protected static string JsonToString(JsonElement value)
         {
             return value.ValueKind == JsonValueKind.String ? (value.GetString() ?? string.Empty) : value.GetRawText();
+        }
+
+        /// <summary>
+        /// Validates streamed tool calls to ensure they have required fields
+        /// </summary>
+        private List<ToolCall> ValidateStreamedToolCalls(ToolCall[] toolCalls)
+        {
+            var validatedCalls = new List<ToolCall>();
+            
+            foreach (var toolCall in toolCalls)
+            {
+                if (string.IsNullOrEmpty(toolCall.Id))
+                {
+                    continue;
+                }
+                
+                if (toolCall.Function == null || string.IsNullOrEmpty(toolCall.Function.Name))
+                {
+                    continue;
+                }
+                
+                if (toolCall.Function.Arguments == null)
+                {
+                    toolCall.Function.Arguments = "{}";
+                }
+                
+                validatedCalls.Add(toolCall);
+            }
+            
+            return validatedCalls;
         }
 
     }
