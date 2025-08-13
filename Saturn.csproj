@@ -33,4 +33,11 @@
     <PackageReference Include="Terminal.Gui" Version="1.19.0" />
   </ItemGroup>
 
+  <!-- Exclude test files from main project compilation -->
+  <ItemGroup>
+    <Compile Remove="Saturn.Tests\**" />
+    <EmbeddedResource Remove="Saturn.Tests\**" />
+    <None Remove="Saturn.Tests\**" />
+  </ItemGroup>
+
 </Project>
