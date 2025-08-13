@@ -63,18 +63,45 @@ namespace Saturn.Tools.MultiAgent
                 var enableTools = parameters.ContainsKey("enable_tools") ? 
                     Convert.ToBoolean(parameters["enable_tools"]) : true;
                 
-                var agentId = await AgentManager.Instance.CreateSubAgent(name, purpose, model, enableTools);
+                var result = await AgentManager.Instance.TryCreateSubAgent(name, purpose, model, enableTools);
                 
-                return CreateSuccessResult(
-                    new Dictionary<string, object>
+                if (result.success)
+                {
+                    return CreateSuccessResult(
+                        new Dictionary<string, object>
+                        {
+                            ["agent_id"] = result.result,
+                            ["name"] = name,
+                            ["purpose"] = purpose,
+                            ["model"] = model
+                        },
+                        $"Created agent '{name}' with ID: {result.result}"
+                    );
+                }
+                else
+                {
+                    var currentCount = AgentManager.Instance.GetCurrentAgentCount();
+                    var maxCount = AgentManager.Instance.GetMaxConcurrentAgents();
+                    
+                    var errorMessage = $"Cannot create agent '{name}': {result.result}\n";
+                    errorMessage += $"Current agents: {currentCount}/{maxCount}\n";
+                    
+                    if (result.runningTaskIds != null && result.runningTaskIds.Count > 0)
                     {
-                        ["agent_id"] = agentId,
-                        ["name"] = name,
-                        ["purpose"] = purpose,
-                        ["model"] = model
-                    },
-                    $"Created agent '{name}' with ID: {agentId}"
-                );
+                        errorMessage += $"Running tasks that you can wait for:\n";
+                        foreach (var taskId in result.runningTaskIds)
+                        {
+                            errorMessage += $"  - {taskId}\n";
+                        }
+                        errorMessage += "\nUse 'wait_for_agent' with these task IDs or terminate idle agents to free up capacity.";
+                    }
+                    else
+                    {
+                        errorMessage += "All agents are idle. Consider terminating unused agents to free up capacity.";
+                    }
+                    
+                    return CreateErrorResult(errorMessage);
+                }
             }
             catch (Exception ex)
             {
