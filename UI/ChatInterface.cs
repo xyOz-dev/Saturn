@@ -545,8 +545,8 @@ namespace Saturn.UI
 
         private string GetWelcomeMessage()
         {
-            var message = "Welcome to Saturn\n";
-            message += "================================\n";
+            var message = "Welcome to Saturn\nDont forget to join our discord to stay updated.\n\"https://discord.gg/VSjW36MfYZ\"";
+            message += "\n================================\n";
             message += $"Agent: {agent.Name}\n";
             message += $"Model: {agent.Configuration.Model}\n";
             message += $"Streaming: {(agent.Configuration.EnableStreaming ? "Enabled" : "Disabled")}\n";
