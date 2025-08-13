@@ -122,7 +122,7 @@ Note: Use this before grep when you need to find files first, then search within
             var includeDirectories = GetParameter<bool>(parameters, "includeDirectories", false);
             var caseSensitive = GetParameter<bool>(parameters, "caseSensitive", false);
             var maxResults = GetParameter<int>(parameters, "maxResults", 1000);
-            var exclude = GetParameter<string[]>(parameters, "exclude", Array.Empty<string>());
+            var exclude = GetArrayParameter(parameters, "exclude");
             var compactOutput = GetParameter<bool>(parameters, "compactOutput", false);
             var maxDepth = GetParameter<int>(parameters, "maxDepth", -1);
             var followSymlinks = GetParameter<bool>(parameters, "followSymlinks", false);
@@ -362,6 +362,41 @@ Note: Use this before grep when you need to find files first, then search within
         private bool IsSymbolicLink(FileSystemInfo info)
         {
             return info.Attributes.HasFlag(FileAttributes.ReparsePoint);
+        }
+        
+        private string[] GetArrayParameter(Dictionary<string, object> parameters, string key)
+        {
+            if (!parameters.TryGetValue(key, out var value))
+            {
+                return Array.Empty<string>();
+            }
+            
+            if (value is string[] stringArray)
+            {
+                return stringArray;
+            }
+            
+            if (value is List<object> objectList)
+            {
+                return objectList.Select(o => o?.ToString() ?? string.Empty).ToArray();
+            }
+            
+            if (value is System.Text.Json.JsonElement jsonElement && jsonElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var result = new List<string>();
+                foreach (var item in jsonElement.EnumerateArray())
+                {
+                    result.Add(item.GetString() ?? string.Empty);
+                }
+                return result.ToArray();
+            }
+            
+            if (value is string singleString)
+            {
+                return new[] { singleString };
+            }
+            
+            return Array.Empty<string>();
         }
         
         public class GlobMatch
