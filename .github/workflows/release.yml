@@ -78,12 +78,12 @@ jobs:
           
           Install Saturn CLI globally:
           ```bash
-          dotnet tool install --global Saturn.CLI --version ${{ steps.version.outputs.VERSION }}
+          dotnet tool install --global SaturnAgent --version ${{ steps.version.outputs.VERSION }}
           ```
           
           Or update existing installation:
           ```bash
-          dotnet tool update --global Saturn.CLI
+          dotnet tool update --global SaturnAgent
           ```
           
           ## Usage

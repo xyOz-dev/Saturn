@@ -120,11 +120,11 @@ jobs:
         dotnet new tool-manifest
         for package in ../packages/*.nupkg; do
           echo "Testing installation of: $package"
-          dotnet tool install Saturn.CLI --add-source ../packages --version "*-*"
+          dotnet tool install SaturnAgent --add-source ../packages --version "*-*"
           
           # Test if tool runs (just check help or version)
           dotnet tool run saturn --help || echo "Tool execution test"
           
           # Uninstall for next iteration
-          dotnet tool uninstall Saturn.CLI
+          dotnet tool uninstall SaturnAgent
         done

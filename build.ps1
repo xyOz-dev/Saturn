@@ -145,7 +145,7 @@ try {
     if (-not $NoPack) {
         Write-Host ""
         Write-Host "To test the tool locally:" -ForegroundColor Yellow
-        Write-Host "  dotnet tool install --global --add-source ./nupkg Saturn.CLI"
+        Write-Host "  dotnet tool install --global --add-source ./nupkg SaturnAgent"
         Write-Host ""
         Write-Host "To publish to NuGet.org:" -ForegroundColor Yellow
         Write-Host "  dotnet nuget push ./nupkg/*.nupkg -k YOUR_API_KEY -s https://api.nuget.org/v3/index.json"

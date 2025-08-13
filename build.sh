@@ -176,7 +176,7 @@ print_header "Build Completed Successfully!"
 if [ "$NO_PACK" = false ]; then
     echo ""
     echo -e "${YELLOW}To test the tool locally:${NC}"
-    echo "  dotnet tool install --global --add-source ./nupkg Saturn.CLI"
+    echo "  dotnet tool install --global --add-source ./nupkg SaturnAgent"
     echo ""
     echo -e "${YELLOW}To publish to NuGet.org:${NC}"
     echo "  dotnet nuget push ./Saturn/nupkg/*.nupkg -k YOUR_API_KEY -s https://api.nuget.org/v3/index.json"
