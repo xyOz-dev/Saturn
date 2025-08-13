@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Extract version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION=${GITHUB_REF#refs/tags/v}
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION"
+    
+    - name: Restore dependencies
+      run: dotnet restore Saturn.csproj
+    
+    - name: Build
+      run: dotnet build Saturn.csproj -c Release --no-restore -p:Version=${{ steps.version.outputs.VERSION }}
+    
+    - name: Pack
+      run: dotnet pack Saturn.csproj -c Release --no-build -p:Version=${{ steps.version.outputs.VERSION }}
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: nupkg
+        path: nupkg/*.nupkg
+    
+    - name: Push to NuGet
+      if: github.event_name == 'push' || github.event.inputs.version != ''
+      run: |
+        dotnet nuget push nupkg/*.nupkg \
+          --api-key ${{ secrets.NUGET_API_KEY }} \
+          --source https://api.nuget.org/v3/index.json \
+          --skip-duplicate
+    
+    - name: Create GitHub Release
+      if: github.event_name == 'push'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: nupkg/*.nupkg
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
+        body: |
+          ## Installation
+          
+          Install Saturn CLI globally:
+          ```bash
+          dotnet tool install --global Saturn.CLI --version ${{ steps.version.outputs.VERSION }}
+          ```
+          
+          Or update existing installation:
+          ```bash
+          dotnet tool update --global Saturn.CLI
+          ```
+          
+          ## Usage
+          
+          After installation, run:
+          ```bash
+          saturn
+          ```
+          
+          Make sure to set your OpenRouter API key:
+          ```bash
+          export OPENROUTER_API_KEY=your_api_key_here
+          ```
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
