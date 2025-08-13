@@ -768,6 +768,12 @@ namespace Saturn.UI
             {
                 var selectedModel = models[listView.SelectedItem];
                 currentConfig.Model = selectedModel.Id;
+                
+                if (selectedModel.Id.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+                {
+                    currentConfig.Temperature = 1.0;
+                }
+                
                 await ReconfigureAgent();
                 Application.RequestStop();
             };
@@ -819,6 +825,13 @@ namespace Saturn.UI
 
         private void ShowTemperatureDialog()
         {
+            if (currentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.ErrorQuery("Temperature Locked", 
+                    "Temperature is locked to 1.0 for GPT-5 models and cannot be changed.", "OK");
+                return;
+            }
+            
             var dialog = new Dialog("Set Temperature", 50, 10);
             dialog.ColorScheme = Colors.Dialog;
 
@@ -1062,13 +1075,19 @@ namespace Saturn.UI
         {
             try
             {
+                var temperature = currentConfig.Temperature;
+                if (currentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+                {
+                    temperature = 1.0;
+                }
+                
                 var newConfig = new Saturn.Agents.Core.AgentConfiguration
                 {
                     Name = agent.Name,
                     SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt),
                     Client = openRouterClient,
                     Model = currentConfig.Model,
-                    Temperature = currentConfig.Temperature,
+                    Temperature = temperature,
                     MaxTokens = currentConfig.MaxTokens,
                     TopP = currentConfig.TopP,
                     MaintainHistory = currentConfig.MaintainHistory,

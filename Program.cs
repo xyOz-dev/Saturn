@@ -75,6 +75,14 @@ namespace Saturn
 
             var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
             
+            // Determine temperature based on model
+            var model = "anthropic/claude-sonnet-4";
+            var temperature = 0.15;
+            if (model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+            {
+                temperature = 1.0;
+            }
+            
             var agentConfig = new Saturn.Agents.Core.AgentConfiguration
             {
                 Name = "Assistant",
@@ -183,8 +191,8 @@ Operating Principles
    - Avoid redundant work - if a sub-agent did it, it's done.
    - Efficiency means trusting delegation, not redoing completed tasks."),
                 Client = client,
-                Model = "anthropic/claude-sonnet-4",
-                Temperature = 0.15,
+                Model = model,
+                Temperature = temperature,
                 MaxTokens = 4096,
                 TopP = 0.25,
                 MaintainHistory = true,
@@ -207,6 +215,11 @@ Operating Principles
             {
                 await ConfigurationManager.SaveConfigurationAsync(
                     ConfigurationManager.FromAgentConfiguration(agentConfig));
+            }
+            
+            if (agentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+            {
+                agentConfig.Temperature = 1.0;
             }
 
             return (new Agent(agentConfig), client);
