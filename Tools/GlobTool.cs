@@ -108,6 +108,13 @@ Note: Use this before grep when you need to find files first, then search within
             return new[] { "pattern" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var pattern = GetParameter<string>(parameters, "pattern", "");
+            var displayPattern = TruncateString(pattern, 40);
+            return $"Finding files matching '{displayPattern}'";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var pattern = GetParameter<string>(parameters, "pattern");

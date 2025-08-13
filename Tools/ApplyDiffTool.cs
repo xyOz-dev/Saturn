@@ -76,6 +76,45 @@ Important: The context line (@@ ... @@) must be unique in the file!";
             return new[] { "patchText" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var patchText = GetParameter<string>(parameters, "patchText", "");
+            
+            var lines = patchText.Split('\n');
+            var files = new HashSet<string>();
+            int additions = 0;
+            int deletions = 0;
+            
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("*** Add File:") || line.StartsWith("*** Update File:") || line.StartsWith("*** Delete File:"))
+                {
+                    var parts = line.Split(':');
+                    if (parts.Length > 1)
+                    {
+                        var filename = parts[1].Trim();
+                        files.Add(System.IO.Path.GetFileName(filename));
+                    }
+                }
+                else if (line.StartsWith("+") && !line.StartsWith("+++"))
+                {
+                    additions++;
+                }
+                else if (line.StartsWith("-") && !line.StartsWith("---"))
+                {
+                    deletions++;
+                }
+            }
+            
+            var filesList = files.Count > 0 ? string.Join(", ", files.Take(3)) : "files";
+            if (files.Count > 3)
+            {
+                filesList += $" +{files.Count - 3}";
+            }
+            
+            return $"Patching {filesList} ({additions}+, {deletions}-)";
+        }
+        
         private const long MaxFileSize = 100 * 1024 * 1024;
         private static readonly HashSet<string> FileLocks = new HashSet<string>();
         

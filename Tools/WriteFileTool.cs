@@ -76,6 +76,16 @@ Safety features:
             return new[] { "path", "content" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var path = GetParameter<string>(parameters, "path", "");
+            var content = GetParameter<string>(parameters, "content", "");
+            var filename = string.IsNullOrEmpty(path) ? "unknown" : System.IO.Path.GetFileName(path);
+            
+            var contentBytes = Encoding.UTF8.GetByteCount(content);
+            return $"Writing to {filename} ({FormatByteSize(contentBytes)})";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var path = GetParameter<string>(parameters, "path");

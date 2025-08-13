@@ -83,6 +83,15 @@ Examples:
             return new[] { "pattern", "path" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var pattern = GetParameter<string>(parameters, "pattern", "");
+            var path = GetParameter<string>(parameters, "path", "");
+            var displayPattern = TruncateString(pattern, 30);
+            var displayPath = FormatPath(path);
+            return $"Searching for '{displayPattern}' in {displayPath}";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var pattern = GetParameter<string>(parameters, "pattern");

@@ -124,6 +124,14 @@ Examples
             return new string[] { };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var path = GetParameter<string>(parameters, "path", Directory.GetCurrentDirectory());
+            var recursive = GetParameter<bool>(parameters, "recursive", false);
+            var displayPath = FormatPath(path);
+            return $"Listing {displayPath} (recursive: {recursive})";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             try

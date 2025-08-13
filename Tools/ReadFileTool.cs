@@ -84,6 +84,32 @@ Examples:
             return new[] { "path" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var path = GetParameter<string>(parameters, "path", "");
+            var startLine = GetParameter<int?>(parameters, "startLine", null);
+            var endLine = GetParameter<int?>(parameters, "endLine", null);
+            
+            var filename = string.IsNullOrEmpty(path) ? "unknown" : System.IO.Path.GetFileName(path);
+            
+            if (startLine.HasValue && endLine.HasValue)
+            {
+                return $"Reading {filename} [{startLine}-{endLine}]";
+            }
+            else if (startLine.HasValue)
+            {
+                return $"Reading {filename} [from line {startLine}]";
+            }
+            else if (endLine.HasValue)
+            {
+                return $"Reading {filename} [up to line {endLine}]";
+            }
+            else
+            {
+                return $"Reading {filename} (entire file)";
+            }
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var path = GetParameter<string>(parameters, "path");

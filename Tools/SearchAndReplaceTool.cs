@@ -114,6 +114,19 @@ Safety features:
             return new[] { "searchPattern", "replacement", "filePattern" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var searchPattern = GetParameter<string>(parameters, "searchPattern", "");
+            var replacement = GetParameter<string>(parameters, "replacement", "");
+            var filePattern = GetParameter<string>(parameters, "filePattern", "");
+            
+            var oldText = TruncateString(searchPattern, 20);
+            var newText = TruncateString(replacement, 20);
+            var files = TruncateString(filePattern, 20);
+            
+            return $"Replacing '{oldText}' → '{newText}' in {files}";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var searchPattern = GetParameter<string>(parameters, "searchPattern");

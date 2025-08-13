@@ -70,6 +70,12 @@ namespace Saturn.Tools
         {
             return new[] { "command" };
         }
+        
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var command = GetParameter<string>(parameters, "command", "");
+            return $"$ {TruncateString(command, 50)}";
+        }
 
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> arguments)
         {

@@ -74,6 +74,13 @@ Safety features:
             return new[] { "path" };
         }
         
+        public override string GetDisplaySummary(Dictionary<string, object> parameters)
+        {
+            var path = GetParameter<string>(parameters, "path", "");
+            var filename = string.IsNullOrEmpty(path) ? "unknown" : System.IO.Path.GetFileName(path);
+            return $"Deleting {filename}";
+        }
+        
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var path = GetParameter<string>(parameters, "path");
