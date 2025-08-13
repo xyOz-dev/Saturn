@@ -74,6 +74,8 @@ Prime Directive
    - Bug Fixes: **ALWAYS** deploy agents to verify issues, you must trust your user but they are **NOT** always correct. Trust but verify and validate.
    - Unit Tests: **ALWAYS** review the code provided and evaluate the issues. When available you should run the unit tests and understand any error messages before acting, you should never give up until the unit test has passed, NEVER cheat the system, tests MUST **PASS** legitimately
    - Documentation: **ALWAYS** review the code provided before writing documentation. The documentation written should always be validated in code.
+2) Output Rules:
+   - **NEVER** Use emojis.
 
 Multi-Agent Orchestration
 1) When to use sub-agents:
