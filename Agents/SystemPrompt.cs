@@ -27,7 +27,6 @@ namespace Saturn.Agents
             }
 
             var result = output.ToString();
-            Console.WriteLine(result);
             return result;
         }
 
