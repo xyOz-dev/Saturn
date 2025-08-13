@@ -46,12 +46,12 @@ function Write-Header {
 
 function Write-Success {
     param([string]$Message)
-    Write-Host "✓ $Message" -ForegroundColor Green
+    Write-Host "[OK] $Message" -ForegroundColor Green
 }
 
 function Write-Error {
     param([string]$Message)
-    Write-Host "✗ $Message" -ForegroundColor Red
+    Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
 try {
@@ -148,7 +148,7 @@ try {
         Write-Host "  dotnet tool install --global --add-source ./nupkg Saturn.CLI"
         Write-Host ""
         Write-Host "To publish to NuGet.org:" -ForegroundColor Yellow
-        Write-Host "  dotnet nuget push ./Saturn/nupkg/*.nupkg -k YOUR_API_KEY -s https://api.nuget.org/v3/index.json"
+        Write-Host "  dotnet nuget push ./nupkg/*.nupkg -k YOUR_API_KEY -s https://api.nuget.org/v3/index.json"
     }
     
 } catch {
