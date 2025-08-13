@@ -358,36 +358,8 @@ namespace Saturn.UI
                     currentText = "";
                 }
                 
-                var newEntry = $"[{timestamp}] {toolName}\n";
-                
-                try
-                {
-                    var jsonDoc = JsonDocument.Parse(arguments);
-                    using var stream = new System.IO.MemoryStream();
-                    using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-                    jsonDoc.WriteTo(writer);
-                    writer.Flush();
-                    var prettyJson = Encoding.UTF8.GetString(stream.ToArray());
-                    
-                    var lines = prettyJson.Split('\n');
-                    foreach (var line in lines.Take(10))
-                    {
-                        newEntry += $"  {line}\n";
-                    }
-                    if (lines.Length > 10)
-                    {
-                        newEntry += $"  ... ({lines.Length - 10} more lines)\n";
-                    }
-                }
-                catch
-                {
-                    newEntry += $"  Args: {arguments.Substring(0, Math.Min(arguments.Length, 100))}\n";
-                    if (arguments.Length > 100)
-                    {
-                        newEntry += $"  ... ({arguments.Length - 100} more chars)\n";
-                    }
-                }
-                
+                var summary = GetToolSummary(toolName, arguments);
+                var newEntry = $"[{timestamp}] {toolName}: {summary}\n";
                 newEntry += "───────────────\n";
                 
                 toolCallsView.Text = newEntry + currentText;
@@ -397,6 +369,69 @@ namespace Saturn.UI
                     toolCallsView.Text = toolCallsView.Text.Substring(0, 4000);
                 }
             });
+        }
+        
+        private string GetToolSummary(string toolName, string arguments)
+        {
+            try
+            {
+                var registry = Tools.Core.ToolRegistry.Instance;
+                var tool = registry.GetTool(toolName);
+                if (tool != null)
+                {
+                    var jsonDoc = JsonDocument.Parse(arguments);
+                    var parameters = new Dictionary<string, object>();
+                    
+                    foreach (var property in jsonDoc.RootElement.EnumerateObject())
+                    {
+                        parameters[property.Name] = GetJsonValue(property.Value);
+                    }
+                    
+                    return tool.GetDisplaySummary(parameters);
+                }
+            }
+            catch
+            {
+            }
+            
+            return toolName;
+        }
+        
+        private object GetJsonValue(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.String:
+                    return element.GetString();
+                case JsonValueKind.Number:
+                    if (element.TryGetInt32(out var intValue))
+                        return intValue;
+                    if (element.TryGetInt64(out var longValue))
+                        return longValue;
+                    return element.GetDouble();
+                case JsonValueKind.True:
+                    return true;
+                case JsonValueKind.False:
+                    return false;
+                case JsonValueKind.Null:
+                    return null;
+                case JsonValueKind.Array:
+                    var list = new List<object>();
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        list.Add(GetJsonValue(item));
+                    }
+                    return list;
+                case JsonValueKind.Object:
+                    var dict = new Dictionary<string, object>();
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        dict[property.Name] = GetJsonValue(property.Value);
+                    }
+                    return dict;
+                default:
+                    return element.ToString();
+            }
         }
 
         public void UpdateAgentStatus(string status, int activeTasks = 0, List<string>? subAgents = null)
