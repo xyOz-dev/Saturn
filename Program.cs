@@ -1,6 +1,7 @@
 ﻿using Saturn.Agents;
 using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent;
+using Saturn.Configuration;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.UI;
@@ -55,6 +56,8 @@ namespace Saturn
             
             AgentManager.Instance.Initialize(client);
 
+            var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
+            
             var agentConfig = new Saturn.Agents.Core.AgentConfiguration
             {
                 Name = "Assistant",
@@ -178,6 +181,16 @@ Operating Principles
                     "wait_for_agent", "get_task_result", "execute_command"
                 },
             };
+
+            if (persistedConfig != null)
+            {
+                ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
+            }
+            else
+            {
+                await ConfigurationManager.SaveConfigurationAsync(
+                    ConfigurationManager.FromAgentConfiguration(agentConfig));
+            }
 
             return (new Agent(agentConfig), client);
         }

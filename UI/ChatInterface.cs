@@ -10,6 +10,7 @@ using Terminal.Gui;
 using Saturn.Agents;
 using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent;
+using Saturn.Configuration;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Models;
@@ -1012,6 +1013,9 @@ namespace Saturn.UI
                     EnableStreaming = currentConfig.EnableStreaming,
                     ToolNames = agent.Configuration.ToolNames
                 };
+
+                await ConfigurationManager.SaveConfigurationAsync(
+                    ConfigurationManager.FromAgentConfiguration(newConfig));
 
                 agent = new Agent(newConfig);
                 agent.OnToolCall += (toolName, args) => UpdateToolCall(toolName, args);
