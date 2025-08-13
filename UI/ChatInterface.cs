@@ -147,11 +147,33 @@ namespace Saturn.UI
                     {
                         if (chatView != null)
                         {
+                            if (isProcessing && cancellationTokenSource != null)
+                            {
+                                cancellationTokenSource.Cancel();
+                                cancellationTokenSource?.Dispose();
+                                cancellationTokenSource = null;
+                            }
+                            isProcessing = false;
+                            
                             chatView.Text = GetWelcomeMessage();
                             chatView.CursorPosition = new Point(0, 0);
+                            
+                            inputField.Text = "";
+                            inputField.ReadOnly = false;
+                            
+                            sendButton.Text = "Send";
+                            sendButton.Enabled = true;
+                            
                             agent?.ClearHistory();
+                            
                             toolCallsView.Text = "No tool calls yet...\n";
+                            
+                            AgentManager.Instance.TerminateAllAgents();
+                            
                             UpdateAgentStatus("Ready");
+                            
+                            inputField.SetFocus();
+                            Application.Refresh();
                         }
                     }),
                     new MenuItem("_Quit", "", () =>
@@ -436,6 +458,21 @@ namespace Saturn.UI
                 if (isProcessing && cancellationTokenSource != null)
                 {
                     cancellationTokenSource.Cancel();
+                    
+                    AgentManager.Instance.TerminateAllAgents();
+                    
+                    sendButton.Text = "Send";
+                    sendButton.Enabled = true;
+                    inputField.ReadOnly = false;
+                    isProcessing = false;
+                    
+                    UpdateAgentStatus("Cancelled");
+                    
+                    chatView.Text += " [Cancelled]\n\n";
+                    ScrollChatToBottom();
+                    
+                    inputField.SetFocus();
+                    Application.Refresh();
                 }
                 else
                 {
