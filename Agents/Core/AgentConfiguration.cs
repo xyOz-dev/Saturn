@@ -8,7 +8,7 @@ namespace Saturn.Agents.Core
         public required string Name { get; set; }
         public required string SystemPrompt { get; set; }
         public required OpenRouterClient Client { get; set; }
-        public string Model { get; set; } = "openai/gpt-4o";
+        public string Model { get; set; } = "openai/gpt-5";
         public double? Temperature { get; set; }
         public int? MaxTokens { get; set; }
         public double? TopP { get; set; }
