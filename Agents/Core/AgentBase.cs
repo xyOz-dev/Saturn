@@ -165,6 +165,12 @@ namespace Saturn.Agents.Core
 
             while (continueProcessing)
             {
+                if (!ValidateToolMessageSequence(currentMessages))
+                {
+                    Console.WriteLine("Warning: Invalid tool message sequence detected. Cleaning up messages.");
+                    currentMessages = CleanupInvalidToolMessages(currentMessages);
+                }
+                
                 var request = new ChatCompletionRequest
                 {
                     Model = Configuration.Model,
@@ -191,9 +197,22 @@ namespace Saturn.Agents.Core
 
                 if (responseMessage?.ToolCalls != null && responseMessage.ToolCalls.Length > 0)
                 {
-                    var toolResults = await HandleToolCalls(responseMessage.ToolCalls);
+                    var validToolCalls = responseMessage.ToolCalls
+                        .Where(tc => !string.IsNullOrEmpty(tc.Id) && tc.Function != null && !string.IsNullOrEmpty(tc.Function.Name))
+                        .ToArray();
+                    
+                    if (validToolCalls.Length == 0)
+                    {
+                        continueProcessing = false;
+                        continue;
+                    }
+                    
+                    var toolResults = await HandleToolCalls(validToolCalls);
 
-                    var assistantToolCalls = responseMessage.ToolCalls
+                    // Only include tool calls that were actually processed
+                    var processedToolIds = new HashSet<string>(toolResults.Select(r => r.toolId));
+                    var assistantToolCalls = validToolCalls
+                        .Where(tc => processedToolIds.Contains(tc.Id))
                         .Select(tc => new ToolCallRequest
                         {
                             Id = tc.Id,
@@ -224,6 +243,11 @@ namespace Saturn.Agents.Core
 
                     foreach (var (toolName, toolId, result) in toolResults)
                     {
+                        if (!assistantToolCalls.Any(tc => tc.Id == toolId))
+                        {
+                            continue;
+                        }
+                        
                         var toolMessage = new Message
                         {
                             Role = "tool",
@@ -262,9 +286,9 @@ namespace Saturn.Agents.Core
 
             foreach (var toolCall in toolCalls)
             {
-                if (string.IsNullOrEmpty(toolCall.Id))
+                if (string.IsNullOrEmpty(toolCall.Id) || toolCall.Function == null || string.IsNullOrEmpty(toolCall.Function.Name))
                 {
-                    continue; // Skip tool calls without IDs
+                    continue; // Skip invalid tool calls
                 }
                 
                 if (toolCall.Type == "function" && toolCall.Function != null)
@@ -393,6 +417,12 @@ namespace Saturn.Agents.Core
 
             while (continueProcessing && !cancellationToken.IsCancellationRequested)
             {
+                if (!ValidateToolMessageSequence(currentMessages))
+                {
+                    Console.WriteLine("Warning: Invalid tool message sequence detected. Cleaning up messages.");
+                    currentMessages = CleanupInvalidToolMessages(currentMessages);
+                }
+                
                 var request = new ChatCompletionRequest
                 {
                     Model = Configuration.Model,
@@ -539,8 +569,9 @@ namespace Saturn.Agents.Core
                     
                     var toolResults = await HandleToolCalls(validatedToolCalls.ToArray());
 
-                    // Precede tool_result messages with an assistant message that includes tool_calls
+                    var processedToolIds = new HashSet<string>(toolResults.Select(r => r.toolId));
                     var streamedToolCalls = validatedToolCalls
+                        .Where(tc => processedToolIds.Contains(tc.Id))
                         .Select(tc => new ToolCallRequest
                         {
                             Id = tc.Id,
@@ -571,6 +602,11 @@ namespace Saturn.Agents.Core
 
                     foreach (var (toolName, toolId, result) in toolResults)
                     {
+                        if (!streamedToolCalls.Any(tc => tc.Id == toolId))
+                        {
+                            continue;
+                        }
+                        
                         var toolMessage = new Message
                         {
                             Role = "tool",
@@ -645,6 +681,105 @@ namespace Saturn.Agents.Core
             }
             
             return validatedCalls;
+        }
+        
+        /// <summary>
+        /// Validates message sequence to ensure tool use/result pairing for Bedrock compatibility
+        /// </summary>
+        protected bool ValidateToolMessageSequence(List<Message> messages)
+        {
+            var toolUseIds = new HashSet<string>();
+            var toolResultIds = new HashSet<string>();
+            
+            foreach (var message in messages)
+            {
+                if (message.Role == "assistant" && message.ToolCalls != null)
+                {
+                    foreach (var toolCall in message.ToolCalls)
+                    {
+                        if (!string.IsNullOrEmpty(toolCall.Id))
+                        {
+                            toolUseIds.Add(toolCall.Id);
+                        }
+                    }
+                }
+                else if (message.Role == "tool" && !string.IsNullOrEmpty(message.ToolCallId))
+                {
+                    toolResultIds.Add(message.ToolCallId);
+                }
+            }
+            
+            foreach (var resultId in toolResultIds)
+            {
+                if (!toolUseIds.Contains(resultId))
+                {
+                    Console.WriteLine($"Warning: Tool result with ID {resultId} has no corresponding tool use");
+                    return false;
+                }
+            }
+            
+            return true;
+        }
+        
+        /// <summary>
+        /// Cleans up invalid tool messages to ensure proper pairing for Bedrock compatibility
+        /// </summary>
+        protected List<Message> CleanupInvalidToolMessages(List<Message> messages)
+        {
+            var cleanedMessages = new List<Message>();
+            var validToolUseIds = new HashSet<string>();
+            
+            foreach (var message in messages)
+            {
+                if (message.Role == "assistant" && message.ToolCalls != null)
+                {
+                    foreach (var toolCall in message.ToolCalls)
+                    {
+                        if (!string.IsNullOrEmpty(toolCall.Id))
+                        {
+                            validToolUseIds.Add(toolCall.Id);
+                        }
+                    }
+                }
+            }
+            
+            foreach (var message in messages)
+            {
+                if (message.Role == "tool")
+                {
+                    if (!string.IsNullOrEmpty(message.ToolCallId) && validToolUseIds.Contains(message.ToolCallId))
+                    {
+                        cleanedMessages.Add(message);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Removing orphaned tool result message with ID: {message.ToolCallId}");
+                    }
+                }
+                else if (message.Role == "assistant" && message.ToolCalls != null)
+                {
+                    var validToolCalls = message.ToolCalls
+                        .Where(tc => !string.IsNullOrEmpty(tc.Id) && tc.Function != null && !string.IsNullOrEmpty(tc.Function?.Name))
+                        .ToArray();
+                    
+                    if (validToolCalls.Length > 0)
+                    {
+                        message.ToolCalls = validToolCalls;
+                        cleanedMessages.Add(message);
+                    }
+                    else if (message.Content.ValueKind != JsonValueKind.Null)
+                    {
+                        message.ToolCalls = null;
+                        cleanedMessages.Add(message);
+                    }
+                }
+                else
+                {
+                    cleanedMessages.Add(message);
+                }
+            }
+            
+            return cleanedMessages;
         }
 
     }
