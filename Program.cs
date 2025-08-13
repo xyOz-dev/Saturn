@@ -75,7 +75,6 @@ namespace Saturn
 
             var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
             
-            // Determine temperature based on model
             var model = "anthropic/claude-sonnet-4";
             var temperature = 0.15;
             if (model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))

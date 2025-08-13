@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -57,6 +58,11 @@ namespace Saturn.Core
 
             try
             {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    HandleWindowsNulFile(path);
+                }
+
                 var initResult = await ExecuteGitCommand("init", path);
                 if (!initResult.success)
                 {
@@ -82,6 +88,34 @@ namespace Saturn.Core
             catch (Exception ex)
             {
                 return (false, $"Failed to initialize repository: {ex.Message}");
+            }
+        }
+
+        private static void HandleWindowsNulFile(string path)
+        {
+            try
+            {
+                var nulVariations = new[] { "nul", "NUL", "Nul" };
+                foreach (var nulName in nulVariations)
+                {
+                    var nulPath = Path.Combine(path, nulName);
+                    try
+                    {
+                        if (File.Exists(nulPath))
+                        {
+                            var safeName = $"{nulName}.renamed";
+                            File.Move(nulPath, Path.Combine(path, safeName));
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore errors - the file might not exist or might be a device
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore any errors in handling nul files
             }
         }
 
@@ -132,6 +166,10 @@ namespace Saturn.Core
             gitignoreContent.AppendLine("# OS files");
             gitignoreContent.AppendLine(".DS_Store");
             gitignoreContent.AppendLine("Thumbs.db");
+            gitignoreContent.AppendLine("");
+            gitignoreContent.AppendLine("# Windows special files");
+            gitignoreContent.AppendLine("nul");
+            gitignoreContent.AppendLine("NUL");
 
             await File.WriteAllTextAsync(gitignorePath, gitignoreContent.ToString());
             return true;
@@ -139,10 +177,17 @@ namespace Saturn.Core
 
         private static async Task<(bool success, string output)> CreateInitialCommit(string path)
         {
+            await ExecuteGitCommand("rm --cached nul", path);
+            await ExecuteGitCommand("rm --cached NUL", path);
+            
             var addResult = await ExecuteGitCommand("add .", path);
             if (!addResult.success)
             {
-                return addResult;
+                var selectiveAddResult = await ExecuteGitCommand("add --all -- ':!nul' ':!NUL'", path);
+                if (!selectiveAddResult.success)
+                {
+                    return addResult;
+                }
             }
 
             return await ExecuteGitCommand("commit -m \"Initial commit - Saturn workspace initialized\"", path);
