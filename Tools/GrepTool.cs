@@ -144,12 +144,13 @@ Examples:
             return FormatResults(results);
         }
         
-        private void SearchFile(string filePath, Regex regex, List<GrepResult> results, int maxResults)
+        private void SearchFile(string filePath, Regex regex, List<GrepResult> results, int remainingResults)
         {
             try
             {
                 var lines = File.ReadAllLines(filePath);
-                for (int i = 0; i < lines.Length && results.Count < maxResults; i++)
+                var initialCount = results.Count;
+                for (int i = 0; i < lines.Length && (results.Count - initialCount) < remainingResults; i++)
                 {
                     var matches = regex.Matches(lines[i]);
                     if (matches.Count > 0)
