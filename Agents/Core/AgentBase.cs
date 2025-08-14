@@ -85,7 +85,11 @@ namespace Saturn.Agents.Core
         {
             if (Configuration.MaintainHistory && !ChatHistory.Any(m => m.Role == "system"))
             {
-                ChatHistory.Add(new Message { Role = "system", Content = JString(Configuration.SystemPrompt) });
+                ChatHistory.Add(new Message 
+                { 
+                    Role = "system", 
+                    Content = CreateCachedContent(Configuration.SystemPrompt)
+                });
             }
         }
 
@@ -102,7 +106,11 @@ namespace Saturn.Agents.Core
 
             return new List<Message>
             {
-                new Message { Role = "system", Content = JString(Configuration.SystemPrompt) },
+                new Message 
+                { 
+                    Role = "system", 
+                    Content = CreateCachedContent(Configuration.SystemPrompt)
+                },
                 userMessage
             };
         }
@@ -242,6 +250,7 @@ namespace Saturn.Agents.Core
                         currentMessages = new List<Message>(currentMessages) { assistantMessage };
                     }
 
+                    var toolMessages = new List<Message>();
                     foreach (var (toolName, toolId, result) in toolResults)
                     {
                         if (!assistantToolCalls.Any(tc => tc.Id == toolId))
@@ -256,7 +265,14 @@ namespace Saturn.Agents.Core
                             Content = JString(result.FormattedOutput),
                             ToolCallId = toolId
                         };
+                        
+                        toolMessages.Add(toolMessage);
+                    }
 
+                    ApplyCacheControlToToolMessages(toolMessages);
+
+                    foreach (var toolMessage in toolMessages)
+                    {
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
@@ -602,6 +618,7 @@ namespace Saturn.Agents.Core
                         currentMessages = new List<Message>(currentMessages) { assistantMessage };
                     }
 
+                    var toolMessages = new List<Message>();
                     foreach (var (toolName, toolId, result) in toolResults)
                     {
                         if (!streamedToolCalls.Any(tc => tc.Id == toolId))
@@ -616,7 +633,14 @@ namespace Saturn.Agents.Core
                             Content = JString(result.FormattedOutput),
                             ToolCallId = toolId
                         };
+                        
+                        toolMessages.Add(toolMessage);
+                    }
 
+                    ApplyCacheControlToToolMessages(toolMessages);
+
+                    foreach (var toolMessage in toolMessages)
+                    {
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
@@ -782,6 +806,109 @@ namespace Saturn.Agents.Core
             }
             
             return cleanedMessages;
+        }
+
+        private void ApplyCacheControlToToolMessages(List<Message> toolMessages)
+        {
+            if (!Configuration.Model.StartsWith("anthropic", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var messagesToCache = toolMessages
+                .Select((msg, index) => new { Message = msg, Index = index, Length = GetContentLength(msg) })
+                .OrderByDescending(x => x.Length)
+                .Take(3)
+                .Select(x => x.Index)
+                .ToHashSet();
+
+            for (int i = 0; i < toolMessages.Count; i++)
+            {
+                if (messagesToCache.Contains(i))
+                {
+                    var content = GetContentString(toolMessages[i]);
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        toolMessages[i].Content = CreateCachedContent(content);
+                    }
+                }
+            }
+        }
+
+        private int GetContentLength(Message message)
+        {
+            try
+            {
+                if (message.Content.ValueKind == JsonValueKind.String)
+                {
+                    return message.Content.GetString()?.Length ?? 0;
+                }
+                else if (message.Content.ValueKind == JsonValueKind.Array)
+                {
+                    int totalLength = 0;
+                    foreach (var element in message.Content.EnumerateArray())
+                    {
+                        if (element.TryGetProperty("text", out var textProp))
+                        {
+                            totalLength += textProp.GetString()?.Length ?? 0;
+                        }
+                    }
+                    return totalLength;
+                }
+                return 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private string? GetContentString(Message message)
+        {
+            try
+            {
+                if (message.Content.ValueKind == JsonValueKind.String)
+                {
+                    return message.Content.GetString();
+                }
+                else if (message.Content.ValueKind == JsonValueKind.Array)
+                {
+                    var texts = new List<string>();
+                    foreach (var element in message.Content.EnumerateArray())
+                    {
+                        if (element.TryGetProperty("text", out var textProp))
+                        {
+                            var text = textProp.GetString();
+                            if (!string.IsNullOrEmpty(text))
+                            {
+                                texts.Add(text);
+                            }
+                        }
+                    }
+                    return string.Join("", texts);
+                }
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private JsonElement CreateCachedContent(string text)
+        {
+            var contentParts = new[]
+            {
+                new TextContentPart
+                {
+                    Type = "text",
+                    Text = text,
+                    CacheControl = new CacheControl { Type = "ephemeral" }
+                }
+            };
+
+            var json = JsonSerializer.Serialize(contentParts);
+            return JsonDocument.Parse(json).RootElement;
         }
 
     }
