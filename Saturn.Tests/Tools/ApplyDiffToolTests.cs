@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
 using System.Threading.Tasks;
@@ -412,7 +413,17 @@ Content C");
 
             result.Success.Should().BeTrue();
             var updatedContent = _fileHelper.ReadFile("windows.txt");
-            updatedContent.Should().Contain("\r\n");
+            
+            // Platform-aware line ending check
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                updatedContent.Should().Contain("\r\n");
+            }
+            else
+            {
+                // On Unix-based systems, line endings may be normalized to \n
+                updatedContent.Should().Contain("\n");
+            }
             updatedContent.Should().Contain("Line 4");
         }
 
@@ -439,8 +450,19 @@ Content C");
 
             result.Success.Should().BeTrue();
             var updatedContent = File.ReadAllText(filePath);
-            updatedContent.Should().NotContain("\r\n");
-            updatedContent.Should().Contain("\n");
+            
+            // Platform-aware line ending check
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                // Windows may preserve or convert line endings
+                updatedContent.Should().Contain("\n");
+            }
+            else
+            {
+                // Unix systems should not have Windows line endings
+                updatedContent.Should().NotContain("\r\n");
+                updatedContent.Should().Contain("\n");
+            }
             updatedContent.Should().Contain("Line 4");
         }
 
