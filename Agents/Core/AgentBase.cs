@@ -167,7 +167,7 @@ namespace Saturn.Agents.Core
             {
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
-                    Console.WriteLine("Warning: Invalid tool message sequence detected. Cleaning up messages.");
+                    //Console.WriteLine("Warning: Invalid tool message sequence detected. Cleaning up messages.");
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
                 
