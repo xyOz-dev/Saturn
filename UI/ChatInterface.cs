@@ -401,7 +401,7 @@ namespace Saturn.UI
             switch (element.ValueKind)
             {
                 case JsonValueKind.String:
-                    return element.GetString();
+                    return element.GetString() ?? string.Empty;
                 case JsonValueKind.Number:
                     if (element.TryGetInt32(out var intValue))
                         return intValue;

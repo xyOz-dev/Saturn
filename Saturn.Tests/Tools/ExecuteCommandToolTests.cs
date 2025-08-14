@@ -269,24 +269,22 @@ namespace Saturn.Tests.Tools
         }
 
         [Fact]
-        public void GetCommandHistory_TracksExecutedCommands()
+        public async Task GetCommandHistory_TracksExecutedCommands()
         {
             // Arrange
             var config = new CommandExecutorConfig { EnableHistory = true };
             var toolWithHistory = new ExecuteCommandTool(config);
 
             // Act
-            var task1 = toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
+            await toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
             { 
                 { "command", "echo test1" } 
             });
-            task1.Wait();
 
-            var task2 = toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
+            await toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
             { 
                 { "command", "echo test2" } 
             });
-            task2.Wait();
 
             var history = toolWithHistory.GetCommandHistory();
 
@@ -297,17 +295,16 @@ namespace Saturn.Tests.Tools
         }
 
         [Fact]
-        public void ClearHistory_RemovesAllHistory()
+        public async Task ClearHistory_RemovesAllHistory()
         {
             // Arrange
             var config = new CommandExecutorConfig { EnableHistory = true };
             var toolWithHistory = new ExecuteCommandTool(config);
             
-            var task = toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
+            await toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
             { 
                 { "command", "echo test" } 
             });
-            task.Wait();
 
             // Act
             toolWithHistory.ClearHistory();
@@ -318,7 +315,7 @@ namespace Saturn.Tests.Tools
         }
 
         [Fact]
-        public void GetCommandHistory_RespectsMaxHistorySize()
+        public async Task GetCommandHistory_RespectsMaxHistorySize()
         {
             // Arrange
             var config = new CommandExecutorConfig 
@@ -331,11 +328,10 @@ namespace Saturn.Tests.Tools
             // Act
             for (int i = 0; i < 5; i++)
             {
-                var task = toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
+                await toolWithHistory.ExecuteAsync(new Dictionary<string, object> 
                 { 
                     { "command", $"echo test{i}" } 
                 });
-                task.Wait();
             }
 
             var history = toolWithHistory.GetCommandHistory();
