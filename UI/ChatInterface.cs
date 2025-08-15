@@ -11,9 +11,12 @@ using Saturn.Agents;
 using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent;
 using Saturn.Configuration;
+using Saturn.Data;
+using Saturn.Data.Models;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.UI.Dialogs;
 
 namespace Saturn.UI
 {
@@ -144,6 +147,7 @@ namespace Saturn.UI
             {
                 new MenuBarItem("_Options", new MenuItem[]
                 {
+                    new MenuItem("_Load Chat...", "", async () => await ShowLoadChatDialog()),
                     new MenuItem("_Clear Chat", "", () =>
                     {
                         if (chatView != null)
@@ -177,6 +181,7 @@ namespace Saturn.UI
                             Application.Refresh();
                         }
                     }),
+                    null,
                     new MenuItem("_Quit", "", () =>
                     {
                         Application.RequestStop();
@@ -575,6 +580,16 @@ namespace Saturn.UI
 
             try
             {
+                if (agent.CurrentSessionId == null)
+                {
+                    await agent.InitializeSessionAsync("main");
+                    
+                    if (agent.CurrentSessionId != null)
+                    {
+                        AgentManager.Instance.SetParentSessionId(agent.CurrentSessionId);
+                    }
+                }
+                
                 chatView.Text += $"You: {message}\n";
                 inputField.Text = "";
                 
@@ -1109,6 +1124,164 @@ namespace Saturn.UI
             catch (Exception ex)
             {
                 MessageBox.ErrorQuery("Configuration Error", $"Failed to reconfigure agent: {ex.Message}", "OK");
+            }
+        }
+
+        private async Task ShowLoadChatDialog()
+        {
+            var dialog = new LoadChatDialog();
+            Application.Run(dialog);
+            
+            if (!string.IsNullOrEmpty(dialog.SelectedSessionId))
+            {
+                await LoadChatSession(dialog.SelectedSessionId);
+            }
+        }
+
+        private async Task LoadChatSession(string sessionId)
+        {
+            try
+            {
+                var repository = new ChatHistoryRepository();
+                var session = await repository.GetSessionAsync(sessionId);
+                
+                if (session == null)
+                {
+                    MessageBox.ErrorQuery("Error", "Session not found", "OK");
+                    return;
+                }
+
+                var messages = await repository.GetMessagesAsync(sessionId);
+                var toolCalls = await repository.GetToolCallsAsync(sessionId);
+                
+                agent.ClearHistory();
+                chatView.Text = "";
+                toolCallsView.Text = "";
+                
+                agent.CurrentSessionId = sessionId;
+                
+                if (!string.IsNullOrEmpty(session.SystemPrompt))
+                {
+                    agent.ChatHistory.Add(new Message
+                    {
+                        Role = "system",
+                        Content = JsonDocument.Parse(JsonSerializer.Serialize(session.SystemPrompt)).RootElement
+                    });
+                }
+                
+                var chatContent = new StringBuilder();
+                chatContent.AppendLine($"=== Loaded Chat: {session.Title} ===");
+                chatContent.AppendLine($"Model: {session.Model} | Created: {session.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}");
+                chatContent.AppendLine();
+                
+                foreach (var message in messages)
+                {
+                    var timestamp = message.Timestamp.ToLocalTime().ToString("HH:mm:ss");
+                    
+                    if (message.Role == "system")
+                    {
+                        chatContent.AppendLine($"[System Prompt]\n{message.Content}\n");
+                        continue;
+                    }
+                    else if (message.Role == "user")
+                    {
+                        chatContent.AppendLine($"[{timestamp}] You:\n{message.Content}\n");
+                    }
+                    else if (message.Role == "assistant")
+                    {
+                        if (!string.IsNullOrEmpty(message.ToolCallsJson))
+                        {
+                            chatContent.AppendLine($"[{timestamp}] Assistant: [Making tool calls...]\n");
+                        }
+                        else if (message.Content != "null" && !string.IsNullOrEmpty(message.Content))
+                        {
+                            var renderedContent = markdownRenderer.RenderToTerminal(message.Content);
+                            chatContent.AppendLine($"[{timestamp}] Assistant:\n{renderedContent}\n");
+                        }
+                    }
+                    else if (message.Role == "tool")
+                    {
+                        var toolResult = message.Content.Length > 500 
+                            ? message.Content.Substring(0, 500) + "...\n[Output truncated]" 
+                            : message.Content;
+                        chatContent.AppendLine($"[{timestamp}] Tool Result ({message.Name}):\n{toolResult}\n");
+                    }
+                    
+                    Message openRouterMessage;
+                    try
+                    {
+                        var jsonDoc = JsonDocument.Parse(message.Content);
+                        openRouterMessage = new Message
+                        {
+                            Role = message.Role,
+                            Content = jsonDoc.RootElement,
+                            Name = message.Name,
+                            ToolCallId = message.ToolCallId
+                        };
+                    }
+                    catch
+                    {
+                        openRouterMessage = new Message
+                        {
+                            Role = message.Role,
+                            Content = JsonDocument.Parse(JsonSerializer.Serialize(message.Content)).RootElement,
+                            Name = message.Name,
+                            ToolCallId = message.ToolCallId
+                        };
+                    }
+                    
+                    if (!string.IsNullOrEmpty(message.ToolCallsJson))
+                    {
+                        try
+                        {
+                            openRouterMessage.ToolCalls = JsonSerializer.Deserialize<ToolCallRequest[]>(message.ToolCallsJson);
+                        }
+                        catch { }
+                    }
+                    
+                    agent.ChatHistory.Add(openRouterMessage);
+                }
+                
+                if (toolCalls.Any())
+                {
+                    var toolCallsContent = new StringBuilder();
+                    toolCallsContent.AppendLine("=== Tool Call History ===");
+                    foreach (var toolCall in toolCalls)
+                    {
+                        var timestamp = toolCall.Timestamp.ToLocalTime().ToString("HH:mm:ss");
+                        toolCallsContent.AppendLine($"[{timestamp}] {toolCall.ToolName}");
+                        if (!string.IsNullOrEmpty(toolCall.AgentName))
+                        {
+                            toolCallsContent.AppendLine($"  Agent: {toolCall.AgentName}");
+                        }
+                        toolCallsContent.AppendLine($"  Duration: {toolCall.DurationMs}ms");
+                        if (!string.IsNullOrEmpty(toolCall.Error))
+                        {
+                            toolCallsContent.AppendLine($"  Error: {toolCall.Error}");
+                        }
+                        toolCallsContent.AppendLine("───────────────");
+                    }
+                    toolCallsView.Text = toolCallsContent.ToString();
+                }
+                
+                chatView.Text = chatContent.ToString();
+                chatView.CursorPosition = new Point(0, chatView.Lines);
+                
+                if (session.ChatType == "agent" && !string.IsNullOrEmpty(session.ParentSessionId))
+                {
+                    UpdateAgentStatus($"Loaded agent session: {session.AgentName}");
+                }
+                else
+                {
+                    UpdateAgentStatus("Chat history loaded");
+                }
+                
+                repository.Dispose();
+                Application.Refresh();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Error", $"Failed to load chat: {ex.Message}", "OK");
             }
         }
     }
