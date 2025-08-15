@@ -218,7 +218,6 @@ namespace Saturn.Agents.Core
                     
                     var toolResults = await HandleToolCalls(validToolCalls);
 
-                    // Only include tool calls that were actually processed
                     var processedToolIds = new HashSet<string>(toolResults.Select(r => r.toolId));
                     var assistantToolCalls = validToolCalls
                         .Where(tc => processedToolIds.Contains(tc.Id))
@@ -269,7 +268,7 @@ namespace Saturn.Agents.Core
                         toolMessages.Add(toolMessage);
                     }
 
-                    ApplyCacheControlToToolMessages(toolMessages);
+                    ApplyCacheControlToLargeToolMessages(toolMessages);
 
                     foreach (var toolMessage in toolMessages)
                     {
@@ -305,7 +304,7 @@ namespace Saturn.Agents.Core
             {
                 if (string.IsNullOrEmpty(toolCall.Id) || toolCall.Function == null || string.IsNullOrEmpty(toolCall.Function.Name))
                 {
-                    continue; // Skip invalid tool calls
+                    continue;
                 }
                 
                 if (toolCall.Type == "function" && toolCall.Function != null)
@@ -637,7 +636,7 @@ namespace Saturn.Agents.Core
                         toolMessages.Add(toolMessage);
                     }
 
-                    ApplyCacheControlToToolMessages(toolMessages);
+                    ApplyCacheControlToLargeToolMessages(toolMessages);
 
                     foreach (var toolMessage in toolMessages)
                     {
@@ -808,15 +807,17 @@ namespace Saturn.Agents.Core
             return cleanedMessages;
         }
 
-        private void ApplyCacheControlToToolMessages(List<Message> toolMessages)
+
+        private void ApplyCacheControlToLargeToolMessages(List<Message> toolMessages)
         {
             if (!Configuration.Model.StartsWith("anthropic", StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
-            var messagesToCache = toolMessages
+            var largeToolMessages = toolMessages
                 .Select((msg, index) => new { Message = msg, Index = index, Length = GetContentLength(msg) })
+                .Where(x => x.Length > 10000) 
                 .OrderByDescending(x => x.Length)
                 .Take(3)
                 .Select(x => x.Index)
@@ -824,7 +825,7 @@ namespace Saturn.Agents.Core
 
             for (int i = 0; i < toolMessages.Count; i++)
             {
-                if (messagesToCache.Contains(i))
+                if (largeToolMessages.Contains(i))
                 {
                     var content = GetContentString(toolMessages[i]);
                     if (!string.IsNullOrEmpty(content))
