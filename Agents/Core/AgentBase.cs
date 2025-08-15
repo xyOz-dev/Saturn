@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Saturn.Data;
+using Saturn.Data.Models;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Common;
@@ -18,6 +21,8 @@ namespace Saturn.Agents.Core
         public string Id { get; } = Guid.NewGuid().ToString();
         public AgentConfiguration Configuration { get; protected set; }
         public List<Message> ChatHistory { get; protected set; }
+        public string? CurrentSessionId { get; set; }
+        protected ChatHistoryRepository? Repository { get; set; }
         
         public event Action<string, string>? OnToolCall;
         
@@ -37,6 +42,44 @@ namespace Saturn.Agents.Core
             Configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             ChatHistory = new List<Message>();
             InitializeSystemPrompt();
+            InitializeRepository();
+        }
+
+        protected virtual void InitializeRepository()
+        {
+            try
+            {
+                Repository = new ChatHistoryRepository();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to initialize chat repository: {ex.Message}");
+            }
+        }
+
+        public async Task InitializeSessionAsync(string? chatType = "main", string? parentSessionId = null)
+        {
+            if (Repository != null)
+            {
+                try
+                {
+                    var title = $"{Configuration.Name} - {DateTime.Now:yyyy-MM-dd HH:mm}";
+                    var session = await Repository.CreateSessionAsync(
+                        title,
+                        chatType,
+                        parentSessionId,
+                        Configuration.Name,
+                        Configuration.Model,
+                        Configuration.SystemPrompt,
+                        Configuration.Temperature,
+                        Configuration.MaxTokens);
+                    CurrentSessionId = session.Id;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Failed to create chat session: {ex.Message}");
+                }
+            }
         }
 
         public virtual async Task<T> Execute<T>(object input)
@@ -101,6 +144,9 @@ namespace Saturn.Agents.Core
             {
                 ChatHistory.Add(userMessage);
                 TrimHistory();
+                
+                Task.Run(async () => await PersistMessageAsync(userMessage));
+                
                 return new List<Message>(ChatHistory);
             }
 
@@ -131,6 +177,8 @@ namespace Saturn.Agents.Core
             if (Configuration.MaintainHistory)
             {
                 ChatHistory.Add(finalMessage);
+                
+                Task.Run(async () => await PersistMessageAsync(finalMessage));
             }
 
             return finalMessage;
@@ -140,9 +188,59 @@ namespace Saturn.Agents.Core
         {
             ChatHistory.Clear();
             InitializeSystemPrompt();
+            
+            if (CurrentSessionId != null && Repository != null)
+            {
+                Task.Run(async () => await Repository.SetSessionInactiveAsync(CurrentSessionId));
+                CurrentSessionId = null;
+            }
         }
 
         public virtual List<Message> GetHistory() => new List<Message>(ChatHistory);
+
+        protected async Task PersistMessageAsync(Message message)
+        {
+            if (Repository == null || CurrentSessionId == null) return;
+            
+            try
+            {
+                await Repository.SaveMessageAsync(CurrentSessionId, message, Configuration.Name);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to persist message: {ex.Message}");
+            }
+        }
+
+        protected async Task<string?> PersistToolCallAsync(string messageId, string toolName, string arguments)
+        {
+            if (Repository == null || CurrentSessionId == null) return null;
+            
+            try
+            {
+                var toolCall = await Repository.SaveToolCallAsync(messageId, CurrentSessionId, toolName, arguments, Configuration.Name);
+                return toolCall.Id;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to persist tool call: {ex.Message}");
+                return null;
+            }
+        }
+
+        protected async Task UpdateToolCallResultAsync(string toolCallId, string? result, string? error, int durationMs)
+        {
+            if (Repository == null || string.IsNullOrEmpty(toolCallId)) return;
+            
+            try
+            {
+                await Repository.UpdateToolCallResultAsync(toolCallId, result, error, durationMs);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to update tool call result: {ex.Message}");
+            }
+        }
 
         protected virtual void TrimHistory()
         {
@@ -243,6 +341,7 @@ namespace Saturn.Agents.Core
                     if (Configuration.MaintainHistory)
                     {
                         ChatHistory.Add(assistantMessage);
+                        Task.Run(async () => await PersistMessageAsync(assistantMessage));
                     }
                     else
                     {
@@ -275,6 +374,7 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
+                            Task.Run(async () => await PersistMessageAsync(toolMessage));
                         }
                         else
                         {
@@ -296,7 +396,7 @@ namespace Saturn.Agents.Core
             return responseMessage;
         }
 
-        protected async Task<List<(string toolName, string toolId, ToolResult result)>> HandleToolCalls(ToolCall[] toolCalls)
+        protected async Task<List<(string toolName, string toolId, ToolResult result)>> HandleToolCalls(OpenRouter.Models.Api.Chat.ToolCall[] toolCalls)
         {
             var results = new List<(string toolName, string toolId, ToolResult result)>();
 
@@ -311,6 +411,12 @@ namespace Saturn.Agents.Core
                 {
                     OnToolCall?.Invoke(toolCall.Function.Name, toolCall.Function.Arguments ?? "{}");
                     
+                    var persistedToolCallId = await PersistToolCallAsync(
+                        toolCall.Id, 
+                        toolCall.Function.Name, 
+                        toolCall.Function.Arguments ?? "{}");
+                    
+                    var stopwatch = Stopwatch.StartNew();
                     var tool = ToolRegistry.Instance.Get(toolCall.Function.Name);
 
                     if (tool != null)
@@ -345,35 +451,82 @@ namespace Saturn.Agents.Core
                             }
 
                             var toolResult = await tool.ExecuteAsync(parameters);
+                            stopwatch.Stop();
+                            
+                            if (persistedToolCallId != null)
+                            {
+                                await UpdateToolCallResultAsync(
+                                    persistedToolCallId,
+                                    toolResult.FormattedOutput,
+                                    toolResult.Success ? null : toolResult.Error,
+                                    (int)stopwatch.ElapsedMilliseconds);
+                            }
+                            
                             results.Add((toolCall.Function.Name, toolCall.Id, toolResult));
                         }
                         catch (JsonException jsonEx)
                         {
-                            results.Add((toolCall.Function.Name, toolCall.Id, new ToolResult
+                            stopwatch.Stop();
+                            var errorResult = new ToolResult
                             {
                                 Success = false,
                                 Error = $"JSON parsing error: {jsonEx.Message}",
                                 FormattedOutput = $"Error: Invalid JSON in tool arguments - {jsonEx.Message}"
-                            }));
+                            };
+                            
+                            if (persistedToolCallId != null)
+                            {
+                                await UpdateToolCallResultAsync(
+                                    persistedToolCallId,
+                                    null,
+                                    errorResult.Error,
+                                    (int)stopwatch.ElapsedMilliseconds);
+                            }
+                            
+                            results.Add((toolCall.Function.Name, toolCall.Id, errorResult));
                         }
                         catch (Exception ex)
                         {
-                            results.Add((toolCall.Function.Name, toolCall.Id, new ToolResult
+                            stopwatch.Stop();
+                            var errorResult = new ToolResult
                             {
                                 Success = false,
                                 Error = ex.Message,
                                 FormattedOutput = $"Error executing tool: {ex.Message}"
-                            }));
+                            };
+                            
+                            if (persistedToolCallId != null)
+                            {
+                                await UpdateToolCallResultAsync(
+                                    persistedToolCallId,
+                                    null,
+                                    errorResult.Error,
+                                    (int)stopwatch.ElapsedMilliseconds);
+                            }
+                            
+                            results.Add((toolCall.Function.Name, toolCall.Id, errorResult));
                         }
                     }
                     else
                     {
-                        results.Add((toolCall.Function.Name, toolCall.Id, new ToolResult
+                        stopwatch.Stop();
+                        var errorResult = new ToolResult
                         {
                             Success = false,
                             Error = $"Tool '{toolCall.Function.Name}' not found",
                             FormattedOutput = $"Tool '{toolCall.Function.Name}' not found in registry"
-                        }));
+                        };
+                        
+                        if (persistedToolCallId != null)
+                        {
+                            await UpdateToolCallResultAsync(
+                                persistedToolCallId,
+                                null,
+                                errorResult.Error,
+                                (int)stopwatch.ElapsedMilliseconds);
+                        }
+                        
+                        results.Add((toolCall.Function.Name, toolCall.Id, errorResult));
                     }
                 }
             }
@@ -429,7 +582,7 @@ namespace Saturn.Agents.Core
             var currentMessages = initialMessages;
             bool continueProcessing = true;
             var contentBuffer = new StringBuilder();
-            var toolCallBuffer = new List<ToolCall>();
+            var toolCallBuffer = new List<OpenRouter.Models.Api.Chat.ToolCall>();
 
             while (continueProcessing && !cancellationToken.IsCancellationRequested)
             {
@@ -643,6 +796,7 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
+                            Task.Run(async () => await PersistMessageAsync(toolMessage));
                         }
                         else
                         {
@@ -681,9 +835,9 @@ namespace Saturn.Agents.Core
         /// <summary>
         /// Validates streamed tool calls to ensure they have required fields
         /// </summary>
-        private List<ToolCall> ValidateStreamedToolCalls(ToolCall[] toolCalls)
+        private List<OpenRouter.Models.Api.Chat.ToolCall> ValidateStreamedToolCalls(OpenRouter.Models.Api.Chat.ToolCall[] toolCalls)
         {
-            var validatedCalls = new List<ToolCall>();
+            var validatedCalls = new List<OpenRouter.Models.Api.Chat.ToolCall>();
             
             foreach (var toolCall in toolCalls)
             {
