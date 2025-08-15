@@ -17,6 +17,8 @@ namespace Saturn.UI
         public bool MaintainHistory { get; set; } = true;
         public int MaxHistoryMessages { get; set; } = 10;
         public string SystemPrompt { get; set; }
+        public bool EnableTools { get; set; } = false;
+        public List<string> ToolNames { get; set; } = new List<string>();
         
         private static List<Model> _cachedModels;
         private static DateTime _cacheTime;
@@ -127,7 +129,9 @@ Operating Principles
                 EnableStreaming = EnableStreaming,
                 MaintainHistory = MaintainHistory,
                 MaxHistoryMessages = MaxHistoryMessages,
-                SystemPrompt = SystemPrompt
+                SystemPrompt = SystemPrompt,
+                EnableTools = EnableTools,
+                ToolNames = new List<string>(ToolNames ?? new List<string>())
             };
         }
     }
