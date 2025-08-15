@@ -53,7 +53,13 @@ namespace Saturn.Tests.Tools
 
             result.Success.Should().BeTrue();
             _fileHelper.FileExists("test.txt").Should().BeTrue();
-            _fileHelper.ReadFile("test.txt").Should().Be("Line 1\r\nLine 2\r\nLine 3");
+            
+            // Platform-aware line ending check
+            var expectedContent = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? "Line 1\r\nLine 2\r\nLine 3"
+                : "Line 1\nLine 2\nLine 3";
+            
+            _fileHelper.ReadFile("test.txt").Should().Be(expectedContent);
         }
 
         [Fact]
