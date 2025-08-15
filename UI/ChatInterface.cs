@@ -53,7 +53,9 @@ namespace Saturn.UI
                 EnableStreaming = agent.Configuration.EnableStreaming,
                 MaintainHistory = agent.Configuration.MaintainHistory,
                 MaxHistoryMessages = agent.Configuration.MaxHistoryMessages ?? 10,
-                SystemPrompt = agent.Configuration.SystemPrompt?.ToString() ?? ""
+                SystemPrompt = agent.Configuration.SystemPrompt?.ToString() ?? "",
+                EnableTools = agent.Configuration.EnableTools,
+                ToolNames = agent.Configuration.ToolNames ?? new List<string>()
             };
             markdownRenderer = new MarkdownRenderer();
             InitializeAgentManager();
@@ -193,11 +195,13 @@ namespace Saturn.UI
                     new MenuItem("_Temperature...", "", () => ShowTemperatureDialog()),
                     new MenuItem("_Max Tokens...", "", () => ShowMaxTokensDialog()),
                     new MenuItem("Top _P...", "", () => ShowTopPDialog()),
+                    new MenuItem("Select _Tools...", "", () => ShowToolSelectionDialog()),
                     null,
                     new MenuItem("_Streaming", "", () => ToggleStreaming()) 
                         { Checked = currentConfig.EnableStreaming },
                     new MenuItem("_Maintain History", "", () => ToggleMaintainHistory()) 
                         { Checked = currentConfig.MaintainHistory },
+                    new MenuItem("Max _History Messages...", "", () => ShowMaxHistoryDialog()),
                     null,
                     new MenuItem("_Edit System Prompt...", "", () => ShowSystemPromptDialog()),
                     new MenuItem("_View Configuration...", "", () => ShowConfigurationDialog())
@@ -1001,6 +1005,58 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        private void ShowMaxHistoryDialog()
+        {
+            var dialog = new Dialog("Set Max History Messages", 50, 10);
+            dialog.ColorScheme = Colors.Dialog;
+
+            var label = new Label($"Max History Messages (0-100): Current = {currentConfig.MaxHistoryMessages}")
+            {
+                X = 1,
+                Y = 1,
+                Width = Dim.Fill(1)
+            };
+
+            var textField = new TextField(currentConfig.MaxHistoryMessages.ToString())
+            {
+                X = 1,
+                Y = 3,
+                Width = Dim.Fill(1)
+            };
+
+            var okButton = new Button("OK", true)
+            {
+                X = Pos.Center() - 10,
+                Y = 5
+            };
+
+            okButton.Clicked += async () =>
+            {
+                if (int.TryParse(textField.Text.ToString(), out int maxHistory) && maxHistory >= 0 && maxHistory <= 100)
+                {
+                    currentConfig.MaxHistoryMessages = maxHistory;
+                    await ReconfigureAgent();
+                    Application.RequestStop();
+                }
+                else
+                {
+                    MessageBox.ErrorQuery("Invalid Input", "Please enter a value between 0 and 100", "OK");
+                }
+            };
+
+            var cancelButton = new Button("Cancel")
+            {
+                X = Pos.Center() + 5,
+                Y = 5
+            };
+
+            cancelButton.Clicked += () => Application.RequestStop();
+
+            dialog.Add(label, textField, okButton, cancelButton);
+            textField.SetFocus();
+            Application.Run(dialog);
+        }
+
         private async void ToggleStreaming()
         {
             currentConfig.EnableStreaming = !currentConfig.EnableStreaming;
@@ -1070,6 +1126,19 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        private void ShowToolSelectionDialog()
+        {
+            var dialog = new ToolSelectionDialog(currentConfig.ToolNames);
+            Application.Run(dialog);
+            
+            if (dialog.SelectedTools.Count > 0 || currentConfig.ToolNames?.Count > 0)
+            {
+                currentConfig.ToolNames = dialog.SelectedTools;
+                currentConfig.EnableTools = dialog.SelectedTools.Count > 0;
+                Task.Run(async () => await ReconfigureAgent());
+            }
+        }
+
         private void ShowConfigurationDialog()
         {
             var config = $"Current Agent Configuration\n" +
@@ -1080,7 +1149,8 @@ namespace Saturn.UI
                         $"Top P: {currentConfig.TopP:F2}\n" +
                         $"Streaming: {(currentConfig.EnableStreaming ? "Enabled" : "Disabled")}\n" +
                         $"Maintain History: {(currentConfig.MaintainHistory ? "Enabled" : "Disabled")}\n" +
-                        $"Max History Messages: {currentConfig.MaxHistoryMessages}\n\n" +
+                        $"Max History Messages: {currentConfig.MaxHistoryMessages}\n" +
+                        $"Tools: {(currentConfig.EnableTools ? $"Enabled ({currentConfig.ToolNames?.Count ?? 0} selected)" : "Disabled")}\n\n" +
                         $"System Prompt:\n{currentConfig.SystemPrompt}";
 
             MessageBox.Query("Agent Configuration", config, "OK");
@@ -1107,9 +1177,9 @@ namespace Saturn.UI
                     TopP = currentConfig.TopP,
                     MaintainHistory = currentConfig.MaintainHistory,
                     MaxHistoryMessages = currentConfig.MaxHistoryMessages,
-                    EnableTools = agent.Configuration.EnableTools,
+                    EnableTools = currentConfig.EnableTools,
                     EnableStreaming = currentConfig.EnableStreaming,
-                    ToolNames = agent.Configuration.ToolNames
+                    ToolNames = currentConfig.ToolNames ?? new List<string>()
                 };
 
                 await ConfigurationManager.SaveConfigurationAsync(
