@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Saturn.Agents;
 using Saturn.Agents.Core;
+using Saturn.Data;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 
@@ -18,6 +19,7 @@ namespace Saturn.Agents.MultiAgent
         private readonly ConcurrentDictionary<string, AgentTaskResult> _completedTasks;
         private OpenRouterClient _client = null!;
         private const int MaxConcurrentAgents = 25;
+        private string? _parentSessionId;
         
         public static AgentManager Instance => _instance ??= new AgentManager();
         
@@ -37,6 +39,11 @@ namespace Saturn.Agents.MultiAgent
             {
                 _instance._client = client;
             }
+        }
+        
+        public void SetParentSessionId(string? sessionId)
+        {
+            _parentSessionId = sessionId;
         }
         
         public async Task<(bool success, string result, List<string>? runningTaskIds)> TryCreateSubAgent(
@@ -74,6 +81,12 @@ Report your progress clearly and concisely."),
             };
             
             var agent = new Agent(config);
+            
+            if (_parentSessionId != null)
+            {
+                await agent.InitializeSessionAsync("agent", _parentSessionId);
+            }
+            
             var context = new SubAgentContext
             {
                 Id = agentId,
