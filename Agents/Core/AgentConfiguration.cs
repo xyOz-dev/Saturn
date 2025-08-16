@@ -21,5 +21,6 @@ namespace Saturn.Agents.Core
         public bool EnableTools { get; set; } = false;
         public bool EnableStreaming { get; set; } = false;
         public int StreamBufferSize { get; set; } = 1024;
+        public bool RequireCommandApproval { get; set; } = true;
     }
 }

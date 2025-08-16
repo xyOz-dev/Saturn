@@ -19,6 +19,7 @@ namespace Saturn.UI
         public string SystemPrompt { get; set; }
         public bool EnableTools { get; set; } = false;
         public List<string> ToolNames { get; set; } = new List<string>();
+        public bool RequireCommandApproval { get; set; } = true;
         
         private static List<Model> _cachedModels;
         private static DateTime _cacheTime;
@@ -131,7 +132,8 @@ Operating Principles
                 MaxHistoryMessages = MaxHistoryMessages,
                 SystemPrompt = SystemPrompt,
                 EnableTools = EnableTools,
-                ToolNames = new List<string>(ToolNames ?? new List<string>())
+                ToolNames = new List<string>(ToolNames ?? new List<string>()),
+                RequireCommandApproval = RequireCommandApproval
             };
         }
     }
