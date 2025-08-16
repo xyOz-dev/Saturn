@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Saturn.Data.Models;
@@ -36,6 +37,9 @@ public class ChatHistoryRepository : IDisposable
     {
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
+        
+        using (var cmd = new SqliteCommand("PRAGMA foreign_keys = ON;", connection))
+            cmd.ExecuteNonQuery();
 
         var createSessionsTable = @"
             CREATE TABLE IF NOT EXISTS ChatSessions (
@@ -100,11 +104,48 @@ public class ChatHistoryRepository : IDisposable
             cmd.ExecuteNonQuery();
         using (var cmd = new SqliteCommand(createIndices, connection))
             cmd.ExecuteNonQuery();
+        
+        CleanupOrphanedRecords(connection);
+    }
+    
+    private void CleanupOrphanedRecords(SqliteConnection connection)
+    {
+        try
+        {
+            var cleanupToolCalls = @"
+                DELETE FROM ToolCalls 
+                WHERE SessionId NOT IN (SELECT Id FROM ChatSessions)
+                OR MessageId NOT IN (SELECT Id FROM ChatMessages)";
+            
+            var cleanupMessages = @"
+                DELETE FROM ChatMessages 
+                WHERE SessionId NOT IN (SELECT Id FROM ChatSessions)";
+            
+            using (var cmd = new SqliteCommand(cleanupToolCalls, connection))
+                cmd.ExecuteNonQuery();
+                
+            using (var cmd = new SqliteCommand(cleanupMessages, connection))
+                cmd.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Ignore cleanup errors for backwards compatibility
+        }
+    }
+
+    private SqliteConnection CreateConnection()
+    {
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        using (var cmd = new SqliteCommand("PRAGMA foreign_keys = ON;", connection))
+            cmd.ExecuteNonQuery();
+        return connection;
     }
 
     public async Task<ChatSession> CreateSessionAsync(string title, string chatType = "main", 
         string? parentSessionId = null, string? agentName = null, string? model = null,
-        string? systemPrompt = null, double? temperature = null, int? maxTokens = null)
+        string? systemPrompt = null, double? temperature = null, int? maxTokens = null,
+        CancellationToken cancellationToken = default)
     {
         var session = new ChatSession
         {
@@ -118,8 +159,7 @@ public class ChatHistoryRepository : IDisposable
             MaxTokens = maxTokens
         };
 
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = @"
             INSERT INTO ChatSessions (Id, Title, ChatType, ParentSessionId, AgentName, Model, 
@@ -141,12 +181,12 @@ public class ChatHistoryRepository : IDisposable
         cmd.Parameters.AddWithValue("@UpdatedAt", session.UpdatedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@IsActive", session.IsActive ? 1 : 0);
 
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
         return session;
     }
 
     public async Task<ChatMessage> SaveMessageAsync(string sessionId, Message message, 
-        string? agentName = null, int? sequenceNumber = null)
+        string? agentName = null, int? sequenceNumber = null, CancellationToken cancellationToken = default)
     {
         var chatMessage = new ChatMessage
         {
@@ -157,15 +197,14 @@ public class ChatHistoryRepository : IDisposable
                 : message.Content.GetRawText(),
             Name = message.Name,
             AgentName = agentName,
-            SequenceNumber = sequenceNumber ?? await GetNextSequenceNumberAsync(sessionId),
+            SequenceNumber = sequenceNumber ?? await GetNextSequenceNumberAsync(sessionId, cancellationToken),
             ToolCallsJson = message.ToolCalls != null 
                 ? JsonSerializer.Serialize(message.ToolCalls) 
                 : null,
             ToolCallId = message.ToolCallId
         };
 
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = @"
             INSERT INTO ChatMessages (Id, SessionId, Role, Content, Name, AgentName, 
@@ -185,15 +224,84 @@ public class ChatHistoryRepository : IDisposable
         cmd.Parameters.AddWithValue("@ToolCallsJson", (object?)chatMessage.ToolCallsJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@ToolCallId", (object?)chatMessage.ToolCallId ?? DBNull.Value);
 
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
 
-        await UpdateSessionTimestampAsync(sessionId);
+        await UpdateSessionTimestampAsync(sessionId, cancellationToken);
         
         return chatMessage;
     }
 
+    public async Task<List<ChatMessage>> SaveMessageBatchAsync(string sessionId, List<Message> messages,
+        string? agentName = null, CancellationToken cancellationToken = default)
+    {
+        var chatMessages = new List<ChatMessage>();
+        using var connection = CreateConnection();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            int startSequence = await GetNextSequenceNumberAsync(sessionId, cancellationToken);
+            
+            foreach (var message in messages)
+            {
+                var chatMessage = new ChatMessage
+                {
+                    SessionId = sessionId,
+                    Role = message.Role ?? "assistant",
+                    Content = message.Content.ValueKind == JsonValueKind.String 
+                        ? message.Content.GetString() ?? string.Empty
+                        : message.Content.GetRawText(),
+                    Name = message.Name,
+                    AgentName = agentName,
+                    SequenceNumber = startSequence++,
+                    ToolCallsJson = message.ToolCalls != null 
+                        ? JsonSerializer.Serialize(message.ToolCalls) 
+                        : null,
+                    ToolCallId = message.ToolCallId
+                };
+
+                var sql = @"
+                    INSERT INTO ChatMessages (Id, SessionId, Role, Content, Name, AgentName, 
+                        Timestamp, SequenceNumber, ToolCallsJson, ToolCallId)
+                    VALUES (@Id, @SessionId, @Role, @Content, @Name, @AgentName, 
+                        @Timestamp, @SequenceNumber, @ToolCallsJson, @ToolCallId)";
+
+                using var cmd = new SqliteCommand(sql, connection, transaction);
+                cmd.Parameters.AddWithValue("@Id", chatMessage.Id);
+                cmd.Parameters.AddWithValue("@SessionId", chatMessage.SessionId);
+                cmd.Parameters.AddWithValue("@Role", chatMessage.Role);
+                cmd.Parameters.AddWithValue("@Content", chatMessage.Content);
+                cmd.Parameters.AddWithValue("@Name", (object?)chatMessage.Name ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@AgentName", (object?)chatMessage.AgentName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Timestamp", chatMessage.Timestamp.ToString("O"));
+                cmd.Parameters.AddWithValue("@SequenceNumber", chatMessage.SequenceNumber);
+                cmd.Parameters.AddWithValue("@ToolCallsJson", (object?)chatMessage.ToolCallsJson ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@ToolCallId", (object?)chatMessage.ToolCallId ?? DBNull.Value);
+
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+                chatMessages.Add(chatMessage);
+            }
+
+            var updateSql = "UPDATE ChatSessions SET UpdatedAt = @UpdatedAt WHERE Id = @Id";
+            using (var updateCmd = new SqliteCommand(updateSql, connection, transaction))
+            {
+                updateCmd.Parameters.AddWithValue("@Id", sessionId);
+                updateCmd.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow.ToString("O"));
+                await updateCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return chatMessages;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task<ToolCallRecord> SaveToolCallAsync(string messageId, string sessionId, 
-        string toolName, string arguments, string? agentName = null)
+        string toolName, string arguments, string? agentName = null, CancellationToken cancellationToken = default)
     {
         var toolCall = new ToolCallRecord
         {
@@ -204,8 +312,7 @@ public class ChatHistoryRepository : IDisposable
             AgentName = agentName
         };
 
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = @"
             INSERT INTO ToolCalls (Id, MessageId, SessionId, ToolName, Arguments, 
@@ -225,14 +332,66 @@ public class ChatHistoryRepository : IDisposable
         cmd.Parameters.AddWithValue("@DurationMs", toolCall.DurationMs);
         cmd.Parameters.AddWithValue("@AgentName", (object?)toolCall.AgentName ?? DBNull.Value);
 
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
         return toolCall;
+    }
+
+    public async Task<List<ToolCallRecord>> SaveToolCallBatchAsync(string sessionId, 
+        List<(string MessageId, string ToolName, string Arguments)> toolCalls,
+        string? agentName = null, CancellationToken cancellationToken = default)
+    {
+        var records = new List<ToolCallRecord>();
+        using var connection = CreateConnection();
+        using var transaction = connection.BeginTransaction();
+
+        try
+        {
+            foreach (var (messageId, toolName, arguments) in toolCalls)
+            {
+                var toolCall = new ToolCallRecord
+                {
+                    MessageId = messageId,
+                    SessionId = sessionId,
+                    ToolName = toolName,
+                    Arguments = arguments,
+                    AgentName = agentName
+                };
+
+                var sql = @"
+                    INSERT INTO ToolCalls (Id, MessageId, SessionId, ToolName, Arguments, 
+                        Result, Error, Timestamp, DurationMs, AgentName)
+                    VALUES (@Id, @MessageId, @SessionId, @ToolName, @Arguments, 
+                        @Result, @Error, @Timestamp, @DurationMs, @AgentName)";
+
+                using var cmd = new SqliteCommand(sql, connection, transaction);
+                cmd.Parameters.AddWithValue("@Id", toolCall.Id);
+                cmd.Parameters.AddWithValue("@MessageId", toolCall.MessageId);
+                cmd.Parameters.AddWithValue("@SessionId", toolCall.SessionId);
+                cmd.Parameters.AddWithValue("@ToolName", toolCall.ToolName);
+                cmd.Parameters.AddWithValue("@Arguments", toolCall.Arguments);
+                cmd.Parameters.AddWithValue("@Result", (object?)toolCall.Result ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Error", (object?)toolCall.Error ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Timestamp", toolCall.Timestamp.ToString("O"));
+                cmd.Parameters.AddWithValue("@DurationMs", toolCall.DurationMs);
+                cmd.Parameters.AddWithValue("@AgentName", (object?)toolCall.AgentName ?? DBNull.Value);
+
+                await cmd.ExecuteNonQueryAsync(cancellationToken);
+                records.Add(toolCall);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return records;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task UpdateToolCallResultAsync(string toolCallId, string? result, string? error, int durationMs)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = @"
             UPDATE ToolCalls 
@@ -250,8 +409,7 @@ public class ChatHistoryRepository : IDisposable
 
     public async Task<List<ChatSession>> GetSessionsAsync(string? chatType = null, int limit = 100)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = chatType != null
             ? "SELECT * FROM ChatSessions WHERE ChatType = @ChatType ORDER BY UpdatedAt DESC LIMIT @Limit"
@@ -274,8 +432,7 @@ public class ChatHistoryRepository : IDisposable
 
     public async Task<ChatSession?> GetSessionAsync(string sessionId)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = "SELECT * FROM ChatSessions WHERE Id = @Id";
         using var cmd = new SqliteCommand(sql, connection);
@@ -292,8 +449,7 @@ public class ChatHistoryRepository : IDisposable
 
     public async Task<List<ChatMessage>> GetMessagesAsync(string sessionId)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = "SELECT * FROM ChatMessages WHERE SessionId = @SessionId ORDER BY SequenceNumber";
         using var cmd = new SqliteCommand(sql, connection);
@@ -311,8 +467,7 @@ public class ChatHistoryRepository : IDisposable
 
     public async Task<List<ToolCallRecord>> GetToolCallsAsync(string sessionId)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = "SELECT * FROM ToolCalls WHERE SessionId = @SessionId ORDER BY Timestamp";
         using var cmd = new SqliteCommand(sql, connection);
@@ -330,8 +485,7 @@ public class ChatHistoryRepository : IDisposable
 
     public async Task<List<ChatSession>> GetSubAgentSessionsAsync(string parentSessionId)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = "SELECT * FROM ChatSessions WHERE ParentSessionId = @ParentSessionId ORDER BY CreatedAt";
         using var cmd = new SqliteCommand(sql, connection);
@@ -349,8 +503,7 @@ public class ChatHistoryRepository : IDisposable
 
     public async Task SetSessionInactiveAsync(string sessionId)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = "UPDATE ChatSessions SET IsActive = 0 WHERE Id = @Id";
         using var cmd = new SqliteCommand(sql, connection);
@@ -359,29 +512,27 @@ public class ChatHistoryRepository : IDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private async Task UpdateSessionTimestampAsync(string sessionId)
+    private async Task UpdateSessionTimestampAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = "UPDATE ChatSessions SET UpdatedAt = @UpdatedAt WHERE Id = @Id";
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("@Id", sessionId);
         cmd.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow.ToString("O"));
 
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task<int> GetNextSequenceNumberAsync(string sessionId)
+    private async Task<int> GetNextSequenceNumberAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        using var connection = CreateConnection();
 
         var sql = "SELECT COALESCE(MAX(SequenceNumber), 0) + 1 FROM ChatMessages WHERE SessionId = @SessionId";
         using var cmd = new SqliteCommand(sql, connection);
         cmd.Parameters.AddWithValue("@SessionId", sessionId);
 
-        var result = await cmd.ExecuteScalarAsync();
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result);
     }
 
