@@ -23,6 +23,7 @@ namespace Saturn.Agents.Core
         public List<Message> ChatHistory { get; protected set; }
         public string? CurrentSessionId { get; set; }
         protected ChatHistoryRepository? Repository { get; set; }
+        private readonly List<Message> _pendingMessages = new List<Message>();
         
         public event Action<string, string>? OnToolCall;
         
@@ -145,7 +146,7 @@ namespace Saturn.Agents.Core
                 ChatHistory.Add(userMessage);
                 TrimHistory();
                 
-                Task.Run(async () => await PersistMessageAsync(userMessage));
+                _pendingMessages.Add(userMessage);
                 
                 return new List<Message>(ChatHistory);
             }
@@ -178,7 +179,8 @@ namespace Saturn.Agents.Core
             {
                 ChatHistory.Add(finalMessage);
                 
-                Task.Run(async () => await PersistMessageAsync(finalMessage));
+                _pendingMessages.Add(finalMessage);
+                Task.Run(async () => await FlushPendingMessagesAsync());
             }
 
             return finalMessage;
@@ -191,24 +193,45 @@ namespace Saturn.Agents.Core
             
             if (CurrentSessionId != null && Repository != null)
             {
-                Task.Run(async () => await Repository.SetSessionInactiveAsync(CurrentSessionId));
+                Task.Run(async () => 
+                {
+                    await FlushPendingMessagesAsync();
+                    await Repository.SetSessionInactiveAsync(CurrentSessionId);
+                });
                 CurrentSessionId = null;
             }
         }
 
         public virtual List<Message> GetHistory() => new List<Message>(ChatHistory);
 
-        protected async Task PersistMessageAsync(Message message)
+        protected async Task PersistMessageAsync(Message message, CancellationToken cancellationToken = default)
         {
             if (Repository == null || CurrentSessionId == null) return;
             
             try
             {
-                await Repository.SaveMessageAsync(CurrentSessionId, message, Configuration.Name);
+                await Repository.SaveMessageAsync(CurrentSessionId, message, Configuration.Name, cancellationToken: cancellationToken);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to persist message: {ex.Message}");
+            }
+        }
+        
+        protected async Task FlushPendingMessagesAsync(CancellationToken cancellationToken = default)
+        {
+            if (Repository == null || CurrentSessionId == null || _pendingMessages.Count == 0) return;
+            
+            try
+            {
+                var messagesToSave = new List<Message>(_pendingMessages);
+                _pendingMessages.Clear();
+                
+                await Repository.SaveMessageBatchAsync(CurrentSessionId, messagesToSave, Configuration.Name, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to persist message batch: {ex.Message}");
             }
         }
 
@@ -341,7 +364,7 @@ namespace Saturn.Agents.Core
                     if (Configuration.MaintainHistory)
                     {
                         ChatHistory.Add(assistantMessage);
-                        Task.Run(async () => await PersistMessageAsync(assistantMessage));
+                        _pendingMessages.Add(assistantMessage);
                     }
                     else
                     {
@@ -374,7 +397,7 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
-                            Task.Run(async () => await PersistMessageAsync(toolMessage));
+                            _pendingMessages.Add(toolMessage);
                         }
                         else
                         {
@@ -796,7 +819,7 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
-                            Task.Run(async () => await PersistMessageAsync(toolMessage));
+                            _pendingMessages.Add(toolMessage);
                         }
                         else
                         {
