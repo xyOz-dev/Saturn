@@ -250,6 +250,8 @@ namespace Saturn.Agents.Core
                 return null;
             }
         }
+        
+        private string? _currentAssistantMessageId = null;
 
         protected async Task UpdateToolCallResultAsync(string toolCallId, string? result, string? error, int durationMs)
         {
@@ -337,6 +339,41 @@ namespace Saturn.Agents.Core
                         continue;
                     }
                     
+                    string? assistantMessageId = null;
+                    var assistantToolCallsPreview = validToolCalls
+                        .Select(tc => new ToolCallRequest
+                        {
+                            Id = tc.Id,
+                            Type = "function",
+                            Function = new ToolCallRequest.FunctionCall
+                            {
+                                Name = tc.Function?.Name,
+                                Arguments = tc.Function?.Arguments
+                            }
+                        })
+                        .ToArray();
+
+                    var assistantMessagePreview = new Message
+                    {
+                        Role = "assistant",
+                        Content = JsonDocument.Parse("null").RootElement,
+                        ToolCalls = assistantToolCallsPreview
+                    };
+
+                    if (Repository != null && CurrentSessionId != null)
+                    {
+                        try
+                        {
+                            var savedMessage = await Repository.SaveMessageAsync(CurrentSessionId, assistantMessagePreview, Configuration.Name);
+                            assistantMessageId = savedMessage.Id;
+                            _currentAssistantMessageId = assistantMessageId;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"Failed to persist assistant message: {ex.Message}");
+                        }
+                    }
+
                     var toolResults = await HandleToolCalls(validToolCalls);
 
                     var processedToolIds = new HashSet<string>(toolResults.Select(r => r.toolId));
@@ -364,7 +401,7 @@ namespace Saturn.Agents.Core
                     if (Configuration.MaintainHistory)
                     {
                         ChatHistory.Add(assistantMessage);
-                        _pendingMessages.Add(assistantMessage);
+                        // Don't add to pending messages since we already saved it
                     }
                     else
                     {
@@ -434,10 +471,13 @@ namespace Saturn.Agents.Core
                 {
                     OnToolCall?.Invoke(toolCall.Function.Name, toolCall.Function.Arguments ?? "{}");
                     
-                    var persistedToolCallId = await PersistToolCallAsync(
-                        toolCall.Id, 
-                        toolCall.Function.Name, 
-                        toolCall.Function.Arguments ?? "{}");
+                    // Use the saved assistant message ID if available, otherwise skip persistence
+                    var persistedToolCallId = _currentAssistantMessageId != null
+                        ? await PersistToolCallAsync(
+                            _currentAssistantMessageId, 
+                            toolCall.Function.Name, 
+                            toolCall.Function.Arguments ?? "{}")
+                        : null;
                     
                     var stopwatch = Stopwatch.StartNew();
                     var tool = ToolRegistry.Instance.Get(toolCall.Function.Name);
@@ -554,6 +594,8 @@ namespace Saturn.Agents.Core
                 }
             }
 
+            _currentAssistantMessageId = null;
+            
             return results;
         }
 
@@ -760,6 +802,39 @@ namespace Saturn.Agents.Core
                         continue;
                     }
                     
+                    var streamedToolCallsPreview = validatedToolCalls
+                        .Select(tc => new ToolCallRequest
+                        {
+                            Id = tc.Id,
+                            Type = "function",
+                            Function = new ToolCallRequest.FunctionCall
+                            {
+                                Name = tc.Function?.Name,
+                                Arguments = tc.Function?.Arguments
+                            }
+                        })
+                        .ToArray();
+
+                    var assistantMessagePreview = new Message
+                    {
+                        Role = "assistant",
+                        Content = JsonDocument.Parse("null").RootElement,
+                        ToolCalls = streamedToolCallsPreview
+                    };
+
+                    if (Repository != null && CurrentSessionId != null)
+                    {
+                        try
+                        {
+                            var savedMessage = await Repository.SaveMessageAsync(CurrentSessionId, assistantMessagePreview, Configuration.Name);
+                            _currentAssistantMessageId = savedMessage.Id;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"Failed to persist assistant message: {ex.Message}");
+                        }
+                    }
+
                     var toolResults = await HandleToolCalls(validatedToolCalls.ToArray());
 
                     var processedToolIds = new HashSet<string>(toolResults.Select(r => r.toolId));
