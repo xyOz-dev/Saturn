@@ -1,4 +1,4 @@
-using System;
+    using System;
 using System.Threading.Tasks;
 using Saturn.UI.Dialogs;
 
@@ -29,26 +29,31 @@ namespace Saturn.Tools.Core
             {
                 return false;
             }
-            
+
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             
-            Terminal.Gui.Application.MainLoop.Invoke(() =>
+            try
             {
-                try
+                Terminal.Gui.Application.MainLoop.Invoke(() =>
                 {
-                    using (var dialog = new CommandApprovalDialog(command, workingDirectory))
+                    try
                     {
+                        using var dialog = new CommandApprovalDialog(command, workingDirectory);
                         Terminal.Gui.Application.Run(dialog);
-                        tcs.SetResult(dialog.Approved);
+                        tcs.TrySetResult(dialog.Approved);
                     }
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            });
+                    catch (Exception ex)
+                    {
+                        tcs.TrySetException(ex);
+                    }
+                });
+            }
+            catch
+            {
+                tcs.TrySetResult(false);
+            }
             
-            return await tcs.Task;
+            return await tcs.Task.ConfigureAwait(false);
         }
     }
 }
