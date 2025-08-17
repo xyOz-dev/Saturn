@@ -1,4 +1,6 @@
+using System;
 using System.Threading.Tasks;
+using Saturn.UI.Dialogs;
 
 namespace Saturn.Tools.Core
 {
@@ -23,14 +25,26 @@ namespace Saturn.Tools.Core
                 return true;
             }
             
-            var tcs = new TaskCompletionSource<bool>();
+            if (Terminal.Gui.Application.MainLoop == null)
+            {
+                return false;
+            }
+            
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             
             Terminal.Gui.Application.MainLoop.Invoke(() =>
             {
-                using (var dialog = new UI.Dialogs.CommandApprovalDialog(command, workingDirectory))
+                try
                 {
-                    Terminal.Gui.Application.Run(dialog);
-                    tcs.SetResult(dialog.Approved);
+                    using (var dialog = new CommandApprovalDialog(command, workingDirectory))
+                    {
+                        Terminal.Gui.Application.Run(dialog);
+                        tcs.SetResult(dialog.Approved);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
                 }
             });
             
