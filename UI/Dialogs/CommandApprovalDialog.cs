@@ -13,7 +13,7 @@ namespace Saturn.UI.Dialogs
         
         public bool Approved { get; private set; }
         
-        public CommandApprovalDialog(string command, string workingDirectory = null)
+        public CommandApprovalDialog(string command, string? workingDirectory = null)
             : base("Command Approval Required", 80, 16)
         {
             ColorScheme = Colors.Dialog;
@@ -22,7 +22,7 @@ namespace Saturn.UI.Dialogs
             InitializeComponents(command, workingDirectory);
         }
         
-        private void InitializeComponents(string command, string workingDirectory)
+        private void InitializeComponents(string command, string? workingDirectory)
         {
             var headerLabel = new Label("An agent is requesting to execute the following command:")
             {
