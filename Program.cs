@@ -198,6 +198,7 @@ Operating Principles
                 MaxHistoryMessages = 10,
                 EnableTools = true,
                 EnableStreaming = true,
+                RequireCommandApproval = true,
                 ToolNames = new List<string>() { 
                     "apply_diff", "grep", "glob", "read_file", "list_files", 
                     "write_file", "search_and_replace", "delete_file",

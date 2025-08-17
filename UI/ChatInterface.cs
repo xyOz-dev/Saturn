@@ -55,7 +55,8 @@ namespace Saturn.UI
                 MaxHistoryMessages = agent.Configuration.MaxHistoryMessages ?? 10,
                 SystemPrompt = agent.Configuration.SystemPrompt?.ToString() ?? "",
                 EnableTools = agent.Configuration.EnableTools,
-                ToolNames = agent.Configuration.ToolNames ?? new List<string>()
+                ToolNames = agent.Configuration.ToolNames ?? new List<string>(),
+                RequireCommandApproval = agent.Configuration.RequireCommandApproval
             };
             markdownRenderer = new MarkdownRenderer();
             InitializeAgentManager();
@@ -201,6 +202,8 @@ namespace Saturn.UI
                         { Checked = currentConfig.EnableStreaming },
                     new MenuItem("_Maintain History", "", () => ToggleMaintainHistory()) 
                         { Checked = currentConfig.MaintainHistory },
+                    new MenuItem("_Command Approval", "", () => ToggleCommandApproval()) 
+                        { Checked = currentConfig.RequireCommandApproval },
                     new MenuItem("Max _History Messages...", "", () => ShowMaxHistoryDialog()),
                     null,
                     new MenuItem("_Edit System Prompt...", "", () => ShowSystemPromptDialog()),
@@ -1085,6 +1088,20 @@ namespace Saturn.UI
             }
         }
 
+        private async void ToggleCommandApproval()
+        {
+            currentConfig.RequireCommandApproval = !currentConfig.RequireCommandApproval;
+            await ReconfigureAgent();
+            var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
+            if (menu != null)
+            {
+                var agentMenu = menu.Menus[1];
+                var commandApprovalItem = agentMenu.Children?.FirstOrDefault(m => m?.Title?.ToString()?.Contains("Command Approval") == true);
+                if (commandApprovalItem != null)
+                    commandApprovalItem.Checked = currentConfig.RequireCommandApproval;
+            }
+        }
+
         private void ShowSystemPromptDialog()
         {
             var dialog = new Dialog("Edit System Prompt", 70, 20);
@@ -1149,6 +1166,7 @@ namespace Saturn.UI
                         $"Top P: {currentConfig.TopP:F2}\n" +
                         $"Streaming: {(currentConfig.EnableStreaming ? "Enabled" : "Disabled")}\n" +
                         $"Maintain History: {(currentConfig.MaintainHistory ? "Enabled" : "Disabled")}\n" +
+                        $"Command Approval: {(currentConfig.RequireCommandApproval ? "Enabled" : "Disabled")}\n" +
                         $"Max History Messages: {currentConfig.MaxHistoryMessages}\n" +
                         $"Tools: {(currentConfig.EnableTools ? $"Enabled ({currentConfig.ToolNames?.Count ?? 0} selected)" : "Disabled")}\n\n" +
                         $"System Prompt:\n{currentConfig.SystemPrompt}";
@@ -1179,7 +1197,8 @@ namespace Saturn.UI
                     MaxHistoryMessages = currentConfig.MaxHistoryMessages,
                     EnableTools = currentConfig.EnableTools,
                     EnableStreaming = currentConfig.EnableStreaming,
-                    ToolNames = currentConfig.ToolNames ?? new List<string>()
+                    ToolNames = currentConfig.ToolNames ?? new List<string>(),
+                    RequireCommandApproval = currentConfig.RequireCommandApproval
                 };
 
                 await ConfigurationManager.SaveConfigurationAsync(

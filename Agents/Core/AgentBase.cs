@@ -486,6 +486,7 @@ namespace Saturn.Agents.Core
                     {
                         try
                         {
+                            AgentContext.CurrentConfiguration = Configuration;
                             Dictionary<string, object> parameters;
 
                             if (string.IsNullOrEmpty(toolCall.Function.Arguments))

@@ -34,7 +34,14 @@ namespace Saturn.Configuration
                 }
 
                 var json = await File.ReadAllTextAsync(ConfigFilePath);
-                return JsonSerializer.Deserialize<PersistedAgentConfiguration>(json, JsonOptions);
+                var config = JsonSerializer.Deserialize<PersistedAgentConfiguration>(json, JsonOptions);
+                
+                if (config != null && config.RequireCommandApproval == null)
+                {
+                    config.RequireCommandApproval = true;
+                }
+                
+                return config;
             }
             catch (Exception ex)
             {
@@ -74,7 +81,8 @@ namespace Saturn.Configuration
                 MaintainHistory = agentConfig.MaintainHistory,
                 MaxHistoryMessages = agentConfig.MaxHistoryMessages,
                 EnableTools = agentConfig.EnableTools,
-                ToolNames = agentConfig.ToolNames
+                ToolNames = agentConfig.ToolNames,
+                RequireCommandApproval = agentConfig.RequireCommandApproval
             };
         }
 
@@ -90,6 +98,7 @@ namespace Saturn.Configuration
             target.MaxHistoryMessages = source.MaxHistoryMessages ?? target.MaxHistoryMessages;
             target.EnableTools = source.EnableTools;
             target.ToolNames = source.ToolNames ?? target.ToolNames;
+            target.RequireCommandApproval = source.RequireCommandApproval ?? true;
         }
     }
 
@@ -105,5 +114,6 @@ namespace Saturn.Configuration
         public int? MaxHistoryMessages { get; set; }
         public bool EnableTools { get; set; } = true;
         public List<string>? ToolNames { get; set; }
+        public bool? RequireCommandApproval { get; set; }
     }
 }

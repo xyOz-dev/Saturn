@@ -17,12 +17,16 @@ namespace Saturn.Tools
         private const int MaxOutputLength = 1048576; // 1MB
         private readonly List<CommandHistory> _commandHistory = new();
         private readonly CommandExecutorConfig _config;
+        private readonly ICommandApprovalService _approvalService;
 
-        public ExecuteCommandTool() : this(new CommandExecutorConfig()) { }
+        public ExecuteCommandTool() : this(new CommandExecutorConfig(), null) { }
 
-        public ExecuteCommandTool(CommandExecutorConfig config)
+        public ExecuteCommandTool(CommandExecutorConfig config) : this(config, null) { }
+
+        public ExecuteCommandTool(CommandExecutorConfig config, ICommandApprovalService approvalService)
         {
             _config = config ?? new CommandExecutorConfig();
+            _approvalService = approvalService ?? new CommandApprovalService(true);
         }
 
         public override string Name => "execute_command";
@@ -91,6 +95,15 @@ namespace Saturn.Tools
                 var timeoutSeconds = GetParameter<int>(arguments, "timeout", _config.DefaultTimeout);
                 var captureOutput = GetParameter<bool>(arguments, "captureOutput", true);
                 var runAsShell = GetParameter<bool>(arguments, "runAsShell", true);
+
+                if (AgentContext.RequireCommandApproval)
+                {
+                    var approved = await _approvalService.RequestApprovalAsync(command, workingDirectory);
+                    if (!approved)
+                    {
+                        return CreateErrorResult("Command execution denied by user");
+                    }
+                }
 
                 if (_config.SecurityMode != SecurityMode.Unrestricted)
                 {
