@@ -21,7 +21,7 @@ namespace Saturn.UI
         public List<string> ToolNames { get; set; } = new List<string>();
         public bool RequireCommandApproval { get; set; } = true;
         
-        private static List<Model> _cachedModels;
+        private static List<Model>? _cachedModels;
         private static DateTime _cacheTime;
         private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
 
