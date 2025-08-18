@@ -10,10 +10,10 @@ namespace Saturn.UI.Dialogs
 {
     public class LoadChatDialog : Dialog
     {
-        private ListView _sessionListView;
-        private TextView _previewTextView;
-        private ComboBox _filterComboBox;
-        private Label _sessionInfoLabel;
+        private ListView _sessionListView = null!;
+        private TextView _previewTextView = null!;
+        private ComboBox _filterComboBox = null!;
+        private Label _sessionInfoLabel = null!;
         private ChatHistoryRepository _repository;
         private List<ChatSession> _sessions;
         private List<ChatSession> _filteredSessions;
