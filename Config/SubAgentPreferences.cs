@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Saturn.OpenRouter.Serialization;
 
 namespace Saturn.Config
 {
@@ -13,6 +14,13 @@ namespace Saturn.Config
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Saturn",
             "subagent-preferences.json"
+        );
+        
+        private static readonly JsonSerializerOptions JsonOptions = Json.CreateDefaultOptions(
+            useCamelCase: true,
+            ignoreNulls: true,
+            allowTrailingCommas: true,
+            caseInsensitive: true
         );
         
         public string DefaultModel { get; set; } = "anthropic/claude-3.5-sonnet";
@@ -46,7 +54,7 @@ namespace Saturn.Config
                 if (File.Exists(PreferencesPath))
                 {
                     var json = File.ReadAllText(PreferencesPath);
-                    var loaded = JsonSerializer.Deserialize<SubAgentPreferences>(json);
+                    var loaded = JsonSerializer.Deserialize<SubAgentPreferences>(json, JsonOptions);
                     if (loaded != null)
                     {
                         var tempModelMappings = loaded.PurposeModelMappings;
@@ -85,12 +93,12 @@ namespace Saturn.Config
                     Directory.CreateDirectory(directory);
                 }
                 
-                var options = new JsonSerializerOptions
+                var saveOptions = new JsonSerializerOptions(JsonOptions)
                 {
                     WriteIndented = true
                 };
                 
-                var json = JsonSerializer.Serialize(this, options);
+                var json = JsonSerializer.Serialize(this, saveOptions);
                 File.WriteAllText(PreferencesPath, json);
             }
             catch (Exception ex)
