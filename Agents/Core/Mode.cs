@@ -66,7 +66,12 @@ namespace Saturn.Agents.Core
 
         public void ApplyToConfiguration(AgentConfiguration config)
         {
-            config.Name = AgentName;
+            // Only update config.Name if AgentName is not null/whitespace
+            if (!string.IsNullOrWhiteSpace(AgentName))
+            {
+                config.Name = AgentName;
+            }
+            
             config.Model = Model;
             config.Temperature = Temperature;
             config.MaxTokens = MaxTokens;
@@ -77,13 +82,19 @@ namespace Saturn.Agents.Core
             config.MaintainHistory = MaintainHistory;
             config.RequireCommandApproval = RequireCommandApproval;
             
+            // Only override system prompt if provided
             if (!string.IsNullOrWhiteSpace(SystemPromptOverride))
             {
                 config.SystemPrompt = SystemPromptOverride;
             }
             
-            config.ToolNames = new List<string>(ToolNames);
-            config.EnableTools = ToolNames.Count > 0;
+            // Defensively handle ToolNames
+            if (ToolNames != null)
+            {
+                config.ToolNames = new List<string>(ToolNames);
+                config.EnableTools = ToolNames.Count > 0;
+            }
+            // If ToolNames is null, leave config.ToolNames unchanged
         }
 
         public static Mode FromConfiguration(AgentConfiguration config, string modeName)
