@@ -97,7 +97,7 @@ namespace Saturn.UI.Dialogs
                 Y = 5
             };
             
-            modelLabel = new Label(mode.Model ?? "openai/gpt-4o")
+            modelLabel = new Label(mode.Model ?? "anthropic/claude-sonnet-4")
             {
                 X = Pos.Right(modelLabelText) + 1,
                 Y = 5,
@@ -355,7 +355,11 @@ namespace Saturn.UI.Dialogs
             var allToolsCount = ToolRegistry.Instance.GetAll().Count();
             if (selectedTools.Count == 0)
             {
-                toolCountLabel.Text = $"All {allToolsCount} tools enabled";
+                toolCountLabel.Text = $"No tools selected (0 of {allToolsCount})";
+            }
+            else if (selectedTools.Count == allToolsCount)
+            {
+                toolCountLabel.Text = $"All {allToolsCount} tools selected";
             }
             else
             {

@@ -38,7 +38,7 @@ namespace Saturn.Agents.Core
             EnableStreaming = true;
             MaintainHistory = true;
             RequireCommandApproval = false;
-            Model = "openai/gpt-4o";
+            Model = "anthropic/claude-sonnet-4";
         }
 
         public static Mode CreateDefault()
@@ -50,17 +50,23 @@ namespace Saturn.Agents.Core
                 AgentName = "Assistant",
                 Description = "Standard configuration with all tools enabled",
                 IsDefault = true,
-                ToolNames = new List<string>(),
+                ToolNames = new List<string>() { 
+                    "apply_diff", "grep", "glob", "read_file", "list_files", 
+                    "write_file", "search_and_replace", "delete_file",
+                    "create_agent", "hand_off_to_agent", "get_agent_status", 
+                    "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
+                    "web_fetch"
+                },
                 SystemPromptOverride = null,
-                Model = "openai/gpt-4o",
-                Temperature = 0.7,
+                Model = "anthropic/claude-sonnet-4",
+                Temperature = 0.15,
                 MaxTokens = 4096,
-                TopP = 1.0,
+                TopP = 0.25,
                 FrequencyPenalty = 0,
                 PresencePenalty = 0,
                 EnableStreaming = true,
                 MaintainHistory = true,
-                RequireCommandApproval = false
+                RequireCommandApproval = true
             };
         }
 
