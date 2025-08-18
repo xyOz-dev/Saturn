@@ -7,7 +7,7 @@ namespace Saturn.UI
 {
     public static class GitRepositoryPrompt
     {
-        public static async Task<bool> ShowPrompt()
+        public static Task<bool> ShowPrompt()
         {
             var userChoice = false;
             var initializationComplete = false;
@@ -180,7 +180,7 @@ namespace Saturn.UI
                 Application.Shutdown();
             }
 
-            return userChoice && initializationComplete;
+            return Task.FromResult(userChoice && initializationComplete);
         }
     }
 }
