@@ -36,7 +36,7 @@ namespace Saturn.Tools.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to auto-register tool {type.Name}: {ex.Message}");
+                   
                 }
             }
         }
