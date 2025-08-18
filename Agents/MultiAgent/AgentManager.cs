@@ -50,7 +50,11 @@ namespace Saturn.Agents.MultiAgent
             string name, 
             string purpose, 
             string model = "anthropic/claude-3.5-sonnet",
-            bool enableTools = true)
+            bool enableTools = true,
+            double? temperature = null,
+            int? maxTokens = null,
+            double? topP = null,
+            string? systemPromptOverride = null)
         {
             if (_runningAgents.Count >= MaxConcurrentAgents)
             {
@@ -64,17 +68,20 @@ namespace Saturn.Agents.MultiAgent
             
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
             
+            var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
+Your purpose: {purpose}
+You work as part of a larger system and should focus on your specific task.
+Report your progress clearly and concisely.";
+            
             var config = new AgentConfiguration
             {
                 Name = name,
-                SystemPrompt = await SystemPrompt.Create($@"You are a specialized sub-agent named {name}.
-Your purpose: {purpose}
-You work as part of a larger system and should focus on your specific task.
-Report your progress clearly and concisely."),
+                SystemPrompt = await SystemPrompt.Create(systemPrompt),
                 Client = _client,
                 Model = model,
-                Temperature = 0.3,
-                MaxTokens = 4096,
+                Temperature = temperature ?? 0.3,
+                MaxTokens = maxTokens ?? 4096,
+                TopP = topP ?? 0.95,
                 EnableTools = enableTools,
                 MaintainHistory = true,
                 MaxHistoryMessages = 20
