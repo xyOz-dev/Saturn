@@ -8,20 +8,20 @@ namespace Saturn.UI.Dialogs
 {
     public class ToolSelectionDialog : Dialog
     {
-        private ListView toolListView;
-        private Label descriptionLabel;
-        private Button selectAllButton;
-        private Button clearAllButton;
-        private Button okButton;
-        private Button cancelButton;
+        private ListView toolListView = null!;
+        private Label descriptionLabel = null!;
+        private Button selectAllButton = null!;
+        private Button clearAllButton = null!;
+        private Button okButton = null!;
+        private Button cancelButton = null!;
         
-        private List<ITool> availableTools;
-        private HashSet<string> selectedToolNames;
-        private string[] toolDisplayNames;
+        private List<ITool> availableTools = null!;
+        private HashSet<string> selectedToolNames = null!;
+        private string[] toolDisplayNames = null!;
         
         public List<string> SelectedTools => selectedToolNames.ToList();
         
-        public ToolSelectionDialog(List<string> currentlySelectedTools = null)
+        public ToolSelectionDialog(List<string>? currentlySelectedTools = null)
             : base("Select Tools", 70, 20)
         {
             ColorScheme = Colors.Dialog;
