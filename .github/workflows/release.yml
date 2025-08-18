@@ -49,7 +49,14 @@ jobs:
       run: dotnet build Saturn.csproj -c Release --no-restore -p:Version=${{ steps.version.outputs.VERSION }}
     
     - name: Pack
-      run: dotnet pack Saturn.csproj -c Release --no-build -p:Version=${{ steps.version.outputs.VERSION }}
+      run: dotnet pack Saturn.csproj -c Release --no-build -p:Version=${{ steps.version.outputs.VERSION }} -o nupkg
+    
+    - name: List package files
+      run: |
+        echo "Contents of nupkg directory:"
+        ls -la nupkg/ || echo "nupkg directory not found"
+        echo "Finding .nupkg files:"
+        find . -name "*.nupkg" -type f
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -60,10 +67,27 @@ jobs:
     - name: Push to NuGet
       if: github.event_name == 'push' || github.event.inputs.version != ''
       run: |
+        # Verify API key exists
+        if [ -z "${{ secrets.NUGET_API_KEY }}" ]; then
+          echo "ERROR: NUGET_API_KEY secret is not set"
+          exit 1
+        fi
+        
         dotnet nuget push nupkg/*.nupkg \
           --api-key ${{ secrets.NUGET_API_KEY }} \
           --source https://api.nuget.org/v3/index.json \
-          --skip-duplicate
+          --skip-duplicate \
+          --timeout 600 \
+          --verbosity detailed || {
+            echo "Push failed. Retrying with increased timeout..."
+            sleep 10
+            dotnet nuget push nupkg/*.nupkg \
+              --api-key ${{ secrets.NUGET_API_KEY }} \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate \
+              --timeout 900 \
+              --verbosity detailed
+          }
     
     - name: Create GitHub Release
       if: github.event_name == 'push'
