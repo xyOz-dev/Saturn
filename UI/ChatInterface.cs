@@ -200,6 +200,8 @@ namespace Saturn.UI
                     new MenuItem("Top _P...", "", () => ShowTopPDialog()),
                     new MenuItem("Select _Tools...", "", async () => await ShowToolSelectionDialogAsync()),
                     null,
+                    new MenuItem("_Sub-Agent Defaults...", "", () => ShowSubAgentDefaultsDialog()),
+                    null,
                     new MenuItem("_Streaming", "", () => ToggleStreaming()) 
                         { Checked = currentConfig.EnableStreaming },
                     new MenuItem("_Maintain History", "", () => ToggleMaintainHistory()) 
@@ -906,6 +908,17 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        private void ShowSubAgentDefaultsDialog()
+        {
+            var dialog = new SubAgentConfigDialog(openRouterClient);
+            Application.Run(dialog);
+            
+            if (dialog.ConfigurationSaved)
+            {
+                MessageBox.Query("Success", "Default sub-agent configuration saved.", "OK");
+            }
+        }
+        
         private void ShowMaxTokensDialog()
         {
             var dialog = new Dialog("Set Max Tokens", 50, 10);
