@@ -1288,12 +1288,73 @@ namespace Saturn.UI
                 await ConfigurationManager.SaveConfigurationAsync(
                     ConfigurationManager.FromAgentConfiguration(agent.Configuration));
 
+                UpdateConfigurationDisplay();
                 Application.Refresh();
             }
             catch (Exception ex)
             {
                 MessageBox.ErrorQuery("Configuration Error", $"Failed to update configuration: {ex.Message}", "OK");
             }
+        }
+
+        private void UpdateConfigurationDisplay()
+        {
+            var currentText = chatView.Text.ToString();
+            var lines = currentText.Split('\n');
+            var updatedLines = new List<string>();
+            bool inHeader = false;
+            bool skipConfigLines = false;
+            int headerEndIndex = -1;
+            
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                
+                if (line.StartsWith("Welcome to Saturn"))
+                {
+                    inHeader = true;
+                    updatedLines.Add(line);
+                }
+                else if (inHeader && line.StartsWith("================================"))
+                {
+                    if (!skipConfigLines)
+                    {
+                        updatedLines.Add(line);
+                        updatedLines.Add($"Agent: {agent.Name}");
+                        updatedLines.Add($"Model: {agent.Configuration.Model}");
+                        updatedLines.Add($"Streaming: {(agent.Configuration.EnableStreaming ? "Enabled" : "Disabled")}");
+                        updatedLines.Add($"Tools: {(agent.Configuration.EnableTools ? "Enabled" : "Disabled")}");
+                        if (agent.Configuration.EnableTools && agent.Configuration.ToolNames != null && agent.Configuration.ToolNames.Count > 0)
+                        {
+                            updatedLines.Add($"Available Tools: {string.Join(", ", agent.Configuration.ToolNames)}");
+                        }
+                        skipConfigLines = true;
+                    }
+                    else
+                    {
+                        updatedLines.Add(line);
+                        inHeader = false;
+                        skipConfigLines = false;
+                    }
+                }
+                else if (skipConfigLines && 
+                    (line.StartsWith("Agent:") || line.StartsWith("Model:") || 
+                     line.StartsWith("Streaming:") || line.StartsWith("Tools:") || 
+                     line.StartsWith("Available Tools:")))
+                {
+                    continue;
+                }
+                else
+                {
+                    updatedLines.Add(line);
+                }
+            }
+            
+            var currentPosition = chatView.CursorPosition;
+            var currentTopRow = chatView.TopRow;
+            chatView.Text = string.Join("\n", updatedLines);
+            chatView.CursorPosition = currentPosition;
+            chatView.TopRow = currentTopRow;
         }
 
         private async Task ShowLoadChatDialog()
