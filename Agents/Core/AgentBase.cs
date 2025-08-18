@@ -298,7 +298,7 @@ namespace Saturn.Agents.Core
             {
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
-                    Console.WriteLine("Warning: Invalid tool message sequence detected. Cleaning up messages.");
+                    
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
                 
@@ -370,7 +370,7 @@ namespace Saturn.Agents.Core
                         }
                         catch (Exception ex)
                         {
-                            Console.Error.WriteLine($"Failed to persist assistant message: {ex.Message}");
+                            
                         }
                     }
 
@@ -401,7 +401,6 @@ namespace Saturn.Agents.Core
                     if (Configuration.MaintainHistory)
                     {
                         ChatHistory.Add(assistantMessage);
-                        // Don't add to pending messages since we already saved it
                     }
                     else
                     {
@@ -471,7 +470,6 @@ namespace Saturn.Agents.Core
                 {
                     OnToolCall?.Invoke(toolCall.Function.Name, toolCall.Function.Arguments ?? "{}");
                     
-                    // Use the saved assistant message ID if available, otherwise skip persistence
                     var persistedToolCallId = _currentAssistantMessageId != null
                         ? await PersistToolCallAsync(
                             _currentAssistantMessageId, 
@@ -654,7 +652,6 @@ namespace Saturn.Agents.Core
             {
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
-                    Console.WriteLine("Warning: Invalid tool message sequence detected. Cleaning up messages.");
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
 
@@ -991,7 +988,6 @@ namespace Saturn.Agents.Core
             {
                 if (!toolUseIds.Contains(resultId))
                 {
-                    Console.WriteLine($"Warning: Tool result with ID {resultId} has no corresponding tool use");
                     return false;
                 }
             }
@@ -1031,7 +1027,7 @@ namespace Saturn.Agents.Core
                     }
                     else
                     {
-                        Console.WriteLine($"Removing orphaned tool result message with ID: {message.ToolCallId}");
+
                     }
                 }
                 else if (message.Role == "assistant" && message.ToolCalls != null)
