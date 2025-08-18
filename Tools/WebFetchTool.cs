@@ -131,8 +131,8 @@ When to use:
             var extractionMode = GetParameter<string>(parameters, "extractionMode", "markdown");
             var maxLength = GetParameter<int>(parameters, "maxLength", 50000);
             var includeMetadata = GetParameter<bool>(parameters, "includeMetadata", true);
-            var selector = GetParameter<string>(parameters, "selector", null);
-            var headers = GetParameter<Dictionary<string, object>>(parameters, "headers", null);
+            var selector = GetParameter<string?>(parameters, "selector", null);
+            var headers = GetParameter<Dictionary<string, object>?>(parameters, "headers", null);
             var useCache = GetParameter<bool>(parameters, "useCache", true);
 
             if (string.IsNullOrWhiteSpace(url))
@@ -197,7 +197,7 @@ When to use:
                 var doc = new HtmlDocument();
                 doc.LoadHtml(html);
 
-                var result = ProcessContent(doc, uri, extractionMode, selector, maxLength, includeMetadata);
+                var result = ProcessContent(doc, uri, extractionMode, selector!, maxLength, includeMetadata);
                 
                 if (useCache)
                 {
@@ -447,7 +447,7 @@ When to use:
 
         private class CachedContent
         {
-            public ToolResult Result { get; set; }
+            public ToolResult Result { get; set; } = new ToolResult { FormattedOutput = string.Empty, RawData = string.Empty };
             public DateTime CachedAt { get; set; }
         }
     }
