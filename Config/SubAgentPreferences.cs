@@ -22,10 +22,10 @@ namespace Saturn.Config
         public bool DefaultEnableTools { get; set; } = true;
         
         [JsonPropertyName("purposeModelMappings")]
-        public Dictionary<string, string> PurposeModelMappings { get; set; } = new();
+        public Dictionary<string, string> PurposeModelMappings { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         
         [JsonPropertyName("purposeConfigurations")]
-        public Dictionary<string, SubAgentConfiguration> PurposeConfigurations { get; set; } = new();
+        public Dictionary<string, SubAgentConfiguration> PurposeConfigurations { get; set; } = new Dictionary<string, SubAgentConfiguration>(StringComparer.OrdinalIgnoreCase);
         
         public static SubAgentPreferences Instance
         {
@@ -46,7 +46,25 @@ namespace Saturn.Config
                 if (File.Exists(PreferencesPath))
                 {
                     var json = File.ReadAllText(PreferencesPath);
-                    return JsonSerializer.Deserialize<SubAgentPreferences>(json) ?? new SubAgentPreferences();
+                    var loaded = JsonSerializer.Deserialize<SubAgentPreferences>(json);
+                    if (loaded != null)
+                    {
+                        var tempModelMappings = loaded.PurposeModelMappings;
+                        loaded.PurposeModelMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kvp in tempModelMappings)
+                        {
+                            loaded.PurposeModelMappings[kvp.Key] = kvp.Value;
+                        }
+                        
+                        var tempConfigurations = loaded.PurposeConfigurations;
+                        loaded.PurposeConfigurations = new Dictionary<string, SubAgentConfiguration>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kvp in tempConfigurations)
+                        {
+                            loaded.PurposeConfigurations[kvp.Key] = kvp.Value;
+                        }
+                        
+                        return loaded;
+                    }
                 }
             }
             catch (Exception ex)
@@ -83,7 +101,12 @@ namespace Saturn.Config
         
         public SubAgentConfiguration GetConfigurationForPurpose(string purpose)
         {
-            if (PurposeConfigurations.TryGetValue(purpose.ToLower(), out var config))
+            if (string.IsNullOrWhiteSpace(purpose))
+            {
+                throw new ArgumentException("Purpose cannot be null or whitespace.", nameof(purpose));
+            }
+            
+            if (PurposeConfigurations.TryGetValue(purpose, out var config))
             {
                 return config;
             }
@@ -100,7 +123,17 @@ namespace Saturn.Config
         
         public void SetConfigurationForPurpose(string purpose, SubAgentConfiguration config)
         {
-            PurposeConfigurations[purpose.ToLower()] = config;
+            if (string.IsNullOrWhiteSpace(purpose))
+            {
+                throw new ArgumentException("Purpose cannot be null or whitespace.", nameof(purpose));
+            }
+            
+            if (config == null)
+            {
+                throw new ArgumentNullException(nameof(config), "Configuration cannot be null.");
+            }
+            
+            PurposeConfigurations[purpose] = config;
             Save();
         }
     }
