@@ -366,8 +366,8 @@ Note: Use this before grep when you need to find files first, then search within
         
         public class GlobMatch
         {
-            public string Path { get; set; }
-            public string RelativePath { get; set; }
+            public string Path { get; set; } = string.Empty;
+            public string RelativePath { get; set; } = string.Empty;
             public bool IsDirectory { get; set; }
             public long Size { get; set; }
             public DateTime LastModified { get; set; }
@@ -376,7 +376,7 @@ Note: Use this before grep when you need to find files first, then search within
         
         public class GlobMatchResult
         {
-            public List<GlobMatch> Matches { get; set; }
+            public List<GlobMatch> Matches { get; set; } = new List<GlobMatch>();
             public int TotalCount { get; set; }
         }
     }
