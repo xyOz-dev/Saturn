@@ -27,10 +27,20 @@ namespace Saturn.Agents.Core
         
         public static AgentConfiguration FromMode(Mode mode, OpenRouterClient client)
         {
+            string systemPrompt;
+            if (!string.IsNullOrWhiteSpace(mode.SystemPromptOverride))
+            {
+                systemPrompt = mode.SystemPromptOverride;
+            }
+            else
+            {
+                systemPrompt = "You are a helpful assistant.";
+            }
+            
             var config = new AgentConfiguration
             {
                 Name = mode.AgentName,
-                SystemPrompt = mode.SystemPromptOverride ?? "",
+                SystemPrompt = systemPrompt,
                 Client = client,
                 Model = mode.Model,
                 Temperature = mode.Temperature,
