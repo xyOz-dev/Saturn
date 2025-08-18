@@ -762,6 +762,15 @@ namespace Saturn.UI
             }
         }
 
+        /// <summary>
+        /// Displays a modal dialog that lets the user select a model from the list provided by the OpenRouter client and applies the selection to the current UI configuration.
+        /// </summary>
+        /// <remarks>
+        /// - Requires <c>openRouterClient</c>; if it's null the method returns immediately.
+        /// - Fetches available models, shows their names and basic info (ID and optional context length), and updates <c>currentConfig.Model</c> when the user confirms.
+        /// - If a GPT-5 model is chosen, forces <c>currentConfig.Temperature</c> to 1.0 before applying the configuration.
+        /// - Applies changes by calling <see cref="UpdateConfiguration"/>, which persists the configuration and refreshes the UI, then closes the dialog.
+        /// </remarks>
         private async Task ShowModelSelectionDialog()
         {
             if (openRouterClient == null) return;
@@ -849,6 +858,14 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        /// <summary>
+        /// Shows a modal dialog allowing the user to set the agent temperature (0.0–2.0) and applies the change.
+        /// </summary>
+        /// <remarks>
+        /// If the current model name contains "gpt-5" (case-insensitive), the temperature is locked to 1.0 and the dialog is not shown.
+        /// The entered value is validated to be within [0.0, 2.0]; on success the value is stored to <c>currentConfig.Temperature</c>
+        /// and <c>UpdateConfiguration()</c> is invoked to persist and apply the change. Invalid input displays an error message.
+        /// </remarks>
         private void ShowTemperatureDialog()
         {
             if (currentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
@@ -919,6 +936,15 @@ namespace Saturn.UI
             }
         }
         
+        /// <summary>
+        /// Shows a modal dialog that lets the user set the agent's maximum token limit.
+        /// </summary>
+        /// <remarks>
+        /// Presents a dialog with the current value, accepts an integer input (1–200000), validates it,
+        /// and on valid input updates <c>currentConfig.MaxTokens</c> and persists the configuration via <see cref="UpdateConfiguration"/>.
+        /// Displays an error message for invalid values and closes the dialog on successful update or Cancel.
+        /// The dialog is run modally and sets focus to the input field when opened.
+        /// </remarks>
         private void ShowMaxTokensDialog()
         {
             var dialog = new Dialog("Set Max Tokens", 50, 10);
@@ -971,6 +997,14 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        /// <summary>
+        /// Displays a modal dialog that lets the user view and set the agent's Top P temperature (0.0–1.0).
+        /// </summary>
+        /// <remarks>
+        /// Validates input to the range [0.0, 1.0]; on success it updates the in-memory configuration (currentConfig.TopP),
+        /// persists the change via UpdateConfiguration(), and closes the dialog. If the input is invalid, an error message is shown
+        /// and the dialog remains open.
+        /// </remarks>
         private void ShowTopPDialog()
         {
             var dialog = new Dialog("Set Top P", 50, 10);
@@ -1023,6 +1057,13 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        /// <summary>
+        /// Shows a modal dialog that lets the user set the maximum number of messages to retain in chat history (0–100).
+        /// </summary>
+        /// <remarks>
+        /// Valid input updates <c>currentConfig.MaxHistoryMessages</c>, persists the configuration via <c>UpdateConfiguration()</c>,
+        /// and closes the dialog. Invalid input displays an error and keeps the dialog open. Cancelling closes the dialog without changes.
+        /// </remarks>
         private void ShowMaxHistoryDialog()
         {
             var dialog = new Dialog("Set Max History Messages", 50, 10);
@@ -1075,6 +1116,12 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        /// <summary>
+        /// Toggle the streaming setting for the current UI configuration, persist the change, and update the Agent menu's "Streaming" checkbox.
+        /// </summary>
+        /// <remarks>
+        /// Flips <c>currentConfig.EnableStreaming</c>, calls <c>UpdateConfiguration()</c> to apply and save the change, and then synchronizes the Agent menu item's Checked state to reflect the new value.
+        /// </remarks>
         private async void ToggleStreaming()
         {
             currentConfig.EnableStreaming = !currentConfig.EnableStreaming;
@@ -1089,6 +1136,12 @@ namespace Saturn.UI
             }
         }
 
+        /// <summary>
+        /// Toggle the MaintainHistory flag on the current UI configuration, persist the change, and update the Agent menu's "History" checkbox to match.
+        /// </summary>
+        /// <remarks>
+        /// This method flips <c>currentConfig.MaintainHistory</c>, calls <c>UpdateConfiguration()</c> to apply and save the change, and then finds the Agent menu entry whose title contains "History" to set its checked state to the new value. Intended to be invoked from UI event handlers.
+        /// </remarks>
         private async void ToggleMaintainHistory()
         {
             currentConfig.MaintainHistory = !currentConfig.MaintainHistory;
@@ -1103,6 +1156,14 @@ namespace Saturn.UI
             }
         }
 
+        /// <summary>
+        /// Toggle the RequireCommandApproval flag in the current UI configuration, persist the change,
+        /// and update the Agent menu item checkbox to reflect the new state.
+        /// </summary>
+        /// <remarks>
+        /// This updates currentConfig.RequireCommandApproval, calls UpdateConfiguration to apply and save the change,
+        /// and then locates the "Command Approval" menu item (if present) to set its Checked state to match the configuration.
+        /// </remarks>
         private async void ToggleCommandApproval()
         {
             currentConfig.RequireCommandApproval = !currentConfig.RequireCommandApproval;
@@ -1117,6 +1178,14 @@ namespace Saturn.UI
             }
         }
 
+        /// <summary>
+        /// Opens a modal dialog that lets the user edit the agent's system prompt and saves the change.
+        /// </summary>
+        /// <remarks>
+        /// Displays a text editor initialized with the current system prompt. If the user confirms (OK),
+        /// the new prompt is written into <c>currentConfig.SystemPrompt</c>, <see cref="UpdateConfiguration"/> is invoked
+        /// to persist and apply the change, and the dialog is closed. Cancelling closes the dialog without saving.
+        /// </remarks>
         private void ShowSystemPromptDialog()
         {
             var dialog = new Dialog("Edit System Prompt", 70, 20);
@@ -1158,6 +1227,14 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        /// <summary>
+        /// Displays the mode selection dialog and applies the user's choice to the current UI configuration.
+        /// </summary>
+        /// <remarks>
+        /// If the user selects a mode, the method maps that mode into the UI configuration, persists the change by calling <see cref="UpdateConfiguration"/>, and updates the UI. 
+        /// If the user chooses to create a new mode, the mode editor is opened. If the user chooses to edit an existing mode, the editor is opened with that mode preloaded.
+        /// Any exception thrown while applying a selected mode is caught and reported in an error dialog.
+        /// </remarks>
         private async Task ShowModeSelectionDialogAsync()
         {
             var dialog = new ModeSelectionDialog();
@@ -1185,6 +1262,11 @@ namespace Saturn.UI
             }
         }
         
+        /// <summary>
+        /// Opens the mode editor dialog to create or edit a Mode. If the user saves a mode,
+        /// shows a success message and optionally applies the mode immediately to the UI configuration.
+        /// </summary>
+        /// <param name="modeToEdit">The Mode to edit, or null to create a new mode.</param>
         private async Task ShowModeEditorDialogAsync(Mode modeToEdit)
         {
             var editorDialog = new ModeEditorDialog(modeToEdit, openRouterClient);
@@ -1228,6 +1310,14 @@ namespace Saturn.UI
             }
         }
         
+        /// <summary>
+        /// Displays a modal tool-selection dialog and, if the user changes the selection, updates and persists the agent's tool configuration.
+        /// </summary>
+        /// <remarks>
+        /// Opens a ToolSelectionDialog initialized with the current tool names. If the dialog results in a non-empty selection or there were previously configured tools,
+        /// this method assigns the selected tools to <c>currentConfig.ToolNames</c>, sets <c>currentConfig.EnableTools</c> accordingly, and calls <see cref="UpdateConfiguration"/> to persist and apply the changes.
+        /// </remarks>
+        /// <returns>A task that completes after the dialog closes and any configuration updates have been applied.</returns>
         private async Task ShowToolSelectionDialogAsync()
         {
             var dialog = new ToolSelectionDialog(currentConfig.ToolNames);
@@ -1241,6 +1331,14 @@ namespace Saturn.UI
             }
         }
 
+        /// <summary>
+        /// Shows a modal dialog summarizing the current agent configuration.
+        /// </summary>
+        /// <remarks>
+        /// Displays a read-only, human-friendly summary (model, temperature, max tokens, Top P, streaming/history/command-approval flags,
+        /// max history messages, tool enablement and selected tool count, and the system prompt) in a blocking message box.
+        /// This method only presents the in-memory <c>currentConfig</c> and does not modify application state.
+        /// </remarks>
         private void ShowConfigurationDialog()
         {
             var config = $"Current Agent Configuration\n" +
@@ -1259,6 +1357,18 @@ namespace Saturn.UI
             MessageBox.Query("Agent Configuration", config, "OK");
         }
 
+        /// <summary>
+        /// Applies the current UI configuration to the live agent, persists it, and refreshes the UI.
+        /// </summary>
+        /// <remarks>
+        /// - Copies values from <c>currentConfig</c> into <c>agent.Configuration</c>, including model, temperature,
+        ///   token limits, sampling parameters, history and tool settings, and command-approval preference.
+        /// - If the selected model name contains "gpt-5" (case-insensitive), the temperature is forced to 1.0.
+        /// - When a non-empty system prompt is provided, it is converted to a <c>SystemPrompt</c> and stored on the agent.
+        /// - Persists the updated agent configuration via <c>ConfigurationManager.SaveConfigurationAsync</c>.
+        /// - Refreshes the UI header/display to reflect the new configuration.
+        /// - Any exceptions are caught and reported to the user via an error dialog; the method does not propagate exceptions.
+        /// </remarks>
         private async Task UpdateConfiguration()
         {
             try
@@ -1297,6 +1407,15 @@ namespace Saturn.UI
             }
         }
 
+        /// <summary>
+        /// Refreshes the header section of the chat view to reflect the current agent configuration (name, model, streaming and tool settings).
+        /// </summary>
+        /// <remarks>
+        /// Scans the existing chat content for the welcome header (starts with "Welcome to Saturn" and the following separator line)
+        /// and replaces the configuration lines in that header block with values from <c>agent.Configuration</c>.
+        /// The method preserves the rest of the chat content and restores the text view's cursor position and scroll (TopRow) after updating.
+        /// Side effects: mutates <c>chatView.Text</c>, <c>chatView.CursorPosition</c>, and <c>chatView.TopRow</c>.
+        /// </remarks>
         private void UpdateConfigurationDisplay()
         {
             var currentText = chatView.Text.ToString();
@@ -1357,6 +1476,10 @@ namespace Saturn.UI
             chatView.TopRow = currentTopRow;
         }
 
+        /// <summary>
+        /// Shows the Load Chat dialog and, if the user selects a session, loads that chat session into the UI.
+        /// </summary>
+        /// <returns>A task that completes after the dialog closes and any selected session has been loaded.</returns>
         private async Task ShowLoadChatDialog()
         {
             var dialog = new LoadChatDialog();
