@@ -183,7 +183,7 @@ namespace Saturn.UI.Dialogs
                 
                 var toolsText = mode.ToolNames?.Count > 0 
                     ? string.Join(", ", mode.ToolNames.Take(10)) + (mode.ToolNames.Count > 10 ? "..." : "")
-                    : "All tools enabled";
+                    : "No tools selected";
                     
                 var promptInfo = string.IsNullOrWhiteSpace(mode.SystemPromptOverride) 
                     ? "Default system prompt" 
