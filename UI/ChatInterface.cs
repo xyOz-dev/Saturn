@@ -184,7 +184,7 @@ namespace Saturn.UI
                             Application.Refresh();
                         }
                     }),
-                    null,
+                    null!,
                     new MenuItem("_Quit", "", () =>
                     {
                         Application.RequestStop();
@@ -1164,7 +1164,7 @@ namespace Saturn.UI
             }
             else if (dialog.ShouldCreateNew)
             {
-                await ShowModeEditorDialogAsync(null);
+                await ShowModeEditorDialogAsync(null!);
             }
             else if (dialog.ModeToEdit != null)
             {
