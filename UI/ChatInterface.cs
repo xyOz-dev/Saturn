@@ -20,7 +20,7 @@ using Saturn.UI.Dialogs;
 
 namespace Saturn.UI
 {
-    public class ChatInterface
+    public class ChatInterface : IDisposable
     {
         private TextView chatView = null!;
         private TextView inputField = null!;
@@ -1303,7 +1303,7 @@ namespace Saturn.UI
         {
             try
             {
-                var repository = new ChatHistoryRepository();
+                using var repository = new ChatHistoryRepository();
                 var session = await repository.GetSessionAsync(sessionId);
                 
                 if (session == null)
@@ -1437,13 +1437,17 @@ namespace Saturn.UI
                     UpdateAgentStatus("Chat history loaded");
                 }
                 
-                repository.Dispose();
                 Application.Refresh();
             }
             catch (Exception ex)
             {
                 MessageBox.ErrorQuery("Error", $"Failed to load chat: {ex.Message}", "OK");
             }
+        }
+
+        public void Dispose()
+        {
+            agent?.Dispose();
         }
     }
 }

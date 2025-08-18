@@ -36,7 +36,7 @@ namespace Saturn
                 }
 
                 var (agent, client) = await CreateAgent();
-                var chatInterface = new ChatInterface(agent, client);
+                using var chatInterface = new ChatInterface(agent, client);
                 chatInterface.Initialize();
                 chatInterface.Run();
             }
