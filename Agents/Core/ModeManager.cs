@@ -9,29 +9,12 @@ namespace Saturn.Agents.Core
 {
     public class ModeManager
     {
-        private static ModeManager _instance;
-        private static readonly object _lock = new object();
+        private static readonly Lazy<ModeManager> _instance = new Lazy<ModeManager>(() => new ModeManager());
         private readonly string _modesDirectory;
         private readonly Mode _defaultMode;
         private List<Mode> _modes;
 
-        public static ModeManager Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    lock (_lock)
-                    {
-                        if (_instance == null)
-                        {
-                            _instance = new ModeManager();
-                        }
-                    }
-                }
-                return _instance;
-            }
-        }
+        public static ModeManager Instance => _instance.Value;
 
         private ModeManager()
         {
