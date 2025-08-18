@@ -15,8 +15,8 @@ namespace Saturn.Tools.Core
     public class ToolResult
     {
         public bool Success { get; set; }
-        public string FormattedOutput { get; set; }
-        public object RawData { get; set; }
-        public string Error { get; set; }
+        public string FormattedOutput { get; set; } = string.Empty;
+        public object? RawData { get; set; }
+        public string Error { get; set; } = string.Empty;
     }
 }
