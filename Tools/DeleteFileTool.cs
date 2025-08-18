@@ -85,7 +85,7 @@ Safety features:
         {
             var path = GetParameter<string>(parameters, "path");
             var recursive = GetParameter<bool>(parameters, "recursive", false);
-            var pattern = GetParameter<string>(parameters, "pattern", null);
+            var pattern = GetParameter<string?>(parameters, "pattern", null);
             var force = GetParameter<bool>(parameters, "force", false);
             var dryRun = GetParameter<bool>(parameters, "dryRun", false);
             
@@ -312,15 +312,15 @@ Safety features:
         
         private class DeletionInfo
         {
-            public List<DeletionItem> ItemsToDelete { get; set; }
+            public List<DeletionItem> ItemsToDelete { get; set; } = new List<DeletionItem>();
             public int TotalItems { get; set; }
             public long TotalSize { get; set; }
         }
         
         private class DeletionItem
         {
-            public string Path { get; set; }
-            public string Type { get; set; }
+            public string Path { get; set; } = string.Empty;
+            public string Type { get; set; } = string.Empty;
             public long Size { get; set; }
             public bool IsReadOnly { get; set; }
         }
