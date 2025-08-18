@@ -204,15 +204,15 @@ Examples:
         
         public class GrepResult
         {
-            public string FilePath { get; set; }
+            public string FilePath { get; set; } = string.Empty;
             public int LineNumber { get; set; }
-            public string Line { get; set; }
-            public List<MatchInfo> Matches { get; set; }
+            public string Line { get; set; } = string.Empty;
+            public List<MatchInfo> Matches { get; set; } = new List<MatchInfo>();
         }
         
         public class MatchInfo
         {
-            public string Value { get; set; }
+            public string Value { get; set; } = string.Empty;
             public int Index { get; set; }
             public int Length { get; set; }
         }
