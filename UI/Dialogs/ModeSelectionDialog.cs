@@ -8,24 +8,24 @@ namespace Saturn.UI.Dialogs
 {
     public class ModeSelectionDialog : Dialog
     {
-        private ListView modeListView;
-        private Label descriptionLabel;
-        private Label detailsLabel;
-        private Button selectButton;
-        private Button newButton;
-        private Button editButton;
-        private Button duplicateButton;
-        private Button deleteButton;
-        private Button importButton;
-        private Button exportButton;
-        private Button cancelButton;
+        private ListView modeListView = null!;
+        private Label descriptionLabel = null!;
+        private Label detailsLabel = null!;
+        private Button selectButton = null!;
+        private Button newButton = null!;
+        private Button editButton = null!;
+        private Button duplicateButton = null!;
+        private Button deleteButton = null!;
+        private Button importButton = null!;
+        private Button exportButton = null!;
+        private Button cancelButton = null!;
         
-        private List<Mode> modes;
-        private string[] modeDisplayNames;
+        private List<Mode> modes = null!;
+        private string[] modeDisplayNames = null!;
         
-        public Mode SelectedMode { get; private set; }
+        public Mode? SelectedMode { get; private set; }
         public bool ShouldCreateNew { get; private set; }
-        public Mode ModeToEdit { get; private set; }
+        public Mode? ModeToEdit { get; private set; }
         
         public ModeSelectionDialog()
             : base("Select Mode", 90, 26)
