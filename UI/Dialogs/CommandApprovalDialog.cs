@@ -5,11 +5,11 @@ namespace Saturn.UI.Dialogs
 {
     public class CommandApprovalDialog : Dialog
     {
-        private TextView commandTextView;
-        private Label workingDirLabel;
-        private Label warningLabel;
-        private Button approveButton;
-        private Button denyButton;
+        private TextView commandTextView = null!;
+        private Label workingDirLabel = null!;
+        private Label warningLabel = null!;
+        private Button approveButton = null!;
+        private Button denyButton = null!;
         
         public bool Approved { get; private set; }
         
