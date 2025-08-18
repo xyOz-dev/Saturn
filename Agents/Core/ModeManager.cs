@@ -85,6 +85,12 @@ namespace Saturn.Agents.Core
             if (mode.IsDefault)
                 throw new InvalidOperationException("Cannot update the default mode");
 
+            if (string.IsNullOrWhiteSpace(mode.Name))
+                throw new ArgumentException("Mode name cannot be empty or whitespace");
+
+            if (string.Equals(mode.Name, "Default", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Cannot rename a mode to the reserved 'Default' name");
+
             var existingMode = _modes.FirstOrDefault(m => m.Id == mode.Id);
             if (existingMode == null)
                 throw new ArgumentException($"Mode with ID {mode.Id} not found");
