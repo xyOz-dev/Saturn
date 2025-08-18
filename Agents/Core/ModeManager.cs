@@ -228,7 +228,7 @@ namespace Saturn.Agents.Core
                     {
                         mode.IsDefault = false;
                         _modes.Add(mode);
-                    }
+                    } 
                 }
                 catch (Exception ex)
                 {
