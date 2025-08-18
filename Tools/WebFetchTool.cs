@@ -286,9 +286,9 @@ When to use:
         {
             RemoveUnwantedElements(node);
             
-            var config = new Config
+            var config = new ReverseMarkdown.Config
             {
-                UnknownTags = Config.UnknownTagsOption.PassThrough,
+                UnknownTags = ReverseMarkdown.Config.UnknownTagsOption.PassThrough,
                 GithubFlavored = true,
                 RemoveComments = true,
                 SmartHrefHandling = true
