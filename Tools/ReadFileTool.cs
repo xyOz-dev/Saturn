@@ -255,7 +255,7 @@ Examples:
         
         private class FileContent
         {
-            public List<string> Lines { get; set; }
+            public List<string> Lines { get; set; } = new List<string>();
             public int TotalLines { get; set; }
             public int ReadLines { get; set; }
         }
