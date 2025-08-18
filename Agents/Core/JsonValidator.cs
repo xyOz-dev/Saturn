@@ -88,7 +88,7 @@ namespace Saturn.Agents.Core
         /// <summary>
         /// Attempts to safely parse JSON, returning null if invalid
         /// </summary>
-        public static T TryParseJson<T>(string json) where T : class
+        public static T? TryParseJson<T>(string json) where T : class
         {
             if (!IsCompleteJson(json))
                 return null;
@@ -206,7 +206,7 @@ namespace Saturn.Agents.Core
             _buffer.Clear();
         }
 
-        public T TryGetComplete<T>() where T : class
+        public T? TryGetComplete<T>() where T : class
         {
             if (!IsComplete)
                 return null;
