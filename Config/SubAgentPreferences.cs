@@ -57,14 +57,14 @@ namespace Saturn.Config
                     var loaded = JsonSerializer.Deserialize<SubAgentPreferences>(json, JsonOptions);
                     if (loaded != null)
                     {
-                        var tempModelMappings = loaded.PurposeModelMappings;
+                        var tempModelMappings = loaded.PurposeModelMappings ?? new Dictionary<string, string>();
                         loaded.PurposeModelMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         foreach (var kvp in tempModelMappings)
                         {
                             loaded.PurposeModelMappings[kvp.Key] = kvp.Value;
                         }
                         
-                        var tempConfigurations = loaded.PurposeConfigurations;
+                        var tempConfigurations = loaded.PurposeConfigurations ?? new Dictionary<string, SubAgentConfiguration>();
                         loaded.PurposeConfigurations = new Dictionary<string, SubAgentConfiguration>(StringComparer.OrdinalIgnoreCase);
                         foreach (var kvp in tempConfigurations)
                         {
