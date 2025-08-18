@@ -227,7 +227,10 @@ namespace Saturn.UI.Dialogs
                 return;
             }
             
-            var selectedModel = modelComboBox.Text?.ToString();
+            var selectedModel = string.IsNullOrWhiteSpace(modelComboBox.Text?.ToString()) 
+                ? preferences.DefaultModel 
+                : modelComboBox.Text.ToString();
+            
             if (string.IsNullOrWhiteSpace(selectedModel))
             {
                 MessageBox.ErrorQuery("Error", "Please select a model", "OK");
