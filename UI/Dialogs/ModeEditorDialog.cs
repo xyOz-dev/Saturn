@@ -12,31 +12,31 @@ namespace Saturn.UI.Dialogs
 {
     public class ModeEditorDialog : Dialog
     {
-        private OpenRouterClient openRouterClient;
-        private TextField nameField;
-        private TextField agentNameField;
-        private TextField descriptionField;
-        private Button selectModelButton;
-        private Label modelLabel;
-        private TextField temperatureField;
-        private TextField maxTokensField;
-        private CheckBox streamingCheckBox;
-        private CheckBox historyCheckBox;
-        private CheckBox approvalCheckBox;
-        private CheckBox useDefaultPromptCheckBox;
-        private TextView systemPromptTextView;
-        private Label toolCountLabel;
-        private Button selectToolsButton;
-        private Button saveButton;
-        private Button cancelButton;
+        private OpenRouterClient? openRouterClient;
+        private TextField nameField = null!;
+        private TextField agentNameField = null!;
+        private TextField descriptionField = null!;
+        private Button selectModelButton = null!;
+        private Label modelLabel = null!;
+        private TextField temperatureField = null!;
+        private TextField maxTokensField = null!;
+        private CheckBox streamingCheckBox = null!;
+        private CheckBox historyCheckBox = null!;
+        private CheckBox approvalCheckBox = null!;
+        private CheckBox useDefaultPromptCheckBox = null!;
+        private TextView systemPromptTextView = null!;
+        private Label toolCountLabel = null!;
+        private Button selectToolsButton = null!;
+        private Button saveButton = null!;
+        private Button cancelButton = null!;
         
-        private Mode mode;
+        private Mode mode = null!;
         private bool isEditMode;
-        private List<string> selectedTools;
+        private List<string> selectedTools = null!;
         
-        public Mode ResultMode { get; private set; }
+        public Mode? ResultMode { get; private set; }
         
-        public ModeEditorDialog(Mode existingMode = null, OpenRouterClient client = null)
+        public ModeEditorDialog(Mode? existingMode = null, OpenRouterClient? client = null)
             : base(existingMode != null ? $"Edit Mode: {existingMode.Name}" : "Create New Mode", 90, 26)
         {
             ColorScheme = Colors.Dialog;
