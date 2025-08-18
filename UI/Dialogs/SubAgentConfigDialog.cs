@@ -76,6 +76,12 @@ namespace Saturn.UI.Dialogs
             modelComboBox.SetSource(new[] { preferences.DefaultModel });
             modelComboBox.SelectedItemChanged += OnModelChanged;
             
+            if (!string.IsNullOrEmpty(preferences.DefaultModel))
+            {
+                modelComboBox.Text = preferences.DefaultModel;
+                modelComboBox.SelectedItem = 0;
+            }
+            
             var temperatureLabel = new Label("Temperature (0.0-2.0):")
             {
                 X = 1,
