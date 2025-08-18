@@ -26,7 +26,7 @@ namespace Saturn.Tools.Core
         
         public abstract Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters);
         
-        protected T GetParameter<T>(Dictionary<string, object> parameters, string key, T defaultValue = default)
+        protected T GetParameter<T>(Dictionary<string, object> parameters, string key, T defaultValue = default!)
         {
             if (parameters.TryGetValue(key, out var value))
             {
@@ -48,7 +48,7 @@ namespace Saturn.Tools.Core
             return defaultValue;
         }
         
-        protected ToolResult CreateSuccessResult(object data, string formattedOutput = null)
+        protected ToolResult CreateSuccessResult(object data, string? formattedOutput = null)
         {
             return new ToolResult
             {
