@@ -19,9 +19,9 @@ namespace Saturn.Tools
         private readonly CommandExecutorConfig _config;
         private readonly ICommandApprovalService _approvalService;
 
-        public ExecuteCommandTool() : this(new CommandExecutorConfig(), null) { }
+        public ExecuteCommandTool() : this(new CommandExecutorConfig(), null!) { }
 
-        public ExecuteCommandTool(CommandExecutorConfig config) : this(config, null) { }
+        public ExecuteCommandTool(CommandExecutorConfig config) : this(config, null!) { }
 
         public ExecuteCommandTool(CommandExecutorConfig config, ICommandApprovalService approvalService)
         {
@@ -362,7 +362,7 @@ namespace Saturn.Tools
         public int DefaultTimeout { get; set; } = 30;
         public bool EnableHistory { get; set; } = true;
         public int MaxHistorySize { get; set; } = 100;
-        public Func<string, CommandValidationResult> CustomValidator { get; set; }
+        public Func<string, CommandValidationResult>? CustomValidator { get; set; }
     }
 
     public enum SecurityMode
@@ -375,27 +375,27 @@ namespace Saturn.Tools
     public class CommandValidationResult
     {
         public bool IsValid { get; set; }
-        public string Reason { get; set; }
+        public string Reason { get; set; } = string.Empty;
     }
 
     public class CommandResult
     {
         public int ExitCode { get; set; }
-        public string StandardOutput { get; set; }
-        public string StandardError { get; set; }
+        public string StandardOutput { get; set; } = string.Empty;
+        public string StandardError { get; set; } = string.Empty;
         public TimeSpan Duration { get; set; }
-        public string Command { get; set; }
-        public string WorkingDirectory { get; set; }
+        public string Command { get; set; } = string.Empty;
+        public string WorkingDirectory { get; set; } = string.Empty;
     }
 
     public class CommandHistory
     {
-        public string Command { get; set; }
-        public string WorkingDirectory { get; set; }
+        public string Command { get; set; } = string.Empty;
+        public string WorkingDirectory { get; set; } = string.Empty;
         public DateTime ExecutedAt { get; set; }
         public int? ExitCode { get; set; }
         public TimeSpan? Duration { get; set; }
         public bool Success { get; set; }
-        public string Error { get; set; }
+        public string? Error { get; set; }
     }
 }
