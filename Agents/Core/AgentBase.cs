@@ -16,7 +16,7 @@ using Saturn.Tools.Core;
 
 namespace Saturn.Agents.Core
 {
-    public abstract class AgentBase
+    public abstract class AgentBase : IDisposable
     {
         public string Id { get; } = Guid.NewGuid().ToString();
         public AgentConfiguration Configuration { get; protected set; }
@@ -1163,6 +1163,21 @@ namespace Saturn.Agents.Core
 
             var json = JsonSerializer.Serialize(contentParts);
             return JsonDocument.Parse(json).RootElement;
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Repository?.Dispose();
+                Repository = null;
+            }
         }
 
     }
