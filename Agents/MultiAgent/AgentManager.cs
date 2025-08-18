@@ -105,7 +105,7 @@ Report your progress clearly and concisely."),
             return (true, agentId, null);
         }
         
-        public async Task<string> HandOffTask(string agentId, string task, Dictionary<string, object>? context = null)
+        public Task<string> HandOffTask(string agentId, string task, Dictionary<string, object>? context = null)
         {
             if (!_runningAgents.TryGetValue(agentId, out var agentContext))
             {
@@ -183,7 +183,7 @@ Report your progress clearly and concisely."),
                 }
             });
             
-            return taskId;
+            return Task.FromResult(taskId);
         }
         
         public AgentStatusInfo GetAgentStatus(string agentId)
