@@ -38,7 +38,7 @@ namespace Saturn.Tools.MultiAgent
         
         public override string GetDisplaySummary(Dictionary<string, object> parameters)
         {
-            var taskIdsObj = GetParameter<object>(parameters, "task_ids", null);
+            var taskIdsObj = GetParameter<object?>(parameters, "task_ids", null);
             var timeout = GetParameter<int>(parameters, "timeout_seconds", 30);
             
             string agentInfo = "agents";
