@@ -212,9 +212,11 @@ namespace Saturn.UI.Dialogs
             
             if (model != null)
             {
-                var contextLength = model.ContextLength > 0 ? $"{model.ContextLength:N0} tokens" : "Unknown";
+                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
+                    ? $"{model.ContextLength.Value:N0} tokens" 
+                    : "Unknown";
                 var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
-                modelInfoLabel.Text = $"Context: {contextLength}{pricing}";
+                modelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
             }
         }
         
