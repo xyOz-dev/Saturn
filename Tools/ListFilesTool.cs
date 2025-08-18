@@ -139,7 +139,7 @@ Examples
                 var path = GetParameter<string>(parameters, "path", Directory.GetCurrentDirectory());
                 var recursive = GetParameter<bool>(parameters, "recursive", false);
                 var includeHidden = GetParameter<bool>(parameters, "includeHidden", false);
-                var pattern = GetParameter<string>(parameters, "pattern", null);
+                var pattern = GetParameter<string?>(parameters, "pattern", null);
                 var sortBy = GetParameter<string>(parameters, "sortBy", "name");
                 var sortDescending = GetParameter<bool>(parameters, "sortDescending", false);
                 var maxDepth = GetParameter<int?>(parameters, "maxDepth", null);
@@ -587,9 +587,9 @@ Examples
         
         private class FileSystemItem
         {
-            public string Name { get; set; }
-            public string FullPath { get; set; }
-            public string RelativePath { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string FullPath { get; set; } = string.Empty;
+            public string RelativePath { get; set; } = string.Empty;
             public bool IsDirectory { get; set; }
             public long Size { get; set; }
             public DateTime CreatedDate { get; set; }
@@ -597,16 +597,16 @@ Examples
             public FileAttributes Attributes { get; set; }
             public int Depth { get; set; }
             public bool HasError { get; set; }
-            public string ErrorMessage { get; set; }
+            public string? ErrorMessage { get; set; }
         }
         
         private class TreeNode
         {
-            public string Name { get; set; }
-            public string FullPath { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string FullPath { get; set; } = string.Empty;
             public bool IsDirectory { get; set; }
-            public FileSystemItem Item { get; set; }
-            public List<TreeNode> Children { get; set; }
+            public FileSystemItem Item { get; set; } = new FileSystemItem();
+            public List<TreeNode> Children { get; set; } = new List<TreeNode>();
         }
         
         private class Statistics
