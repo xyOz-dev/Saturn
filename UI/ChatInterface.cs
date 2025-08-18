@@ -192,13 +192,13 @@ namespace Saturn.UI
                 }),
                 new MenuBarItem("_Agent", new MenuItem?[]
                 {
-                    new MenuItem("_Modes...", "", () => ShowModeSelectionDialog()),
+                    new MenuItem("_Modes...", "", async () => await ShowModeSelectionDialogAsync()),
                     null,
                     new MenuItem("_Select Model...", "", async () => await ShowModelSelectionDialog()),
                     new MenuItem("_Temperature...", "", () => ShowTemperatureDialog()),
                     new MenuItem("_Max Tokens...", "", () => ShowMaxTokensDialog()),
                     new MenuItem("Top _P...", "", () => ShowTopPDialog()),
-                    new MenuItem("Select _Tools...", "", () => ShowToolSelectionDialog()),
+                    new MenuItem("Select _Tools...", "", async () => await ShowToolSelectionDialogAsync()),
                     null,
                     new MenuItem("_Streaming", "", () => ToggleStreaming()) 
                         { Checked = currentConfig.EnableStreaming },
@@ -1145,7 +1145,7 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
-        private void ShowModeSelectionDialog()
+        private async Task ShowModeSelectionDialogAsync()
         {
             var dialog = new ModeSelectionDialog();
             Application.Run(dialog);
@@ -1155,7 +1155,7 @@ namespace Saturn.UI
                 try
                 {
                     ApplyModeToUIConfiguration(dialog.SelectedMode);
-                    Task.Run(async () => await ReconfigureAgent());
+                    await ReconfigureAgent();
                 }
                 catch (Exception ex)
                 {
@@ -1164,15 +1164,15 @@ namespace Saturn.UI
             }
             else if (dialog.ShouldCreateNew)
             {
-                ShowModeEditorDialog(null);
+                await ShowModeEditorDialogAsync(null);
             }
             else if (dialog.ModeToEdit != null)
             {
-                ShowModeEditorDialog(dialog.ModeToEdit);
+                await ShowModeEditorDialogAsync(dialog.ModeToEdit);
             }
         }
         
-        private void ShowModeEditorDialog(Mode modeToEdit)
+        private async Task ShowModeEditorDialogAsync(Mode modeToEdit)
         {
             var editorDialog = new ModeEditorDialog(modeToEdit, openRouterClient);
             Application.Run(editorDialog);
@@ -1192,7 +1192,7 @@ namespace Saturn.UI
                 if (applyNow == 0)
                 {
                     ApplyModeToUIConfiguration(editorDialog.ResultMode);
-                    Task.Run(async () => await ReconfigureAgent());
+                    await ReconfigureAgent();
                 }
             }
         }
@@ -1215,7 +1215,7 @@ namespace Saturn.UI
             }
         }
         
-        private void ShowToolSelectionDialog()
+        private async Task ShowToolSelectionDialogAsync()
         {
             var dialog = new ToolSelectionDialog(currentConfig.ToolNames);
             Application.Run(dialog);
@@ -1224,7 +1224,7 @@ namespace Saturn.UI
             {
                 currentConfig.ToolNames = dialog.SelectedTools;
                 currentConfig.EnableTools = dialog.SelectedTools.Count > 0;
-                Task.Run(async () => await ReconfigureAgent());
+                await ReconfigureAgent();
             }
         }
 
