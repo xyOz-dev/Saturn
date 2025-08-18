@@ -171,7 +171,7 @@ Examples:
             }
             catch (Exception ex)
             {
-                System.Console.WriteLine($"Error reading file {filePath}: {ex.Message}");
+
             }
         }
         

@@ -234,7 +234,7 @@ namespace Saturn.Agents.Core
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error loading mode from {file}: {ex.Message}");
+
                 }
             }
         }

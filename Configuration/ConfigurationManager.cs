@@ -45,7 +45,7 @@ namespace Saturn.Configuration
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error loading configuration: {ex.Message}");
+
                 return null;
             }
         }
@@ -64,7 +64,7 @@ namespace Saturn.Configuration
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error saving configuration: {ex.Message}");
+
             }
         }
 
