@@ -4,7 +4,7 @@ namespace Saturn.Tools.Core
 {
     public static class AgentContext
     {
-        private static AgentConfiguration _currentConfiguration;
+        private static AgentConfiguration _currentConfiguration = null!;
         
         public static AgentConfiguration CurrentConfiguration
         {
