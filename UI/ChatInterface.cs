@@ -192,11 +192,13 @@ namespace Saturn.UI
                 }),
                 new MenuBarItem("_Agent", new MenuItem?[]
                 {
+                    new MenuItem("_Modes...", "", async () => await ShowModeSelectionDialogAsync()),
+                    null,
                     new MenuItem("_Select Model...", "", async () => await ShowModelSelectionDialog()),
                     new MenuItem("_Temperature...", "", () => ShowTemperatureDialog()),
                     new MenuItem("_Max Tokens...", "", () => ShowMaxTokensDialog()),
                     new MenuItem("Top _P...", "", () => ShowTopPDialog()),
-                    new MenuItem("Select _Tools...", "", () => ShowToolSelectionDialog()),
+                    new MenuItem("Select _Tools...", "", async () => await ShowToolSelectionDialogAsync()),
                     null,
                     new MenuItem("_Streaming", "", () => ToggleStreaming()) 
                         { Checked = currentConfig.EnableStreaming },
@@ -1143,7 +1145,77 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
-        private void ShowToolSelectionDialog()
+        private async Task ShowModeSelectionDialogAsync()
+        {
+            var dialog = new ModeSelectionDialog();
+            Application.Run(dialog);
+            
+            if (dialog.SelectedMode != null)
+            {
+                try
+                {
+                    ApplyModeToUIConfiguration(dialog.SelectedMode);
+                    await ReconfigureAgent();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.ErrorQuery("Error", $"Failed to apply mode: {ex.Message}", "OK");
+                }
+            }
+            else if (dialog.ShouldCreateNew)
+            {
+                await ShowModeEditorDialogAsync(null);
+            }
+            else if (dialog.ModeToEdit != null)
+            {
+                await ShowModeEditorDialogAsync(dialog.ModeToEdit);
+            }
+        }
+        
+        private async Task ShowModeEditorDialogAsync(Mode modeToEdit)
+        {
+            var editorDialog = new ModeEditorDialog(modeToEdit, openRouterClient);
+            Application.Run(editorDialog);
+            
+            if (editorDialog.ResultMode != null)
+            {
+                var message = modeToEdit != null 
+                    ? $"Mode '{editorDialog.ResultMode.Name}' updated successfully"
+                    : $"Mode '{editorDialog.ResultMode.Name}' created successfully";
+                    
+                MessageBox.Query("Success", message, "OK");
+                
+                var applyNow = MessageBox.Query("Apply Mode", 
+                    $"Would you like to apply the mode '{editorDialog.ResultMode.Name}' now?", 
+                    "Yes", "No");
+                    
+                if (applyNow == 0)
+                {
+                    ApplyModeToUIConfiguration(editorDialog.ResultMode);
+                    await ReconfigureAgent();
+                }
+            }
+        }
+        
+        private void ApplyModeToUIConfiguration(Mode mode)
+        {
+            currentConfig.Model = mode.Model;
+            currentConfig.Temperature = mode.Temperature;
+            currentConfig.MaxTokens = mode.MaxTokens;
+            currentConfig.TopP = mode.TopP;
+            currentConfig.EnableStreaming = mode.EnableStreaming;
+            currentConfig.MaintainHistory = mode.MaintainHistory;
+            currentConfig.RequireCommandApproval = mode.RequireCommandApproval;
+            currentConfig.ToolNames = new List<string>(mode.ToolNames ?? new List<string>());
+            currentConfig.EnableTools = mode.ToolNames?.Count > 0;
+            
+            if (!string.IsNullOrWhiteSpace(mode.SystemPromptOverride))
+            {
+                currentConfig.SystemPrompt = mode.SystemPromptOverride;
+            }
+        }
+        
+        private async Task ShowToolSelectionDialogAsync()
         {
             var dialog = new ToolSelectionDialog(currentConfig.ToolNames);
             Application.Run(dialog);
@@ -1152,7 +1224,7 @@ namespace Saturn.UI
             {
                 currentConfig.ToolNames = dialog.SelectedTools;
                 currentConfig.EnableTools = dialog.SelectedTools.Count > 0;
-                Task.Run(async () => await ReconfigureAgent());
+                await ReconfigureAgent();
             }
         }
 
