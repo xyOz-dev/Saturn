@@ -613,38 +613,38 @@ Important: The context line (@@ ... @@) must be unique in the file!";
         private class PatchOperation
         {
             public OperationType Type { get; set; }
-            public string FilePath { get; set; }
-            public List<PatchHunk> Hunks { get; set; }
-            public string Content { get; set; }
+            public string FilePath { get; set; } = string.Empty;
+            public List<PatchHunk> Hunks { get; set; } = new List<PatchHunk>();
+            public string Content { get; set; } = string.Empty;
         }
         
         private class PatchHunk
         {
-            public string ContextLine { get; set; }
-            public List<PatchChange> Changes { get; set; }
+            public string ContextLine { get; set; } = string.Empty;
+            public List<PatchChange> Changes { get; set; } = new List<PatchChange>();
         }
         
         private class PatchChange
         {
             public ChangeType Type { get; set; }
-            public string Content { get; set; }
+            public string Content { get; set; } = string.Empty;
         }
         
         private class FileChange
         {
             public ChangeType Type { get; set; }
-            public string OldContent { get; set; }
-            public string NewContent { get; set; }
+            public string OldContent { get; set; } = string.Empty;
+            public string NewContent { get; set; } = string.Empty;
         }
         
         private class Commit
         {
-            public Dictionary<string, FileChange> Changes { get; set; }
+            public Dictionary<string, FileChange> Changes { get; set; } = new Dictionary<string, FileChange>();
         }
         
         private class PatchStatistics
         {
-            public List<string> ChangedFiles { get; set; }
+            public List<string> ChangedFiles { get; set; } = new List<string>();
             public int Additions { get; set; }
             public int Removals { get; set; }
         }
