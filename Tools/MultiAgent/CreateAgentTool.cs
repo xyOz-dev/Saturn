@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
 using Saturn.Agents.MultiAgent;
+using Saturn.Config;
 
 namespace Saturn.Tools.MultiAgent
 {
@@ -25,16 +26,6 @@ namespace Saturn.Tools.MultiAgent
                 {
                     ["type"] = "string",
                     ["description"] = "The specific purpose and capabilities of this agent"
-                },
-                ["model"] = new Dictionary<string, object>
-                {
-                    ["type"] = "string",
-                    ["description"] = "Model to use (default: anthropic/claude-3.5-sonnet)"
-                },
-                ["enable_tools"] = new Dictionary<string, object>
-                {
-                    ["type"] = "boolean",
-                    ["description"] = "Whether the agent should have access to tools"
                 }
             };
         }
@@ -58,12 +49,19 @@ namespace Saturn.Tools.MultiAgent
             {
                 var name = parameters["name"].ToString()!;
                 var purpose = parameters["purpose"].ToString()!;
-                var model = parameters.ContainsKey("model") ? 
-                    parameters["model"].ToString()! : "anthropic/claude-3.5-sonnet";
-                var enableTools = parameters.ContainsKey("enable_tools") ? 
-                    Convert.ToBoolean(parameters["enable_tools"]) : true;
                 
-                var result = await AgentManager.Instance.TryCreateSubAgent(name, purpose, model, enableTools);
+                var prefs = SubAgentPreferences.Instance;
+                
+                var result = await AgentManager.Instance.TryCreateSubAgent(
+                    name, 
+                    purpose, 
+                    prefs.DefaultModel, 
+                    prefs.DefaultEnableTools,
+                    prefs.DefaultTemperature,
+                    prefs.DefaultMaxTokens,
+                    prefs.DefaultTopP,
+                    null // No system prompt override from defaults
+                );
                 
                 if (result.success)
                 {
@@ -73,9 +71,11 @@ namespace Saturn.Tools.MultiAgent
                             ["agent_id"] = result.result,
                             ["name"] = name,
                             ["purpose"] = purpose,
-                            ["model"] = model
+                            ["model"] = prefs.DefaultModel,
+                            ["temperature"] = prefs.DefaultTemperature,
+                            ["max_tokens"] = prefs.DefaultMaxTokens
                         },
-                        $"Created agent '{name}' with ID: {result.result}"
+                        $"Created agent '{name}' with ID: {result.result} using model: {prefs.DefaultModel}"
                     );
                 }
                 else
