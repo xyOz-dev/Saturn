@@ -454,7 +454,7 @@ Safety features:
         
         private class SearchReplaceResults
         {
-            public List<FileResult> ProcessedFiles { get; set; }
+            public List<FileResult> ProcessedFiles { get; set; } = new List<FileResult>();
             public int TotalFiles { get; set; }
             public int TotalMatches { get; set; }
             public int TotalReplacements { get; set; }
@@ -462,20 +462,20 @@ Safety features:
         
         private class FileResult
         {
-            public string Path { get; set; }
+            public string Path { get; set; } = string.Empty;
             public int MatchCount { get; set; }
             public int ReplacementCount { get; set; }
             public bool Modified { get; set; }
-            public List<MatchInfo> Matches { get; set; }
-            public string Preview { get; set; }
+            public List<MatchInfo> Matches { get; set; } = new List<MatchInfo>();
+            public string Preview { get; set; } = string.Empty;
         }
         
         private class MatchInfo
         {
             public int Line { get; set; }
             public int Column { get; set; }
-            public string MatchedText { get; set; }
-            public string LineContent { get; set; }
+            public string MatchedText { get; set; } = string.Empty;
+            public string LineContent { get; set; } = string.Empty;
         }
     }
 }
