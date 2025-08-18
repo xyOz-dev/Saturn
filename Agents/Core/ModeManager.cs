@@ -38,7 +38,7 @@ namespace Saturn.Agents.Core
             return allModes;
         }
 
-        public Mode GetMode(Guid modeId)
+        public Mode? GetMode(Guid modeId)
         {
             if (modeId == Guid.Empty)
                 return _defaultMode;
@@ -46,7 +46,7 @@ namespace Saturn.Agents.Core
             return _modes.FirstOrDefault(m => m.Id == modeId);
         }
 
-        public Mode GetModeByName(string name)
+        public Mode? GetModeByName(string name)
         {
             if (string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase))
                 return _defaultMode;
@@ -112,7 +112,7 @@ namespace Saturn.Agents.Core
             return mode;
         }
 
-        public async Task DeleteModeAsync(Guid modeId)
+        public Task DeleteModeAsync(Guid modeId)
         {
             if (modeId == Guid.Empty)
                 throw new InvalidOperationException("Cannot delete the default mode");
@@ -128,6 +128,8 @@ namespace Saturn.Agents.Core
             {
                 File.Delete(filePath);
             }
+            
+            return Task.CompletedTask;
         }
 
         public async Task<Mode> DuplicateModeAsync(Guid modeId)
