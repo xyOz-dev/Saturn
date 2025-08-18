@@ -16,7 +16,7 @@ public class ChatHistoryRepository : IDisposable
     private readonly string _connectionString;
     private readonly string _dbPath;
     private readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
-    private readonly SemaphoreSlim _readLock = new SemaphoreSlim(10, 10); // Allow up to 10 concurrent readers
+    private readonly SemaphoreSlim _readLock = new SemaphoreSlim(26, 26);
 
     public ChatHistoryRepository(string? workspacePath = null)
     {
@@ -30,8 +30,7 @@ public class ChatHistoryRepository : IDisposable
         }
 
         _dbPath = Path.Combine(saturnDir, "chats.db");
-        // Cache=Shared enables shared cache mode for better performance
-        _connectionString = $"Data Source={_dbPath};Mode=ReadWriteCreate;Cache=Shared";
+        _connectionString = $"Data Source={_dbPath};Mode=ReadWriteCreate;Cache=Private";
         InitializeDatabase();
     }
 
@@ -40,14 +39,12 @@ public class ChatHistoryRepository : IDisposable
         using var connection = new SqliteConnection(_connectionString);
         connection.Open();
         
-        // Enable WAL mode for better concurrency
         using (var cmd = new SqliteCommand("PRAGMA journal_mode = WAL;", connection))
             cmd.ExecuteNonQuery();
             
         using (var cmd = new SqliteCommand("PRAGMA foreign_keys = ON;", connection))
             cmd.ExecuteNonQuery();
-            
-        // Optimize for concurrent access
+
         using (var cmd = new SqliteCommand("PRAGMA busy_timeout = 5000;", connection))
             cmd.ExecuteNonQuery();
 
@@ -148,14 +145,12 @@ public class ChatHistoryRepository : IDisposable
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
         
-        // Enable WAL mode for better concurrency (needs to be set per connection)
         using (var cmd = new SqliteCommand("PRAGMA journal_mode = WAL;", connection))
             cmd.ExecuteNonQuery();
             
         using (var cmd = new SqliteCommand("PRAGMA foreign_keys = ON;", connection))
             cmd.ExecuteNonQuery();
             
-        // Set busy timeout to wait if database is locked
         using (var cmd = new SqliteCommand("PRAGMA busy_timeout = 5000;", connection))
             cmd.ExecuteNonQuery();
             
@@ -313,7 +308,6 @@ public class ChatHistoryRepository : IDisposable
 
             try
             {
-                // Get the next sequence number within the transaction to avoid race conditions
                 var seqSql = "SELECT COALESCE(MAX(SequenceNumber), 0) + 1 FROM ChatMessages WHERE SessionId = @SessionId";
                 int startSequence;
                 using (var seqCmd = new SqliteCommand(seqSql, connection, transaction))
