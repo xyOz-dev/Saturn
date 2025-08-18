@@ -14,8 +14,8 @@ namespace Saturn.Data;
 public class ChatHistoryRepository : IDisposable
 {
     private readonly string _connectionString;
-    private SqliteConnection? _connection;
     private readonly string _dbPath;
+    private readonly SemaphoreSlim _dbLock = new SemaphoreSlim(1, 1);
 
     public ChatHistoryRepository(string? workspacePath = null)
     {
@@ -29,7 +29,7 @@ public class ChatHistoryRepository : IDisposable
         }
 
         _dbPath = Path.Combine(saturnDir, "chats.db");
-        _connectionString = $"Data Source={_dbPath}";
+        _connectionString = $"Data Source={_dbPath};Mode=ReadWriteCreate;Cache=Shared";
         InitializeDatabase();
     }
 
@@ -604,6 +604,6 @@ public class ChatHistoryRepository : IDisposable
 
     public void Dispose()
     {
-        _connection?.Dispose();
+        _dbLock?.Dispose();
     }
 }
