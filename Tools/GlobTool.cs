@@ -13,96 +13,65 @@ namespace Saturn.Tools
     public class GlobTool : ToolBase
     {
         public override string Name => "glob";
-        
-        public override string Description => @"Use this tool to find files by name patterns. This is your tool for discovering file locations and understanding project structure.
 
-When to use:
-- Finding all files of a certain type (e.g., all .cs files)
-- Locating specific files when you know part of the name
-- Discovering project structure and organization
-- Finding test files, configuration files, or documentation
-- Checking if certain files exist in the project
+        public override string Description => @"Find files/dirs by glob(s) inside the working directory. Supports multiple
+includes (',' or ';'), '!' negation, extra excludes, base path, case
+sensitivity, depth limit, symlink handling, compact output, and max results.";
 
-How to use:
-- Set 'pattern' to your glob pattern (supports *, ?, ** wildcards)
-- Use 'path' to search from a specific directory (optional)
-- Set 'includeDirectories' to true to also list folders
-- Use 'exclude' array to filter out unwanted results
-- Set 'caseSensitive' based on your needs
-- Use 'compactOutput' for just file paths
-- Set 'maxDepth' to limit recursion depth
-
-Examples:
-- Find all C# files: pattern='**/*.cs'
-- Find test files: pattern='**/*Test.cs' or pattern='**/test/**/*'
-- Find config files: pattern='**/*.{json,xml,config}'
-- Find specific file: pattern='**/UserService.cs'
-- Find all in folder: pattern='src/models/**/*'
-
-Note: Use this before grep when you need to find files first, then search within them.";
-        
         protected override Dictionary<string, object> GetParameterProperties()
         {
             return new Dictionary<string, object>
             {
-                { "pattern", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Glob pattern to match file names. Use * for any characters, ** for recursive directories, ? for single character" }
-                    }
+                ["pattern"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Required. Include glob(s). Supports *, ?, **; separate with ',' or ';'. " +
+                                     "Prefix with '!' to negate."
                 },
-                { "path", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Base directory to search from (defaults to current directory)" }
-                    }
+                ["path"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Search root (default: current directory)."
                 },
-                { "includeDirectories", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Include directories in results (default: false)" }
-                    }
+                ["includeDirectories"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Include directories in results."
                 },
-                { "caseSensitive", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Case-sensitive matching (default: false)" }
-                    }
+                ["caseSensitive"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Case-sensitive matching."
                 },
-                { "maxResults", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Maximum number of results to return (default: 1000)" }
-                    }
+                ["maxResults"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Maximum results to return (default: 1000)."
                 },
-                { "exclude", new Dictionary<string, object>
-                    {
-                        { "type", "array" },
-                        { "items", new Dictionary<string, object> { { "type", "string" } } },
-                        { "description", "Patterns to exclude from results" }
-                    }
+                ["exclude"] = new Dictionary<string, object>
+                {
+                    ["type"] = "array",
+                    ["items"] = new Dictionary<string, object> { ["type"] = "string" },
+                    ["description"] = "Additional exclude patterns."
                 },
-                { "compactOutput", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Show only file paths without size/date info (default: false)" }
-                    }
+                ["compactOutput"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Only output paths (no size/date)."
                 },
-                { "maxDepth", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Maximum directory depth for recursive search (default: unlimited)" }
-                    }
+                ["maxDepth"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Max directory depth (-1 = unlimited)."
                 },
-                { "followSymlinks", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Follow symbolic links (default: false)" }
-                    }
+                ["followSymlinks"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Follow symbolic links."
                 }
             };
         }
-        
+
         protected override string[] GetRequiredParameters()
         {
             return new[] { "pattern" };
