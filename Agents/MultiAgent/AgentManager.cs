@@ -159,20 +159,16 @@ Report your progress clearly and concisely.";
                         agentContext.Status = AgentStatus.BeingReviewed;
                         OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Being Reviewed");
                         
-                        var reviewDecision = await StartReviewProcess(
+                        var currentResult = result.Content.ToString();
+                        ReviewDecision reviewDecision = await StartReviewProcess(
                             agentId, 
                             taskId, 
                             task, 
-                            result.Content.ToString(),
+                            currentResult,
                             agentContext);
                         
-                        if (reviewDecision.Status == ReviewStatus.Approved)
-                        {
-                            CompleteTask(taskId, agentId, agentContext, true, 
-                                $"{result.Content}\n\n[Review: Approved - {reviewDecision.Feedback}]");
-                        }
-                        else if (reviewDecision.Status == ReviewStatus.RevisionRequested && 
-                                 agentContext.RevisionCount < SubAgentPreferences.Instance.MaxRevisionCycles)
+                        while (reviewDecision.Status == ReviewStatus.RevisionRequested && 
+                               agentContext.RevisionCount < SubAgentPreferences.Instance.MaxRevisionCycles)
                         {
                             agentContext.Status = AgentStatus.Revising;
                             agentContext.RevisionCount++;
@@ -180,27 +176,35 @@ Report your progress clearly and concisely.";
                             
                             var revisionInput = $"Please revise your previous work based on this feedback:\n{reviewDecision.Feedback}\n\nOriginal task: {task}";
                             var revisedResult = await agentContext.Agent.Execute<Message>(revisionInput);
+                            currentResult = revisedResult.Content.ToString();
                             
                             agentContext.Status = AgentStatus.BeingReviewed;
-                            OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Being Reviewed (Revision)");
+                            OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Being Reviewed (Revision {agentContext.RevisionCount})");
                             
-                            var finalReview = await StartReviewProcess(
+                            reviewDecision = await StartReviewProcess(
                                 agentId, 
                                 taskId, 
                                 task, 
-                                revisedResult.Content.ToString(),
+                                currentResult,
                                 agentContext);
-                            
-                            CompleteTask(taskId, agentId, agentContext, 
-                                finalReview.Status == ReviewStatus.Approved,
-                                finalReview.Status == ReviewStatus.Approved 
-                                    ? $"{revisedResult.Content}\n\n[Review: Approved after revision - {finalReview.Feedback}]"
-                                    : $"Task failed review after {agentContext.RevisionCount} revision(s). Feedback: {finalReview.Feedback}");
+                        }
+                        
+                        if (reviewDecision.Status == ReviewStatus.Approved)
+                        {
+                            var approvalMessage = agentContext.RevisionCount > 0 
+                                ? $"{currentResult}\n\n[Review: Approved after {agentContext.RevisionCount} revision(s) - {reviewDecision.Feedback}]"
+                                : $"{currentResult}\n\n[Review: Approved - {reviewDecision.Feedback}]";
+                            CompleteTask(taskId, agentId, agentContext, true, approvalMessage);
+                        }
+                        else if (reviewDecision.Status == ReviewStatus.Rejected)
+                        {
+                            CompleteTask(taskId, agentId, agentContext, false, 
+                                $"Task rejected by reviewer: {reviewDecision.Feedback}");
                         }
                         else
                         {
                             CompleteTask(taskId, agentId, agentContext, false, 
-                                $"Task rejected by reviewer: {reviewDecision.Feedback}");
+                                $"Task failed review after {agentContext.RevisionCount} revision(s). Final feedback: {reviewDecision.Feedback}");
                         }
                     }
                     else
