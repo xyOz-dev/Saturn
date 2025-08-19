@@ -39,41 +39,35 @@ Examples:
         {
             return new Dictionary<string, object>
             {
-                { "pattern", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "The regular expression pattern to search for" }
-                    }
+                ["pattern"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "The regular expression pattern to search for"
                 },
-                { "path", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "File or directory path to search in" }
-                    }
+                ["path"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "File or directory path to search in"
                 },
-                { "recursive", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Search recursively in subdirectories" }
-                    }
+                ["recursive"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Search recursively in subdirectories"
                 },
-                { "filePattern", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "File name pattern to filter which files to search in. Default is * for all files" }
-                    }
+                ["filePattern"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "File name pattern to filter which files to search in. Default is * for all files"
                 },
-                { "ignoreCase", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Perform case-insensitive search" }
-                    }
+                ["ignoreCase"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Perform case-insensitive search"
                 },
-                { "maxResults", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Maximum number of results to return" }
-                    }
+                ["maxResults"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Maximum number of results to return"
                 }
             };
         }
