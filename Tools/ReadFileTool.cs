@@ -40,41 +40,35 @@ Examples:
         {
             return new Dictionary<string, object>
             {
-                { "path", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "File path to read. Must be an absolute or relative path to an existing file" }
-                    }
+                ["path"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "File path to read. Must be an absolute or relative path to an existing file"
                 },
-                { "startLine", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Starting line number to read from (1-based). Default reads from beginning" }
-                    }
+                ["startLine"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Starting line number to read from (1-based). Default reads from beginning"
                 },
-                { "endLine", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Ending line number to read to (inclusive). Default reads to end of file" }
-                    }
+                ["endLine"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Ending line number to read to (inclusive). Default reads to end of file"
                 },
-                { "encoding", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Text encoding to use. Options: utf8, utf16, utf32, ascii, unicode. Default is utf8" }
-                    }
+                ["encoding"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Text encoding to use. Options: utf8, utf16, utf32, ascii, unicode. Default is utf8"
                 },
-                { "includeLineNumbers", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Include line numbers in output. Default is true" }
-                    }
+                ["includeLineNumbers"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Include line numbers in output. Default is true"
                 },
-                { "includeMetadata", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Include file metadata like size, dates, and encoding. Default is true" }
-                    }
+                ["includeMetadata"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Include file metadata like size, dates, and encoding. Default is true"
                 }
             };
         }

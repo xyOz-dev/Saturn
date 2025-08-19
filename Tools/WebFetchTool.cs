@@ -54,48 +54,41 @@ When to use:
         {
             return new Dictionary<string, object>
             {
-                { "url", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "The URL to fetch content from" }
-                    }
+                ["url"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "The URL to fetch content from"
                 },
-                { "extractionMode", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "enum", new[] { "full", "article", "text", "markdown" } },
-                        { "description", "Content extraction mode: full (entire page), article (main content), text (plain text), markdown (formatted). Default: markdown" }
-                    }
+                ["extractionMode"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["enum"] = new[] { "full", "article", "text", "markdown" },
+                    ["description"] = "Content extraction mode: full (entire page), article (main content), text (plain text), markdown (formatted). Default: markdown"
                 },
-                { "maxLength", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Maximum content length in characters. Default: 50000" }
-                    }
+                ["maxLength"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Maximum content length in characters. Default: 50000"
                 },
-                { "includeMetadata", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Include page metadata (title, description, og:tags). Default: true" }
-                    }
+                ["includeMetadata"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Include page metadata (title, description, og:tags). Default: true"
                 },
-                { "selector", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "CSS selector to extract specific content" }
-                    }
+                ["selector"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "CSS selector to extract specific content"
                 },
-                { "headers", new Dictionary<string, object>
-                    {
-                        { "type", "object" },
-                        { "description", "Custom HTTP headers as key-value pairs" }
-                    }
+                ["headers"] = new Dictionary<string, object>
+                {
+                    ["type"] = "object",
+                    ["description"] = "Custom HTTP headers as key-value pairs"
                 },
-                { "useCache", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Use cached content if available. Default: true" }
-                    }
+                ["useCache"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Use cached content if available. Default: true"
                 }
             };
         }

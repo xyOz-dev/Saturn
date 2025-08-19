@@ -37,35 +37,30 @@ namespace Saturn.Tools
         {
             return new Dictionary<string, object>
             {
-                { "command", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "The system command to execute" }
-                    }
+                ["command"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "The system command to execute"
                 },
-                { "workingDirectory", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "The working directory for command execution. Defaults to current directory" }
-                    }
+                ["workingDirectory"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "The working directory for command execution. Defaults to current directory"
                 },
-                { "timeout", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Command timeout in seconds. Default is 30 seconds" }
-                    }
+                ["timeout"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Command timeout in seconds. Default is 30 seconds"
                 },
-                { "captureOutput", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Whether to capture command output. Default is true" }
-                    }
+                ["captureOutput"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Whether to capture command output. Default is true"
                 },
-                { "runAsShell", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Whether to run command through shell. Default is true" }
-                    }
+                ["runAsShell"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Whether to run command through shell. Default is true"
                 }
             };
         }

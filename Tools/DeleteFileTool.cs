@@ -11,64 +11,44 @@ namespace Saturn.Tools
     public class DeleteFileTool : ToolBase
     {
         public override string Name => "delete_file";
-        
-        public override string Description => @"Safely delete files or directories with optional backup.
 
-When to use:
-- Removing obsolete source files
-- Cleaning up temporary files
-- Deleting generated artifacts
-- Removing test outputs
-- Cleaning build directories
+        public override string Description => @"Safely delete files or directories inside the
+working directory. Supports glob filtering, recursive deletion,
+read-only override, and dry-run (no changes). Prevents path
+traversal and operations outside the working directory.";
 
-How to use:
-- Set 'path' to file or directory to delete
-- Use 'recursive' for directory deletion
-- Use 'pattern' for selective deletion in directories
-- Set 'force' to delete read-only items
-
-Safety features:
-- Prevents deletion outside working directory
-- Confirmation for large deletions
-- Detailed operation logging";
-        
         protected override Dictionary<string, object> GetParameterProperties()
         {
             return new Dictionary<string, object>
             {
-                { "path", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Path to file or directory to delete" }
-                    }
+                ["path"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Required. File or directory to delete."
                 },
-                { "recursive", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Delete directories recursively (default: false)" }
-                    }
+                ["recursive"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "If true, delete directories and contents recursively."
                 },
-                { "pattern", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "File pattern to match for selective deletion (e.g., *.tmp)" }
-                    }
+                ["pattern"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Optional glob (e.g. '*.tmp') to filter files in a directory."
                 },
-                { "force", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Force deletion of read-only items (default: false)" }
-                    }
+                ["force"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "If true, clear read-only attribute before deleting."
                 },
-                { "dryRun", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Show what would be deleted without actually deleting (default: false)" }
-                    }
+                ["dryRun"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "If true, simulate deletion and return a report."
                 }
             };
         }
-        
+
         protected override string[] GetRequiredParameters()
         {
             return new[] { "path" };

@@ -565,7 +565,7 @@ Content C");
         public void Description_ReturnsNonEmptyDescription()
         {
             _tool.Description.Should().NotBeNullOrWhiteSpace();
-            _tool.Description.Should().Contain("changes to files");
+            _tool.Description.Should().Contain("file changes");
         }
 
         [Fact]
