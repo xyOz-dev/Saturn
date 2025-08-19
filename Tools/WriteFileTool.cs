@@ -38,35 +38,30 @@ Safety features:
         {
             return new Dictionary<string, object>
             {
-                { "path", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Path where the file should be created" }
-                    }
+                ["path"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Path where the file should be created"
                 },
-                { "content", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Content to write to the file" }
-                    }
+                ["content"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Content to write to the file"
                 },
-                { "overwrite", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Overwrite if file exists (default: false)" }
-                    }
+                ["overwrite"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Overwrite if file exists (default: false)"
                 },
-                { "createDirectories", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Create parent directories if they don't exist (default: true)" }
-                    }
+                ["createDirectories"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Create parent directories if they don't exist (default: true)"
                 },
-                { "encoding", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "File encoding: UTF8, ASCII, Unicode, UTF32 (default: UTF8)" }
-                    }
+                ["encoding"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "File encoding: UTF8, ASCII, Unicode, UTF32 (default: UTF8)"
                 }
             };
         }
