@@ -17,6 +17,10 @@ namespace Saturn.UI.Dialogs
         private TextField maxTokensField;
         private TextField topPField;
         private CheckBox enableToolsCheckBox;
+        private CheckBox enableReviewStageCheckBox;
+        private Label reviewerModelLabel;
+        private ComboBox reviewerModelComboBox;
+        private Label reviewerModelInfoLabel;
         private Button saveButton;
         private Button cancelButton;
         
@@ -27,7 +31,7 @@ namespace Saturn.UI.Dialogs
         public bool ConfigurationSaved { get; private set; }
         
         public SubAgentConfigDialog(OpenRouterClient? openRouterClient = null)
-            : base("Default Sub-Agent Configuration", 80, 20)
+            : base("Default Sub-Agent Configuration", 80, 22)
         {
             client = openRouterClient;
             preferences = SubAgentPreferences.Instance;
@@ -128,31 +132,79 @@ namespace Saturn.UI.Dialogs
                 Checked = preferences.DefaultEnableTools
             };
             
+            enableReviewStageCheckBox = new CheckBox("Enable Review Stage (Sub-agents' work will be reviewed before completion)")
+            {
+                X = 1,
+                Y = 9,
+                Checked = preferences.EnableReviewStage
+            };
+            
+            reviewerModelLabel = new Label("Reviewer Model:")
+            {
+                X = 1,
+                Y = 11,
+                Visible = preferences.EnableReviewStage
+            };
+            
+            reviewerModelComboBox = new ComboBox()
+            {
+                X = Pos.Right(reviewerModelLabel) + 1,
+                Y = 11,
+                Width = 50,
+                Height = 5,
+                Visible = preferences.EnableReviewStage
+            };
+            
+            reviewerModelInfoLabel = new Label("")
+            {
+                X = Pos.Right(reviewerModelComboBox) + 2,
+                Y = 11,
+                Width = Dim.Fill(1),
+                Visible = preferences.EnableReviewStage
+            };
+            
+            reviewerModelComboBox.SetSource(new[] { preferences.ReviewerModel });
+            reviewerModelComboBox.SelectedItemChanged += OnReviewerModelChanged;
+            
+            if (!string.IsNullOrEmpty(preferences.ReviewerModel))
+            {
+                reviewerModelComboBox.Text = preferences.ReviewerModel;
+                reviewerModelComboBox.SelectedItem = 0;
+            }
+            
+            enableReviewStageCheckBox.Toggled += (prev) => 
+            {
+                var isChecked = enableReviewStageCheckBox.Checked;
+                reviewerModelLabel.Visible = isChecked;
+                reviewerModelComboBox.Visible = isChecked;
+                reviewerModelInfoLabel.Visible = isChecked;
+            };
+            
             var separator2 = new Label(new string('─', 78))
             {
                 X = 0,
-                Y = 9,
+                Y = 13,
                 Width = Dim.Fill()
             };
             
             var infoLabel = new Label("These settings will be used for all new sub-agents created by the AI assistant.")
             {
                 X = 1,
-                Y = 10,
+                Y = 14,
                 Width = Dim.Fill(1)
             };
             
             saveButton = new Button("_Save Defaults", true)
             {
                 X = Pos.Center() - 15,
-                Y = 12
+                Y = 16
             };
             saveButton.Clicked += OnSaveClicked;
             
             cancelButton = new Button("_Cancel")
             {
                 X = Pos.Right(saveButton) + 2,
-                Y = 12
+                Y = 16
             };
             cancelButton.Clicked += () => { RequestStop(); };
             
@@ -161,6 +213,8 @@ namespace Saturn.UI.Dialogs
                 temperatureLabel, temperatureField,
                 maxTokensLabel, maxTokensField,
                 topPLabel, topPField, enableToolsCheckBox,
+                enableReviewStageCheckBox,
+                reviewerModelLabel, reviewerModelComboBox, reviewerModelInfoLabel,
                 separator2, infoLabel,
                 saveButton, cancelButton);
             
@@ -185,11 +239,18 @@ namespace Saturn.UI.Dialogs
                     Application.MainLoop.Invoke(() =>
                     {
                         modelComboBox.SetSource(modelNames);
+                        reviewerModelComboBox.SetSource(modelNames);
                         
                         var defaultIndex = Array.IndexOf(modelNames, preferences.DefaultModel);
                         if (defaultIndex >= 0)
                         {
                             modelComboBox.SelectedItem = defaultIndex;
+                        }
+                        
+                        var reviewerIndex = Array.IndexOf(modelNames, preferences.ReviewerModel);
+                        if (reviewerIndex >= 0)
+                        {
+                            reviewerModelComboBox.SelectedItem = reviewerIndex;
                         }
                     });
                 }
@@ -217,6 +278,23 @@ namespace Saturn.UI.Dialogs
                     : "Unknown";
                 var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
                 modelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
+            }
+        }
+        
+        private void OnReviewerModelChanged(ListViewItemEventArgs args)
+        {
+            if (args.Value == null) return;
+            
+            var modelId = args.Value.ToString();
+            var model = availableModels.FirstOrDefault(m => m.Id == modelId);
+            
+            if (model != null)
+            {
+                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
+                    ? $"{model.ContextLength.Value:N0} tokens" 
+                    : "Unknown";
+                var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
+                reviewerModelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
             }
         }
         
@@ -256,6 +334,16 @@ namespace Saturn.UI.Dialogs
             preferences.DefaultMaxTokens = maxTokens;
             preferences.DefaultTopP = topP;
             preferences.DefaultEnableTools = enableToolsCheckBox.Checked;
+            preferences.EnableReviewStage = enableReviewStageCheckBox.Checked;
+            
+            if (enableReviewStageCheckBox.Checked)
+            {
+                var selectedReviewerModel = string.IsNullOrWhiteSpace(reviewerModelComboBox.Text?.ToString()) 
+                    ? preferences.ReviewerModel 
+                    : reviewerModelComboBox.Text.ToString();
+                preferences.ReviewerModel = selectedReviewerModel;
+            }
+            
             preferences.Save();
             
             ConfigurationSaved = true;
