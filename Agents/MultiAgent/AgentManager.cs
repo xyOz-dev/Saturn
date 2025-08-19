@@ -2,10 +2,12 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Saturn.Agents;
 using Saturn.Agents.Core;
+using Saturn.Config;
 using Saturn.Data;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
@@ -17,6 +19,8 @@ namespace Saturn.Agents.MultiAgent
         private static AgentManager? _instance;
         private readonly ConcurrentDictionary<string, SubAgentContext> _runningAgents;
         private readonly ConcurrentDictionary<string, AgentTaskResult> _completedTasks;
+        private readonly ConcurrentDictionary<string, ReviewerContext> _reviewers;
+        private readonly SemaphoreSlim _reviewerSemaphore = new SemaphoreSlim(25);
         private OpenRouterClient _client = null!;
         private const int MaxConcurrentAgents = 25;
         private string? _parentSessionId;
@@ -31,6 +35,7 @@ namespace Saturn.Agents.MultiAgent
         {
             _runningAgents = new ConcurrentDictionary<string, SubAgentContext>();
             _completedTasks = new ConcurrentDictionary<string, AgentTaskResult>();
+            _reviewers = new ConcurrentDictionary<string, ReviewerContext>();
         }
         
         public void Initialize(OpenRouterClient client)
@@ -149,44 +154,67 @@ Report your progress clearly and concisely.";
                     
                     var result = await agentContext.Agent.Execute<Message>(input);
                     
-                    var taskResult = new AgentTaskResult
+                    if (SubAgentPreferences.Instance.EnableReviewStage)
                     {
-                        TaskId = taskId,
-                        AgentId = agentId,
-                        AgentName = agentContext.Name,
-                        Success = true,
-                        Result = result.Content.ToString(),
-                        CompletedAt = DateTime.Now,
-                        Duration = DateTime.Now - agentContext.CurrentTask.StartedAt
-                    };
-                    
-                    _completedTasks[taskId] = taskResult;
-                    agentContext.CurrentTask.Status = TaskStatus.Completed;
-                    agentContext.Status = AgentStatus.Idle;
-                    agentContext.CurrentTask = null;
-                    
-                    OnTaskCompleted?.Invoke(taskId, taskResult);
-                    OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
+                        agentContext.Status = AgentStatus.BeingReviewed;
+                        OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Being Reviewed");
+                        
+                        var currentResult = result.Content.ToString();
+                        ReviewDecision reviewDecision = await StartReviewProcess(
+                            agentId, 
+                            taskId, 
+                            task, 
+                            currentResult,
+                            agentContext);
+                        
+                        while (reviewDecision.Status == ReviewStatus.RevisionRequested && 
+                               agentContext.RevisionCount < SubAgentPreferences.Instance.MaxRevisionCycles)
+                        {
+                            agentContext.Status = AgentStatus.Revising;
+                            agentContext.RevisionCount++;
+                            OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Revising (Attempt {agentContext.RevisionCount})");
+                            
+                            var revisionInput = $"Please revise your previous work based on this feedback:\n{reviewDecision.Feedback}\n\nOriginal task: {task}";
+                            var revisedResult = await agentContext.Agent.Execute<Message>(revisionInput);
+                            currentResult = revisedResult.Content.ToString();
+                            
+                            agentContext.Status = AgentStatus.BeingReviewed;
+                            OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Being Reviewed (Revision {agentContext.RevisionCount})");
+                            
+                            reviewDecision = await StartReviewProcess(
+                                agentId, 
+                                taskId, 
+                                task, 
+                                currentResult,
+                                agentContext);
+                        }
+                        
+                        if (reviewDecision.Status == ReviewStatus.Approved)
+                        {
+                            var approvalMessage = agentContext.RevisionCount > 0 
+                                ? $"{currentResult}\n\n[Review: Approved after {agentContext.RevisionCount} revision(s) - {reviewDecision.Feedback}]"
+                                : $"{currentResult}\n\n[Review: Approved - {reviewDecision.Feedback}]";
+                            CompleteTask(taskId, agentId, agentContext, true, approvalMessage);
+                        }
+                        else if (reviewDecision.Status == ReviewStatus.Rejected)
+                        {
+                            CompleteTask(taskId, agentId, agentContext, false, 
+                                $"Task rejected by reviewer: {reviewDecision.Feedback}");
+                        }
+                        else
+                        {
+                            CompleteTask(taskId, agentId, agentContext, false, 
+                                $"Task failed review after {agentContext.RevisionCount} revision(s). Final feedback: {reviewDecision.Feedback}");
+                        }
+                    }
+                    else
+                    {
+                        CompleteTask(taskId, agentId, agentContext, true, result.Content.ToString());
+                    }
                 }
                 catch (Exception ex)
                 {
-                    var taskResult = new AgentTaskResult
-                    {
-                        TaskId = taskId,
-                        AgentId = agentId,
-                        AgentName = agentContext.Name,
-                        Success = false,
-                        Result = $"Error: {ex.Message}",
-                        CompletedAt = DateTime.Now,
-                        Duration = DateTime.Now - agentContext.CurrentTask!.StartedAt
-                    };
-                    
-                    _completedTasks[taskId] = taskResult;
-                    agentContext.CurrentTask!.Status = TaskStatus.Failed;
-                    agentContext.Status = AgentStatus.Error;
-                    
-                    OnTaskCompleted?.Invoke(taskId, taskResult);
-                    OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Error: {ex.Message}");
+                    CompleteTask(taskId, agentId, agentContext, false, $"Error: {ex.Message}");
                 }
             });
             
@@ -204,11 +232,21 @@ Report your progress clearly and concisely.";
                 };
             }
             
+            var statusText = context.Status.ToString();
+            if (context.Status == AgentStatus.BeingReviewed)
+            {
+                statusText = "Being Reviewed";
+            }
+            else if (context.Status == AgentStatus.Revising)
+            {
+                statusText = $"Revising (Attempt {context.RevisionCount})";
+            }
+            
             return new AgentStatusInfo
             {
                 AgentId = agentId,
                 Name = context.Name,
-                Status = context.Status.ToString(),
+                Status = statusText,
                 CurrentTask = context.CurrentTask?.Description,
                 TaskId = context.CurrentTask?.Id,
                 IsIdle = context.Status == AgentStatus.Idle,
@@ -220,17 +258,30 @@ Report your progress clearly and concisely.";
         
         public List<AgentStatusInfo> GetAllAgentStatuses()
         {
-            return _runningAgents.Values.Select(context => new AgentStatusInfo
+            return _runningAgents.Values.Select(context => 
             {
-                AgentId = context.Id,
-                Name = context.Name,
-                Status = context.Status.ToString(),
-                CurrentTask = context.CurrentTask?.Description,
-                TaskId = context.CurrentTask?.Id,
-                IsIdle = context.Status == AgentStatus.Idle,
-                Exists = true,
-                RunningTime = context.CurrentTask != null ? 
-                    DateTime.Now - context.CurrentTask.StartedAt : TimeSpan.Zero
+                var statusText = context.Status.ToString();
+                if (context.Status == AgentStatus.BeingReviewed)
+                {
+                    statusText = "Being Reviewed";
+                }
+                else if (context.Status == AgentStatus.Revising)
+                {
+                    statusText = $"Revising (Attempt {context.RevisionCount})";
+                }
+                
+                return new AgentStatusInfo
+                {
+                    AgentId = context.Id,
+                    Name = context.Name,
+                    Status = statusText,
+                    CurrentTask = context.CurrentTask?.Description,
+                    TaskId = context.CurrentTask?.Id,
+                    IsIdle = context.Status == AgentStatus.Idle,
+                    Exists = true,
+                    RunningTime = context.CurrentTask != null ? 
+                        DateTime.Now - context.CurrentTask.StartedAt : TimeSpan.Zero
+                };
             }).ToList();
         }
         
@@ -299,6 +350,166 @@ Report your progress clearly and concisely.";
             return results;
         }
         
+        private async Task<ReviewDecision> StartReviewProcess(
+            string subAgentId, 
+            string taskId, 
+            string originalTask, 
+            string subAgentResult,
+            SubAgentContext subAgentContext)
+        {
+            await _reviewerSemaphore.WaitAsync();
+            try
+            {
+                var reviewerId = $"reviewer_{Guid.NewGuid():N}".Substring(0, 16);
+                var prefs = SubAgentPreferences.Instance;
+                
+                var parentContext = "";
+                if (_parentSessionId != null && subAgentContext.Agent.ChatHistory.Count > 0)
+                {
+                    var recentMessages = subAgentContext.Agent.ChatHistory
+                        .TakeLast(Math.Min(5, subAgentContext.Agent.ChatHistory.Count))
+                        .Select(m => $"{m.Role}: {(m.Content.ValueKind == JsonValueKind.String ? m.Content.GetString() : m.Content.GetRawText())}")
+                        .ToList();
+                    parentContext = string.Join("\n", recentMessages);
+                }
+                
+                var reviewPrompt = $@"You are a quality assurance reviewer for sub-agent tasks.
+
+CONTEXT FROM PARENT CONVERSATION:
+{parentContext}
+
+ORIGINAL TASK GIVEN TO SUB-AGENT:
+{originalTask}
+
+SUB-AGENT NAME: {subAgentContext.Name}
+SUB-AGENT PURPOSE: {subAgentContext.Purpose}
+
+SUB-AGENT'S RESULT:
+{subAgentResult}
+
+REVIEW CRITERIA:
+1. Did the sub-agent complete the requested task correctly?
+2. Does the work align with the parent conversation's intent?
+3. Are there any errors, missing steps, or deviations from requirements?
+4. Is the quality of work acceptable?
+
+DECISION REQUIRED:
+- If the work is satisfactory, respond with: APPROVED: [brief reason]
+- If specific improvements are needed, respond with: REVISION: [specific feedback and requirements]
+- If fundamentally wrong, respond with: REJECTED: [clear reason]
+
+Your decision:";
+
+                var reviewerConfig = new AgentConfiguration
+                {
+                    Name = $"Reviewer for {subAgentContext.Name}",
+                    SystemPrompt = await SystemPrompt.Create("You are a specialized quality assurance reviewer. Be thorough but fair in your assessments."),
+                    Client = _client,
+                    Model = prefs.ReviewerModel,
+                    Temperature = 0.2,
+                    MaxTokens = 2048,
+                    TopP = 0.95,
+                    EnableTools = false,
+                    MaintainHistory = false
+                };
+                
+                var reviewerAgent = new Agent(reviewerConfig);
+                
+                var reviewerContext = new ReviewerContext
+                {
+                    Id = reviewerId,
+                    ReviewerAgent = reviewerAgent,
+                    SubAgentId = subAgentId,
+                    TaskId = taskId,
+                    StartedAt = DateTime.Now
+                };
+                
+                _reviewers[reviewerId] = reviewerContext;
+                
+                var reviewTask = reviewerAgent.Execute<Message>(reviewPrompt);
+                var timeoutTask = Task.Delay(prefs.ReviewTimeoutSeconds * 1000);
+                
+                var completedTask = await Task.WhenAny(reviewTask, timeoutTask);
+                
+                if (completedTask == timeoutTask)
+                {
+                    _reviewers.TryRemove(reviewerId, out _);
+                    return new ReviewDecision
+                    {
+                        Status = ReviewStatus.Approved,
+                        Feedback = "Review timed out - auto-approved"
+                    };
+                }
+                
+                var reviewResult = await reviewTask;
+                var reviewText = reviewResult.Content.ToString().Trim();
+                
+                _reviewers.TryRemove(reviewerId, out _);
+                
+                // Parse review decision
+                if (reviewText.StartsWith("APPROVED:", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new ReviewDecision
+                    {
+                        Status = ReviewStatus.Approved,
+                        Feedback = reviewText.Substring(9).Trim()
+                    };
+                }
+                else if (reviewText.StartsWith("REVISION:", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new ReviewDecision
+                    {
+                        Status = ReviewStatus.RevisionRequested,
+                        Feedback = reviewText.Substring(9).Trim()
+                    };
+                }
+                else if (reviewText.StartsWith("REJECTED:", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new ReviewDecision
+                    {
+                        Status = ReviewStatus.Rejected,
+                        Feedback = reviewText.Substring(9).Trim()
+                    };
+                }
+                else
+                {
+                    // Default to approved if can't parse
+                    return new ReviewDecision
+                    {
+                        Status = ReviewStatus.Approved,
+                        Feedback = "Review response unclear - defaulting to approved"
+                    };
+                }
+            }
+            finally
+            {
+                _reviewerSemaphore.Release();
+            }
+        }
+        
+        private void CompleteTask(string taskId, string agentId, SubAgentContext agentContext, bool success, string result)
+        {
+            var taskResult = new AgentTaskResult
+            {
+                TaskId = taskId,
+                AgentId = agentId,
+                AgentName = agentContext.Name,
+                Success = success,
+                Result = result,
+                CompletedAt = DateTime.Now,
+                Duration = DateTime.Now - agentContext.CurrentTask!.StartedAt
+            };
+            
+            _completedTasks[taskId] = taskResult;
+            agentContext.CurrentTask!.Status = success ? TaskStatus.Completed : TaskStatus.Failed;
+            agentContext.Status = AgentStatus.Idle;
+            agentContext.CurrentTask = null;
+            agentContext.RevisionCount = 0;
+            
+            OnTaskCompleted?.Invoke(taskId, taskResult);
+            OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
+        }
+        
         public void TerminateAgent(string agentId)
         {
             if (_runningAgents.TryRemove(agentId, out var context))
@@ -343,6 +554,25 @@ Report your progress clearly and concisely.";
         public AgentStatus Status { get; set; }
         public DateTime CreatedAt { get; set; }
         public AgentTask? CurrentTask { get; set; }
+        public int RevisionCount { get; set; } = 0;
+    }
+    
+    public class ReviewerContext
+    {
+        public string Id { get; set; } = "";
+        public Agent ReviewerAgent { get; set; } = null!;
+        public string SubAgentId { get; set; } = "";
+        public string TaskId { get; set; } = "";
+        public int RevisionCount { get; set; } = 0;
+        public DateTime StartedAt { get; set; }
+        public TaskCompletionSource<ReviewDecision> DecisionSource { get; set; } = new();
+    }
+    
+    public class ReviewDecision
+    {
+        public ReviewStatus Status { get; set; }
+        public string Feedback { get; set; } = "";
+        public List<string> RevisionRequests { get; set; } = new();
     }
     
     public class AgentTask
@@ -381,6 +611,8 @@ Report your progress clearly and concisely.";
     {
         Idle,
         Working,
+        BeingReviewed,
+        Revising,
         Error,
         Terminated
     }
@@ -391,5 +623,13 @@ Report your progress clearly and concisely.";
         Running,
         Completed,
         Failed
+    }
+    
+    public enum ReviewStatus
+    {
+        Pending,
+        Approved,
+        RevisionRequested,
+        Rejected
     }
 }

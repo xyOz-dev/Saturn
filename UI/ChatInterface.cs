@@ -800,7 +800,7 @@ namespace Saturn.UI
                     currentConfig.Temperature = 1.0;
                 }
                 
-                await ReconfigureAgent();
+                await UpdateConfiguration();
                 Application.RequestStop();
             };
 
@@ -886,7 +886,7 @@ namespace Saturn.UI
                 if (double.TryParse(textField.Text.ToString(), out double temp) && temp >= 0 && temp <= 2)
                 {
                     currentConfig.Temperature = temp;
-                    await ReconfigureAgent();
+                    await UpdateConfiguration();
                     Application.RequestStop();
                 }
                 else
@@ -949,7 +949,7 @@ namespace Saturn.UI
                 if (int.TryParse(textField.Text.ToString(), out int tokens) && tokens > 0 && tokens <= 200000)
                 {
                     currentConfig.MaxTokens = tokens;
-                    await ReconfigureAgent();
+                    await UpdateConfiguration();
                     Application.RequestStop();
                 }
                 else
@@ -1001,7 +1001,7 @@ namespace Saturn.UI
                 if (double.TryParse(textField.Text.ToString(), out double topP) && topP >= 0 && topP <= 1)
                 {
                     currentConfig.TopP = topP;
-                    await ReconfigureAgent();
+                    await UpdateConfiguration();
                     Application.RequestStop();
                 }
                 else
@@ -1053,7 +1053,7 @@ namespace Saturn.UI
                 if (int.TryParse(textField.Text.ToString(), out int maxHistory) && maxHistory >= 0 && maxHistory <= 100)
                 {
                     currentConfig.MaxHistoryMessages = maxHistory;
-                    await ReconfigureAgent();
+                    await UpdateConfiguration();
                     Application.RequestStop();
                 }
                 else
@@ -1078,7 +1078,7 @@ namespace Saturn.UI
         private async void ToggleStreaming()
         {
             currentConfig.EnableStreaming = !currentConfig.EnableStreaming;
-            await ReconfigureAgent();
+            await UpdateConfiguration();
             var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
             if (menu != null)
             {
@@ -1092,7 +1092,7 @@ namespace Saturn.UI
         private async void ToggleMaintainHistory()
         {
             currentConfig.MaintainHistory = !currentConfig.MaintainHistory;
-            await ReconfigureAgent();
+            await UpdateConfiguration();
             var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
             if (menu != null)
             {
@@ -1106,7 +1106,7 @@ namespace Saturn.UI
         private async void ToggleCommandApproval()
         {
             currentConfig.RequireCommandApproval = !currentConfig.RequireCommandApproval;
-            await ReconfigureAgent();
+            await UpdateConfiguration();
             var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
             if (menu != null)
             {
@@ -1141,7 +1141,7 @@ namespace Saturn.UI
             okButton.Clicked += async () =>
             {
                 currentConfig.SystemPrompt = textView.Text.ToString();
-                await ReconfigureAgent();
+                await UpdateConfiguration();
                 Application.RequestStop();
             };
 
@@ -1168,7 +1168,7 @@ namespace Saturn.UI
                 try
                 {
                     ApplyModeToUIConfiguration(dialog.SelectedMode);
-                    await ReconfigureAgent();
+                    await UpdateConfiguration();
                 }
                 catch (Exception ex)
                 {
@@ -1205,7 +1205,7 @@ namespace Saturn.UI
                 if (applyNow == 0)
                 {
                     ApplyModeToUIConfiguration(editorDialog.ResultMode);
-                    await ReconfigureAgent();
+                    await UpdateConfiguration();
                 }
             }
         }
@@ -1237,7 +1237,7 @@ namespace Saturn.UI
             {
                 currentConfig.ToolNames = dialog.SelectedTools;
                 currentConfig.EnableTools = dialog.SelectedTools.Count > 0;
-                await ReconfigureAgent();
+                await UpdateConfiguration();
             }
         }
 
@@ -1259,7 +1259,7 @@ namespace Saturn.UI
             MessageBox.Query("Agent Configuration", config, "OK");
         }
 
-        private async Task ReconfigureAgent()
+        private async Task UpdateConfiguration()
         {
             try
             {
@@ -1269,36 +1269,104 @@ namespace Saturn.UI
                     temperature = 1.0;
                 }
                 
-                var newConfig = new Saturn.Agents.Core.AgentConfiguration
+                agent.Configuration.Model = currentConfig.Model;
+                agent.Configuration.Temperature = temperature;
+                agent.Configuration.MaxTokens = currentConfig.MaxTokens;
+                agent.Configuration.TopP = currentConfig.TopP;
+                agent.Configuration.MaintainHistory = currentConfig.MaintainHistory;
+                agent.Configuration.MaxHistoryMessages = currentConfig.MaxHistoryMessages;
+                agent.Configuration.EnableTools = currentConfig.EnableTools;
+                agent.Configuration.EnableStreaming = currentConfig.EnableStreaming;
+                agent.Configuration.ToolNames = currentConfig.ToolNames ?? new List<string>();
+                agent.Configuration.RequireCommandApproval = currentConfig.RequireCommandApproval;
+                
+                if (!string.IsNullOrWhiteSpace(currentConfig.SystemPrompt))
                 {
-                    Name = agent.Name,
-                    SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt),
-                    Client = openRouterClient,
-                    Model = currentConfig.Model,
-                    Temperature = temperature,
-                    MaxTokens = currentConfig.MaxTokens,
-                    TopP = currentConfig.TopP,
-                    MaintainHistory = currentConfig.MaintainHistory,
-                    MaxHistoryMessages = currentConfig.MaxHistoryMessages,
-                    EnableTools = currentConfig.EnableTools,
-                    EnableStreaming = currentConfig.EnableStreaming,
-                    ToolNames = currentConfig.ToolNames ?? new List<string>(),
-                    RequireCommandApproval = currentConfig.RequireCommandApproval
-                };
+                    // Check if the prompt already contains directory information markers
+                    if (currentConfig.SystemPrompt.Contains("<current_directory>") || 
+                        currentConfig.SystemPrompt.Contains("Current working directory:") ||
+                        currentConfig.SystemPrompt.Contains("</current_directory>"))
+                    {
+                        // Already wrapped, assign directly
+                        agent.Configuration.SystemPrompt = currentConfig.SystemPrompt;
+                    }
+                    else
+                    {
+                        // Needs wrapping with directory context
+                        agent.Configuration.SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt);
+                    }
+                }
 
                 await ConfigurationManager.SaveConfigurationAsync(
-                    ConfigurationManager.FromAgentConfiguration(newConfig));
+                    ConfigurationManager.FromAgentConfiguration(agent.Configuration));
 
-                agent = new Agent(newConfig);
-                agent.OnToolCall += (toolName, args) => UpdateToolCall(toolName, args);
-                chatView.Text = GetWelcomeMessage();
-                chatView.CursorPosition = new Point(0, 0);
+                UpdateConfigurationDisplay();
                 Application.Refresh();
             }
             catch (Exception ex)
             {
-                MessageBox.ErrorQuery("Configuration Error", $"Failed to reconfigure agent: {ex.Message}", "OK");
+                MessageBox.ErrorQuery("Configuration Error", $"Failed to update configuration: {ex.Message}", "OK");
             }
+        }
+
+        private void UpdateConfigurationDisplay()
+        {
+            var currentText = chatView.Text.ToString();
+            var lines = currentText.Split('\n');
+            var updatedLines = new List<string>();
+            bool inHeader = false;
+            bool skipConfigLines = false;
+            int headerEndIndex = -1;
+            
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                
+                if (line.StartsWith("Welcome to Saturn"))
+                {
+                    inHeader = true;
+                    updatedLines.Add(line);
+                }
+                else if (inHeader && line.StartsWith("================================"))
+                {
+                    if (!skipConfigLines)
+                    {
+                        updatedLines.Add(line);
+                        updatedLines.Add($"Agent: {agent.Name}");
+                        updatedLines.Add($"Model: {agent.Configuration.Model}");
+                        updatedLines.Add($"Streaming: {(agent.Configuration.EnableStreaming ? "Enabled" : "Disabled")}");
+                        updatedLines.Add($"Tools: {(agent.Configuration.EnableTools ? "Enabled" : "Disabled")}");
+                        if (agent.Configuration.EnableTools && agent.Configuration.ToolNames != null && agent.Configuration.ToolNames.Count > 0)
+                        {
+                            updatedLines.Add($"Available Tools: {string.Join(", ", agent.Configuration.ToolNames)}");
+                        }
+                        skipConfigLines = true;
+                    }
+                    else
+                    {
+                        updatedLines.Add(line);
+                        inHeader = false;
+                        skipConfigLines = false;
+                    }
+                }
+                else if (skipConfigLines && 
+                    (line.StartsWith("Agent:") || line.StartsWith("Model:") || 
+                     line.StartsWith("Streaming:") || line.StartsWith("Tools:") || 
+                     line.StartsWith("Available Tools:")))
+                {
+                    continue;
+                }
+                else
+                {
+                    updatedLines.Add(line);
+                }
+            }
+            
+            var currentPosition = chatView.CursorPosition;
+            var currentTopRow = chatView.TopRow;
+            chatView.Text = string.Join("\n", updatedLines);
+            chatView.CursorPosition = currentPosition;
+            chatView.TopRow = currentTopRow;
         }
 
         private async Task ShowLoadChatDialog()
