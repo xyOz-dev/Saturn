@@ -790,6 +790,34 @@ namespace Saturn.Agents.Core
                     });
                     throw;
                 }
+                catch (Saturn.OpenRouter.Errors.OpenRouterException ex)
+                {
+                    // Some providers (e.g., OpenAI GPT-5) may reject streaming with an org verification error
+                    // or mark the 'stream' param as unsupported. In such cases, fall back to a non-streaming flow
+                    // so the user can continue without changing configuration manually.
+                    var msg = ex.Message ?? string.Empty;
+                    var looksLikeStreamingNotAllowed =
+                        msg.IndexOf("param", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        msg.IndexOf("stream", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        msg.IndexOf("unsupported", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        msg.IndexOf("must be verified", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    if (looksLikeStreamingNotAllowed)
+                    {
+                        // Notify the UI minimally, then perform a non-streaming pass that still supports tools.
+                        await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
+                        finalResponse = await ExecuteWithTools(currentMessages);
+                        // Ensure any accumulated tool calls/content buffers are cleared for the next turn
+                        contentBuffer.Clear();
+                        toolCallBuffer.Clear();
+                        // Break the outer while loop by disabling further processing here.
+                        continueProcessing = false;
+                    }
+                    else
+                    {
+                        throw; // Unknown API error: let it surface
+                    }
+                }
 
                 if (finalResponse?.ToolCalls != null && finalResponse.ToolCalls.Length > 0)
                 {
@@ -1027,7 +1055,12 @@ namespace Saturn.Agents.Core
                     }
                     else
                     {
-
+                        // Silently skip orphaned tool results to avoid cluttering output
+                        // Only log if explicitly in debug mode
+                        if (System.Diagnostics.Debugger.IsAttached)
+                        {
+                            Console.Error.WriteLine($"Skipping orphaned tool result message with ID: {message.ToolCallId ?? "(null)"}");
+                        }
                     }
                 }
                 else if (message.Role == "assistant" && message.ToolCalls != null)
