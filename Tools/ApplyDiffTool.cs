@@ -12,61 +12,46 @@ namespace Saturn.Tools
     public class ApplyDiffTool : ToolBase
     {
         public override string Name => "apply_diff";
-        
-        public override string Description => @"Use this tool to make changes to files - adding, updating, or deleting. This is your primary tool for modifying code and text files.
 
-When to use:
-- Making code changes, fixes, or improvements
-- Adding new files or features
-- Removing outdated or unnecessary files
-- Updating configuration files
-- Applying any text modifications
+        public override string Description => @"Apply targeted file changes (add, update, delete) encoded as
+patch blocks. Use this tool for precise, small edits rather than large rewrites.
 
-How to use:
-1. ALWAYS read the file first with read_file tool (for updates)
-2. Create a patch with clear context and changes
-3. Use unique context lines to identify where changes go
+Supported operations:
+- Add file:    '*** Add File: path/to/file' followed by lines prefixed with '+'.
+- Update file: '*** Update File: path/to/file' followed by hunks starting with
+  '@@ context @@' and lines prefixed with ' ' (keep), '-' (remove), '+' (add).
+- Delete file: '*** Delete File: path/to/file' (no body required).
 
-Patch format examples:
+Rules and guidance:
+- **ALWAYS** read the the target file before attempting any actions.
+- Context lines inside '@@ ... @@' must be unique in the target file and match the
+  file content exactly (trimmed) to locate the hunk position reliably.
+- Keep hunks small and well-scoped. Prefer multiple targeted hunks over large
+  ambiguous changes.
+- Use dryRun=true to validate the patch and preview statistics without writing
+  files.
+- This tool enforces path security and will reject attempts at path traversal or
+  edits outside the working directory.";
 
-Adding a new file:
-*** Add File: src/NewFeature.cs
-+using System;
-+
-+public class NewFeature
-+{
-+    public void Method() { }
-+}
-
-Updating existing file:
-*** Update File: src/Existing.cs
-@@ public void ExistingMethod() @@
- {
--    var old = true;
-+    var updated = false;
-+    var newLine = GetValue();
- }
-
-Deleting a file:
-*** Delete File: src/OldFile.cs
-
-Important: The context line (@@ ... @@) must be unique in the file!";
-        
         protected override Dictionary<string, object> GetParameterProperties()
         {
             return new Dictionary<string, object>
             {
-                { "patchText", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "The full patch text that describes all changes to be made. Use the format described in the tool description." }
-                    }
+                ["patchText"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Patch text describing one or more file operations using " +
+                             "the tool's patch format. Required. Format examples:\n" +
+                             "  Add:    '*** Add File: path' then lines starting with '+'\n" +
+                             "  Update: '*** Update File: path' then '@@ context @@' hunks " +
+                             "and lines starting with ' ', '-' or '+'\n" +
+                             "  Delete: '*** Delete File: path' (no body)"
                 },
-                { "dryRun", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "If true, validates the patch and shows what would be changed without actually modifying files. Default is false." }
-                    }
+                ["dryRun"] = new Dictionary<string, object>
+                {
+                   ["type"] = "boolean",
+                   ["description"] = "If true, validate the patch and return what would be " +
+                             "changed without modifying files. Defaults to false."
                 }
             };
         }
