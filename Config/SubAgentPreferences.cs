@@ -29,6 +29,11 @@ namespace Saturn.Config
         public double DefaultTopP { get; set; } = 0.95;
         public bool DefaultEnableTools { get; set; } = true;
         
+        public bool EnableReviewStage { get; set; } = false;
+        public string ReviewerModel { get; set; } = "anthropic/claude-3.5-sonnet";
+        public int ReviewTimeoutSeconds { get; set; } = 300;
+        public int MaxRevisionCycles { get; set; } = 2;
+        
         [JsonPropertyName("purposeModelMappings")]
         public Dictionary<string, string> PurposeModelMappings { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         
