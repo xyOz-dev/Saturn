@@ -1282,7 +1282,19 @@ namespace Saturn.UI
                 
                 if (!string.IsNullOrWhiteSpace(currentConfig.SystemPrompt))
                 {
-                    agent.Configuration.SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt);
+                    // Check if the prompt already contains directory information markers
+                    if (currentConfig.SystemPrompt.Contains("<current_directory>") || 
+                        currentConfig.SystemPrompt.Contains("Current working directory:") ||
+                        currentConfig.SystemPrompt.Contains("</current_directory>"))
+                    {
+                        // Already wrapped, assign directly
+                        agent.Configuration.SystemPrompt = currentConfig.SystemPrompt;
+                    }
+                    else
+                    {
+                        // Needs wrapping with directory context
+                        agent.Configuration.SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt);
+                    }
                 }
 
                 await ConfigurationManager.SaveConfigurationAsync(
