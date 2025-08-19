@@ -13,112 +13,93 @@ namespace Saturn.Tools
     public class ListFilesTool : ToolBase
     {
         public override string Name => "list_files";
-        
-        public override string Description => @"Explore a directory and render its contents as a visual tree. Useful for quickly understanding project structure, seeing what files/folders exist, and checking organization before making changes.
 
-When to use
-- Get an overview of a folder or codebase section
-- Inspect structure before refactoring or adding files
-- Find files by name pattern at the current level
-- Summarize file counts and total size
+        public override string Description => @"Render a directory as a text tree. Supports recursion, name-only glob
+filtering, hidden items, metadata, sorting, depth and result limits.
+Secure: rejects '..'/'~' and paths outside the working directory.
 
-What it returns
-- A text tree of the directory (using ASCII connectors)
-- Optional metadata next to each item (size for files, last modified in UTC, flags)
-- Summary stats: total files, total directories, total size, and total items considered
+Notes:
+- pattern matches names only (not paths). When set, only directories whose
+  names match are traversed.
+- sortBy: name | size | modified | created | type (type = files before dirs).
+- maxDepth: root depth = 0; traversal continues while depth < maxDepth.
+- The tree prints in path order; sorting mainly affects selection when
+  maxResults is applied.";
 
-Important notes
-- Security: Paths containing "".."" or ""~"" are rejected. Access outside the current working directory is blocked.
-- Pattern scope: The pattern matches names only, not full relative paths. Avoid patterns with ""/"" or ""**"". For recursive searches by extension, consider omitting pattern and post-filtering from the output text if needed.
-- Recursion with pattern: When a pattern is set, directories that do not match the pattern are skipped and not traversed.
-- Display order: The printed tree is grouped by path. Sorting does not change the visual tree order but does affect which items remain when maxResults is set.
-- filesOnly/directoriesOnly: If filesOnly=true, files nested in subdirectories may not appear in the tree unless their parent directories are also included (which requires directories to be listed).
-- Hidden detection: On Unix-like systems, names starting with ""."" are treated as hidden.
-- Symlinks: Reparse points are resolved and cycles are avoided.
-
-Examples
-- List current directory: (no parameters)
-- List a folder recursively: path=""src"", recursive=true
-- Show details with UTC timestamps: includeMetadata=true
-- Limit depth to two levels: recursive=true, maxDepth=2
-- Include hidden entries: includeHidden=true
-- Keep only the 100 largest items, then render their tree: recursive=true, sortBy=""size"", sortDescending=true, maxResults=100
-- Find test files by name (single level): pattern=""*Test.cs""";
-        
         protected override Dictionary<string, object> GetParameterProperties()
         {
             return new Dictionary<string, object>
             {
-                { "path", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Directory path to list. Defaults to current directory if not specified." }
-                    }
+                ["path"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Directory to list (default: current directory)."
                 },
-                { "recursive", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Include subdirectories recursively. Default is false." }
-                    }
+                ["recursive"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Include subdirectories (default: false)."
                 },
-                { "includeHidden", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Include hidden files and directories. Default is false." }
-                    }
+                ["includeHidden"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Include hidden files/directories (default: false)."
                 },
-                { "pattern", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Glob applied to the item’s name only (no path segments). Examples: \"*.cs\", \"*Test.cs\", \"*.{cs,ts}\". Note: Patterns containing \"/\" or \"**/\" will not match because only names (not paths) are tested. When a pattern is provided, only directories whose names match are traversed during recursion." }
-                    }
+                ["pattern"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] =
+                        "Name-only glob. Supports *, ?, **, and {a,b}. Examples: '*.cs', " +
+                        "'*Test.cs', '*.{cs,ts}'. Does not match paths. When set, only " +
+                        "matching directory names are traversed."
                 },
-                { "sortBy", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "enum", new[] { "name", "size", "modified", "created", "type" } },
-                        { "description", "One of \"name\", \"size\", \"modified\", \"created\", \"type\". For \"type\", files appear before directories" }
-                    }
+                ["sortBy"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["enum"] = new[] { "name", "size", "modified", "created", "type" },
+                    ["description"] =
+                        "One of: name, size, modified, created, type (files before dirs)."
                 },
-                { "sortDescending", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Sort order. Note: The tree is displayed in path order; sorting affects which items are kept when maxResults is used, not the on-screen tree order." }
-                    }
+                ["sortDescending"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] =
+                        "Sort descending. Tree prints in path order; sorting mainly " +
+                        "affects selection with maxResults."
                 },
-                { "maxDepth", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Maximum recursion depth. Depth starts at 0 for the starting directory. Items are included only when currentDepth < maxDepth. Tips:\r\n  - Base level only: leave recursive=false, or set maxDepth=1 with recursive=true\r\n  - One level deep: set maxDepth=2 with recursive=true" }
-                    }
+                ["maxDepth"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] =
+                        "Maximum recursion depth (root depth = 0; traverse while " +
+                        "depth < maxDepth)."
                 },
-                { "includeMetadata", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Show file size, last modified (UTC), and flags (readonly/hidden). Default is false." }
-                    }
+                ["includeMetadata"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] =
+                        "Show size, last modified (UTC), and flags (default: false)."
                 },
-                { "maxResults", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Limit the number of items considered (after sorting), which may produce a partial tree." }
-                    }
+                ["maxResults"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] =
+                        "Limit items considered after sorting; output tree may be partial."
                 },
-                { "filesOnly", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Show only files, not directories. Default is false." }
-                    }
+                ["filesOnly"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Show only files (default: false)."
                 },
-                { "directoriesOnly", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Include only directories. Cannot be true at the same time as filesOnly. Default is false." }
-                    }
+                ["directoriesOnly"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] =
+                        "Show only directories (default: false). Cannot be true with filesOnly."
                 }
             };
         }
-        
+
         protected override string[] GetRequiredParameters()
         {
             return new string[] { };
