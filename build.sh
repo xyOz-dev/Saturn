@@ -100,6 +100,24 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_PATH="$SCRIPT_DIR"
 CSPROJ_PATH="$PROJECT_PATH/Saturn.csproj"
 
+# Check for .NET 8 SDK (required for Saturn)
+if [ -d "/opt/homebrew/opt/dotnet@8/libexec" ]; then
+    # Use .NET 8 if available via Homebrew
+    export PATH="/opt/homebrew/opt/dotnet@8/libexec:$PATH"
+    print_success "Using .NET 8 SDK from Homebrew"
+fi
+
+# Verify .NET SDK version
+DOTNET_VERSION=$(dotnet --version 2>/dev/null || echo "not found")
+if [[ "$DOTNET_VERSION" == "not found" ]]; then
+    print_error ".NET SDK not found. Please install .NET 8 SDK."
+    exit 1
+elif [[ ! "$DOTNET_VERSION" =~ ^8\. ]]; then
+    print_error "Saturn requires .NET 8 SDK. Found: $DOTNET_VERSION"
+    echo "Please install .NET 8 SDK via: brew install dotnet@8"
+    exit 1
+fi
+
 # Check if project exists
 if [ ! -f "$CSPROJ_PATH" ]; then
     print_error "Project file not found: $CSPROJ_PATH"
