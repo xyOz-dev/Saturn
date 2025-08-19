@@ -45,66 +45,56 @@ Safety features:
         {
             return new Dictionary<string, object>
             {
-                { "searchPattern", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Text or regex pattern to search for" }
-                    }
+                ["searchPattern"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Text or regex pattern to search for"
                 },
-                { "replacement", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Replacement text (supports regex groups like $1)" }
-                    }
+                ["replacement"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Replacement text (supports regex groups like $1)"
                 },
-                { "filePattern", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Glob pattern for files to process (e.g., **/*.cs)" }
-                    }
+                ["filePattern"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Glob pattern for files to process (e.g., **/*.cs)"
                 },
-                { "path", new Dictionary<string, object>
-                    {
-                        { "type", "string" },
-                        { "description", "Base directory to search from (default: current)" }
-                    }
+                ["path"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["description"] = "Base directory to search from (default: current)"
                 },
-                { "regex", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Use regex for search pattern (default: false)" }
-                    }
+                ["regex"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Use regex for search pattern (default: false)"
                 },
-                { "caseSensitive", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Case-sensitive search (default: true)" }
-                    }
+                ["caseSensitive"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Case-sensitive search (default: true)"
                 },
-                { "wholeWord", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Match whole words only (default: false)" }
-                    }
+                ["wholeWord"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Match whole words only (default: false)"
                 },
-                { "exclude", new Dictionary<string, object>
-                    {
-                        { "type", "array" },
-                        { "items", new Dictionary<string, object> { { "type", "string" } } },
-                        { "description", "Patterns to exclude from search" }
-                    }
+                ["exclude"] = new Dictionary<string, object>
+                {
+                    ["type"] = "array",
+                    ["items"] = new Dictionary<string, object> { ["type"] = "string" },
+                    ["description"] = "Patterns to exclude from search"
                 },
-                { "dryRun", new Dictionary<string, object>
-                    {
-                        { "type", "boolean" },
-                        { "description", "Preview changes without applying (default: false)" }
-                    }
+                ["dryRun"] = new Dictionary<string, object>
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Preview changes without applying (default: false)"
                 },
-                { "maxFiles", new Dictionary<string, object>
-                    {
-                        { "type", "integer" },
-                        { "description", "Maximum files to process (default: 1000)" }
-                    }
+                ["maxFiles"] = new Dictionary<string, object>
+                {
+                    ["type"] = "integer",
+                    ["description"] = "Maximum files to process (default: 1000)"
                 }
             };
         }
