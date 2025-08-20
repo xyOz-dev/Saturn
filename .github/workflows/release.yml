@@ -77,16 +77,14 @@ jobs:
           --api-key ${{ secrets.NUGET_API_KEY }} \
           --source https://api.nuget.org/v3/index.json \
           --skip-duplicate \
-          --timeout 600 \
-          --verbosity detailed || {
+          --timeout 600 || {
             echo "Push failed. Retrying with increased timeout..."
             sleep 10
             dotnet nuget push nupkg/*.nupkg \
               --api-key ${{ secrets.NUGET_API_KEY }} \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate \
-              --timeout 900 \
-              --verbosity detailed
+              --timeout 900
           }
     
     - name: Create GitHub Release
