@@ -11,6 +11,8 @@
 </div>
 
 ---
+## Warning: Some hotkeys may not work on Unix systems, we are looking into a fix (This issue is caused by the ui framework terminal.gui)
+
 
 <details>
 <summary><b>📋 Prerequisites</b></summary>
