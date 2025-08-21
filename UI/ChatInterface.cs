@@ -13,10 +13,9 @@ using Saturn.Agents.MultiAgent;
 using Saturn.Configuration;
 using Saturn.Data;
 using Saturn.Data.Models;
-using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
-using Saturn.OpenRouter.Models.Api.Models;
 using Saturn.UI.Dialogs;
+using Saturn.Providers;
 
 namespace Saturn.UI
 {
@@ -31,16 +30,16 @@ namespace Saturn.UI
         private TextView toolCallsView = null!;
         private TextView agentStatusView = null!;
         private Agent agent;
+        private ILLMProvider? currentProvider;
         private bool isProcessing;
         private CancellationTokenSource? cancellationTokenSource;
         private AgentConfiguration currentConfig;
-        private OpenRouterClient? openRouterClient;
         private MarkdownRenderer markdownRenderer;
 
-        public ChatInterface(Agent aiAgent, OpenRouterClient? client = null)
+        public ChatInterface(Agent aiAgent, ILLMProvider? provider = null)
         {
             agent = aiAgent ?? throw new ArgumentNullException(nameof(aiAgent));
-            openRouterClient = client ?? agent.Configuration.Client as OpenRouterClient;
+            currentProvider = provider;
             isProcessing = false;
             
             agent.OnToolCall += (toolName, args) => UpdateToolCall(toolName, args);
@@ -64,7 +63,7 @@ namespace Saturn.UI
         
         private void InitializeAgentManager()
         {
-            AgentManager.Instance.Initialize(openRouterClient!);
+            AgentManager.Instance.Initialize(agent.Configuration.Client);
             
             AgentManager.Instance.OnAgentCreated += (agentId, name) =>
             {
@@ -212,6 +211,13 @@ namespace Saturn.UI
                     null,
                     new MenuItem("_Edit System Prompt...", "", () => ShowSystemPromptDialog()),
                     new MenuItem("_View Configuration...", "", () => ShowConfigurationDialog())
+                }),
+                new MenuBarItem("_Provider", new MenuItem[]
+                {
+                    new MenuItem("_Settings...", "", () => ShowProviderSettings()),
+                    new MenuItem("_Change Provider...", "", async () => await ChangeProvider()),
+                    null,
+                    new MenuItem("_Re-authenticate", "", async () => await ReauthenticateProvider())
                 }),
             });
         }
@@ -564,6 +570,7 @@ namespace Saturn.UI
             var message = "Welcome to Saturn\nDont forget to join our discord to stay updated.\n\"https://discord.gg/VSjW36MfYZ\"";
             message += "\n================================\n";
             message += $"Agent: {agent.Name}\n";
+            message += $"Provider: {(currentProvider?.Name ?? "Unknown")}\n";
             message += $"Model: {agent.Configuration.Model}\n";
             message += $"Streaming: {(agent.Configuration.EnableStreaming ? "Enabled" : "Disabled")}\n";
             message += $"Tools: {(agent.Configuration.EnableTools ? "Enabled" : "Disabled")}\n";
@@ -573,6 +580,7 @@ namespace Saturn.UI
             }
             message += "================================\n";
             message += "Type your message below and press Ctrl+Enter to send.\n";
+            message += "Use the Provider menu to switch providers or re-authenticate.\n";
             message += "Use the Options menu to clear chat or quit.\n\n";
             return message;
         }
@@ -764,89 +772,102 @@ namespace Saturn.UI
 
         private async Task ShowModelSelectionDialog()
         {
-            if (openRouterClient == null) return;
-            var models = await AgentConfiguration.GetAvailableModels(openRouterClient);
-            var modelNames = models.Select(m => m.Name ?? m.Id).ToArray();
-            var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == currentConfig.Model);
-            if (currentIndex < 0) currentIndex = 0;
-
-            var dialog = new Dialog("Select Model", 60, 20);
-            dialog.ColorScheme = Colors.Dialog;
-
-            var listView = new ListView(modelNames)
+            if (agent.Configuration.Client == null) 
             {
-                X = 1,
-                Y = 1,
-                Width = Dim.Fill(1),
-                Height = Dim.Fill(3),
-                SelectedItem = currentIndex
-            };
-
-            var infoLabel = new Label("")
-            {
-                X = 1,
-                Y = Pos.Bottom(listView) + 1,
-                Width = Dim.Fill(1),
-                Height = 1
-            };
-
-            Action selectModel = async () =>
-            {
-                var selectedModel = models[listView.SelectedItem];
-                currentConfig.Model = selectedModel.Id;
-                
-                if (selectedModel.Id.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
-                {
-                    currentConfig.Temperature = 1.0;
-                }
-                
-                await UpdateConfiguration();
-                Application.RequestStop();
-            };
-
-            listView.SelectedItemChanged += (args) =>
-            {
-                var selectedModel = models[args.Item];
-                var info = $"ID: {selectedModel.Id}";
-                if (selectedModel.ContextLength.HasValue)
-                    info += $" | Context: {selectedModel.ContextLength:N0} tokens";
-                infoLabel.Text = info;
-            };
-            
-            listView.OpenSelectedItem += (args) =>
-            {
-                selectModel();
-            };
-
-            var okButton = new Button(" _OK ", true)
-            {
-                X = Pos.Center() - 10,
-                Y = Pos.Bottom(infoLabel) + 1
-            };
-
-            okButton.Clicked += () => selectModel();
-
-            var cancelButton = new Button(" _Cancel ")
-            {
-                X = Pos.Center() + 5,
-                Y = Pos.Bottom(infoLabel) + 1
-            };
-
-            cancelButton.Clicked += () => Application.RequestStop();
-
-            dialog.Add(listView, infoLabel, okButton, cancelButton);
-            
-            if (models.Count > 0 && currentIndex >= 0)
-            {
-                var initialModel = models[currentIndex];
-                var info = $"ID: {initialModel.Id}";
-                if (initialModel.ContextLength.HasValue)
-                    info += $" | Context: {initialModel.ContextLength:N0} tokens";
-                infoLabel.Text = info;
+                MessageBox.ErrorQuery("Error", "No LLM client is configured", "OK");
+                return;
             }
             
-            listView.SetFocus();
-            Application.Run(dialog);
+            try
+            {
+                var models = await AgentConfiguration.GetAvailableModels(agent.Configuration.Client);
+                var modelNames = models.Select(m => m.Name ?? m.Id).ToArray();
+                var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == currentConfig.Model);
+                if (currentIndex < 0) currentIndex = 0;
+
+                var providerName = currentProvider?.Name ?? "Unknown";
+                var dialog = new Dialog($"Select Model - {providerName}", 60, 20);
+                dialog.ColorScheme = Colors.Dialog;
+
+                var listView = new ListView(modelNames)
+                {
+                    X = 1,
+                    Y = 1,
+                    Width = Dim.Fill(1),
+                    Height = Dim.Fill(3),
+                    SelectedItem = currentIndex
+                };
+
+                var infoLabel = new Label("")
+                {
+                    X = 1,
+                    Y = Pos.Bottom(listView) + 1,
+                    Width = Dim.Fill(1),
+                    Height = 1
+                };
+
+                Action selectModel = async () =>
+                {
+                    var selectedModel = models[listView.SelectedItem];
+                    currentConfig.Model = selectedModel.Id;
+                    
+                    if (selectedModel.Id.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+                    {
+                        currentConfig.Temperature = 1.0;
+                    }
+                    
+                    await UpdateConfiguration();
+                    Application.RequestStop();
+                };
+
+                listView.SelectedItemChanged += (args) =>
+                {
+                    var selectedModel = models[args.Item];
+                    var info = $"ID: {selectedModel.Id}";
+                    if (selectedModel.ContextLength.HasValue)
+                        info += $" | Context: {selectedModel.ContextLength:N0} tokens";
+                    infoLabel.Text = info;
+                };
+                
+                listView.OpenSelectedItem += (args) =>
+                {
+                    selectModel();
+                };
+
+                var okButton = new Button(" _OK ", true)
+                {
+                    X = Pos.Center() - 10,
+                    Y = Pos.Bottom(infoLabel) + 1
+                };
+
+                okButton.Clicked += () => selectModel();
+
+                var cancelButton = new Button(" _Cancel ")
+                {
+                    X = Pos.Center() + 5,
+                    Y = Pos.Bottom(infoLabel) + 1
+                };
+
+                cancelButton.Clicked += () => Application.RequestStop();
+
+                dialog.Add(listView, infoLabel, okButton, cancelButton);
+                
+                if (models.Count > 0 && currentIndex >= 0)
+                {
+                    var initialModel = models[currentIndex];
+                    var info = $"ID: {initialModel.Id}";
+                    if (initialModel.ContextLength.HasValue)
+                        info += $" | Context: {initialModel.ContextLength:N0} tokens";
+                    infoLabel.Text = info;
+                }
+                
+                listView.SetFocus();
+                Application.Run(dialog);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Error", $"Failed to load models: {ex.Message}", "OK");
+            }
         }
 
         private void ShowTemperatureDialog()
@@ -910,7 +931,7 @@ namespace Saturn.UI
 
         private void ShowSubAgentDefaultsDialog()
         {
-            var dialog = new SubAgentConfigDialog(openRouterClient);
+            var dialog = new SubAgentConfigDialog(agent.Configuration.Client);
             Application.Run(dialog);
             
             if (dialog.ConfigurationSaved)
@@ -1187,7 +1208,7 @@ namespace Saturn.UI
         
         private async Task ShowModeEditorDialogAsync(Mode modeToEdit)
         {
-            var editorDialog = new ModeEditorDialog(modeToEdit, openRouterClient);
+            var editorDialog = new ModeEditorDialog(modeToEdit, agent.Configuration.Client);
             Application.Run(editorDialog);
             
             if (editorDialog.ResultMode != null)
@@ -1245,6 +1266,7 @@ namespace Saturn.UI
         {
             var config = $"Current Agent Configuration\n" +
                         $"===========================\n" +
+                        $"Provider: {(currentProvider?.Name ?? "Unknown")}\n" +
                         $"Model: {currentConfig.Model}\n" +
                         $"Temperature: {currentConfig.Temperature:F2}\n" +
                         $"Max Tokens: {currentConfig.MaxTokens}\n" +
@@ -1333,6 +1355,7 @@ namespace Saturn.UI
                     {
                         updatedLines.Add(line);
                         updatedLines.Add($"Agent: {agent.Name}");
+                        updatedLines.Add($"Provider: {(currentProvider?.Name ?? "Unknown")}");
                         updatedLines.Add($"Model: {agent.Configuration.Model}");
                         updatedLines.Add($"Streaming: {(agent.Configuration.EnableStreaming ? "Enabled" : "Disabled")}");
                         updatedLines.Add($"Tools: {(agent.Configuration.EnableTools ? "Enabled" : "Disabled")}");
@@ -1350,7 +1373,7 @@ namespace Saturn.UI
                     }
                 }
                 else if (skipConfigLines && 
-                    (line.StartsWith("Agent:") || line.StartsWith("Model:") || 
+                    (line.StartsWith("Agent:") || line.StartsWith("Provider:") || line.StartsWith("Model:") || 
                      line.StartsWith("Streaming:") || line.StartsWith("Tools:") || 
                      line.StartsWith("Available Tools:")))
                 {
@@ -1523,6 +1546,93 @@ namespace Saturn.UI
             catch (Exception ex)
             {
                 MessageBox.ErrorQuery("Error", $"Failed to load chat: {ex.Message}", "OK");
+            }
+        }
+
+        private void ShowProviderSettings()
+        {
+            if (currentProvider == null)
+            {
+                MessageBox.ErrorQuery("Error", "No provider is currently configured", "OK");
+                return;
+            }
+            
+            var changed = ProviderSettingsDialog.Show(currentProvider);
+            
+            if (changed)
+            {
+                // Provider changed, may need to recreate agent
+                MessageBox.Query("Info", "Provider changed. Please restart the chat for changes to take effect.", "OK");
+            }
+        }
+        
+        private async Task ChangeProvider()
+        {
+            var (newProvider, saveAsDefault) = ProviderSelectionDialog.ShowWithOptions();
+            if (!string.IsNullOrEmpty(newProvider))
+            {
+                try
+                {
+                    var provider = await ProviderFactory.CreateAndAuthenticateAsync(newProvider);
+                    
+                    if (provider != null)
+                    {
+                        currentProvider = provider;
+                        
+                        // Update agent client
+                        var client = await provider.GetClientAsync();
+                        agent.Configuration.Client = client;
+                        
+                        // Update configuration
+                        var config = await ConfigurationManager.LoadConfigurationAsync();
+                        if (config == null)
+                        {
+                            config = new PersistedAgentConfiguration();
+                        }
+                        config.ProviderName = newProvider;
+                        
+                        if (saveAsDefault)
+                        {
+                            await ConfigurationManagerExtensions.SetDefaultProviderAsync(newProvider);
+                        }
+                        
+                        await ConfigurationManager.SaveConfigurationAsync(config);
+                        
+                        MessageBox.Query("Success", $"Changed provider to {provider.Name}", "OK");
+                        UpdateConfigurationDisplay();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.ErrorQuery("Error", $"Failed to change provider: {ex.Message}", "OK");
+                }
+            }
+        }
+        
+        private async Task ReauthenticateProvider()
+        {
+            if (currentProvider == null)
+            {
+                MessageBox.ErrorQuery("Error", "No provider is currently configured", "OK");
+                return;
+            }
+            
+            try
+            {
+                var success = await currentProvider.AuthenticateAsync();
+                
+                if (success)
+                {
+                    MessageBox.Query("Success", "Re-authentication successful", "OK");
+                }
+                else
+                {
+                    MessageBox.ErrorQuery("Error", "Re-authentication failed", "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Error", $"Re-authentication error: {ex.Message}", "OK");
             }
         }
 

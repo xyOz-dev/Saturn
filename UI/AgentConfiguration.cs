@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI
 {
@@ -70,6 +71,34 @@ Operating Principles
    - Prefer linear-time approaches and avoid unnecessary full-repo scans.
    - Stream or paginate large files; avoid loading huge blobs entirely.
    - Be mindful of dependency sizes and build times.";
+        }
+
+        public static async Task<List<Model>> GetAvailableModels(ILLMClient client)
+        {
+            if (_cachedModels != null && DateTime.UtcNow - _cacheTime < CacheDuration)
+            {
+                return _cachedModels;
+            }
+
+            try
+            {
+                var models = await client.GetModelsAsync();
+                if (models != null && models.Any())
+                {
+                    _cachedModels = models
+                        .Where(m => !string.IsNullOrEmpty(m.Id))
+                        .Select(m => new Model { Id = m.Id, Name = m.Name })
+                        .OrderBy(m => m.Name ?? m.Id)
+                        .ToList();
+                    _cacheTime = DateTime.UtcNow;
+                    return _cachedModels;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return GetDefaultModels();
         }
 
         public static async Task<List<Model>> GetAvailableModels(OpenRouterClient client)

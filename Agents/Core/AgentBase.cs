@@ -13,6 +13,9 @@ using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Common;
 using Saturn.OpenRouter.Services;
+using Saturn.Providers;
+using Saturn.Providers.Models;
+using Saturn.Providers.OpenRouter;
 using Saturn.Tools.Core;
 
 namespace Saturn.Agents.Core
@@ -86,7 +89,7 @@ namespace Saturn.Agents.Core
 
         public virtual async Task<Message> ExecuteStreamAsync(
             string input,
-            Func<StreamChunk, Task> onChunk,
+            Func<Saturn.OpenRouter.Models.Api.Chat.StreamChunk, Task> onChunk,
             CancellationToken cancellationToken = default)
         {
             return await ExecuteStreamAsync<Message>(input, onChunk, cancellationToken);
@@ -94,7 +97,7 @@ namespace Saturn.Agents.Core
 
         public virtual async Task<T> ExecuteStreamAsync<T>(
             object input,
-            Func<StreamChunk, Task> onChunk,
+            Func<Saturn.OpenRouter.Models.Api.Chat.StreamChunk, Task> onChunk,
             CancellationToken cancellationToken = default)
         {
             if (!Configuration.EnableStreaming)
@@ -102,7 +105,7 @@ namespace Saturn.Agents.Core
                 var result = await Execute<T>(input);
                 if (onChunk != null && result is Message msg)
                 {
-                    await onChunk(new StreamChunk
+                    await onChunk(new Saturn.OpenRouter.Models.Api.Chat.StreamChunk
                     {
                         Content = JsonToString(msg.Content),
                         Role = msg.Role,
@@ -317,7 +320,7 @@ namespace Saturn.Agents.Core
                         : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
                 }
 
-                var response = await Configuration.Client.Chat.CreateAsync(request);
+                var response = await ExecuteChat(request);
                 responseMessage = response?.Choices?.FirstOrDefault()?.Message;
 
                 if (responseMessage?.ToolCalls != null && responseMessage.ToolCalls.Length > 0)
@@ -632,14 +635,14 @@ namespace Saturn.Agents.Core
 
         protected async Task<AssistantMessageResponse> ExecuteWithStreamingTools(
             List<Message> initialMessages,
-            Func<StreamChunk, Task> onChunk,
+            Func<Saturn.OpenRouter.Models.Api.Chat.StreamChunk, Task> onChunk,
             CancellationToken cancellationToken)
         {
             AssistantMessageResponse finalResponse = null;
             var currentMessages = initialMessages;
             bool continueProcessing = true;
             var contentBuffer = new StringBuilder();
-            var toolCallBuffer = new List<OpenRouter.Models.Api.Chat.ToolCall>();
+            var toolCallBuffer = new List<Saturn.OpenRouter.Models.Api.Chat.ToolCall>();
 
             while (continueProcessing && !cancellationToken.IsCancellationRequested)
             {
@@ -675,7 +678,7 @@ namespace Saturn.Agents.Core
                 {
                     var tokenIndex = 0;
 
-                    await foreach (var chunk in Configuration.Client.ChatStreaming.StreamAsync(request, cancellationToken))
+                    await foreach (var chunk in ExecuteChatStream(request, cancellationToken))
                     {
                         if (cancellationToken.IsCancellationRequested)
                             break;
@@ -689,7 +692,7 @@ namespace Saturn.Agents.Core
                             {
                                 var contentStr = delta.Content;
                                 contentBuffer.Append(contentStr);
-                                await onChunk(new StreamChunk
+                                await onChunk(new Saturn.OpenRouter.Models.Api.Chat.StreamChunk
                                 {
                                     Content = contentStr,
                                     Role = delta.Role ?? "assistant",
@@ -702,13 +705,13 @@ namespace Saturn.Agents.Core
                             {
                                 foreach (var toolCall in delta.ToolCalls)
                                 {
-                                    ToolCall existing = null;
+                                    Saturn.OpenRouter.Models.Api.Chat.ToolCall existing = null;
                                     
                                     if (toolCall.Index.HasValue)
                                     {
                                         while (toolCallBuffer.Count <= toolCall.Index.Value)
                                         {
-                                            toolCallBuffer.Add(new ToolCall { Function = new ToolCall.FunctionCall() });
+                                            toolCallBuffer.Add(new Saturn.OpenRouter.Models.Api.Chat.ToolCall { Function = new Saturn.OpenRouter.Models.Api.Chat.ToolCall.FunctionCall() });
                                         }
                                         existing = toolCallBuffer[toolCall.Index.Value];
                                     }
@@ -717,11 +720,11 @@ namespace Saturn.Agents.Core
                                         existing = toolCallBuffer.FirstOrDefault(tc => tc.Id == toolCall.Id);
                                         if (existing == null)
                                         {
-                                            existing = new ToolCall
+                                            existing = new Saturn.OpenRouter.Models.Api.Chat.ToolCall
                                             {
                                                 Id = toolCall.Id,
                                                 Type = toolCall.Type ?? "function",
-                                                Function = new ToolCall.FunctionCall()
+                                                Function = new Saturn.OpenRouter.Models.Api.Chat.ToolCall.FunctionCall()
                                             };
                                             toolCallBuffer.Add(existing);
                                         }
@@ -733,7 +736,7 @@ namespace Saturn.Agents.Core
                                     
                                     if (existing.Function == null)
                                     {
-                                        existing.Function = new ToolCall.FunctionCall();
+                                        existing.Function = new Saturn.OpenRouter.Models.Api.Chat.ToolCall.FunctionCall();
                                     }
                                     
                                     if (!string.IsNullOrEmpty(toolCall.Id))
@@ -751,7 +754,7 @@ namespace Saturn.Agents.Core
                                         existing.Function.Arguments = (existing.Function.Arguments ?? string.Empty) + toolCall.Function.Arguments;
                                     }
 
-                                    await onChunk(new StreamChunk
+                                    await onChunk(new Saturn.OpenRouter.Models.Api.Chat.StreamChunk
                                     {
                                         IsToolCall = true,
                                         ToolCallId = toolCall.Id,
@@ -776,7 +779,7 @@ namespace Saturn.Agents.Core
                 }
                 catch (OperationCanceledException)
                 {
-                    await onChunk(new StreamChunk
+                    await onChunk(new Saturn.OpenRouter.Models.Api.Chat.StreamChunk
                     {
                         IsComplete = true,
                         Content = "[Stream cancelled]"
@@ -798,7 +801,7 @@ namespace Saturn.Agents.Core
                     if (looksLikeStreamingNotAllowed)
                     {
                         // Notify the UI minimally, then perform a non-streaming pass that still supports tools.
-                        await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
+                        await onChunk(new Saturn.OpenRouter.Models.Api.Chat.StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
                         finalResponse = await ExecuteWithTools(currentMessages);
                         // Ensure any accumulated tool calls/content buffers are cleared for the next turn
                         contentBuffer.Clear();
@@ -935,7 +938,7 @@ namespace Saturn.Agents.Core
                 }
             }
 
-            await onChunk(new StreamChunk { IsComplete = true });
+            await onChunk(new Saturn.OpenRouter.Models.Api.Chat.StreamChunk { IsComplete = true });
             return finalResponse;
         }
 
@@ -1199,6 +1202,164 @@ namespace Saturn.Agents.Core
             {
                 Repository?.Dispose();
                 Repository = null;
+            }
+        }
+        
+        /// <summary>
+        /// Helper method to execute chat completion using the abstraction layer
+        /// while maintaining backward compatibility with existing OpenRouter code.
+        /// </summary>
+        protected async Task<ChatCompletionResponse?> ExecuteChat(ChatCompletionRequest request)
+        {
+            // If the client implements ILLMClient (modern abstraction layer), use it
+            if (Configuration.Client is ILLMClient llmClient)
+            {
+                // Convert to abstraction layer format
+                var abstractRequest = ConvertToAbstractRequest(request);
+                var abstractResponse = await llmClient.ChatCompletionAsync(abstractRequest);
+                return ConvertFromAbstractResponse(abstractResponse);
+            }
+            
+            // For backward compatibility, if client is still OpenRouterClient directly
+            // This should be a temporary bridge until full migration
+            var clientProperty = Configuration.Client.GetType().GetProperty("_client", 
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            
+            if (clientProperty?.GetValue(Configuration.Client) is OpenRouterClient openRouterClient)
+            {
+                return await openRouterClient.Chat.CreateAsync(request);
+            }
+            
+            // Fallback - shouldn't happen in normal operation
+            throw new InvalidOperationException("Unable to execute chat completion with the provided client");
+        }
+        
+        private Saturn.Providers.Models.ChatRequest ConvertToAbstractRequest(ChatCompletionRequest request)
+        {
+            return new Saturn.Providers.Models.ChatRequest
+            {
+                Model = request.Model ?? "",
+                Temperature = request.Temperature,
+                MaxTokens = request.MaxTokens,
+                TopP = request.TopP,
+                Stream = request.Stream ?? false,
+                Messages = request.Messages?.Select(m => new Saturn.Providers.Models.ChatMessage
+                {
+                    Role = m.Role ?? "",
+                    Content = JsonToString(m.Content),
+                    ToolCallId = m.ToolCallId,
+                    ToolCalls = m.ToolCalls?.Select(tc => new Saturn.Providers.Models.ToolCall
+                    {
+                        Id = tc.Id ?? "",
+                        Name = tc.Function?.Name ?? "",
+                        Arguments = tc.Function?.Arguments ?? ""
+                    }).ToList()
+                }).ToList() ?? new List<Saturn.Providers.Models.ChatMessage>(),
+                Tools = request.Tools?.Select(t => new Saturn.Providers.Models.ToolDefinition
+                {
+                    Name = t.Function?.Name ?? "",
+                    Description = t.Function?.Description ?? "",
+                    Parameters = JsonSerializer.Deserialize<object>(t.Function?.Parameters.GetRawText() ?? "{}")
+                }).ToList() ?? new List<Saturn.Providers.Models.ToolDefinition>()
+            };
+        }
+        
+        private ChatCompletionResponse ConvertFromAbstractResponse(Saturn.Providers.Models.ChatResponse response)
+        {
+            return new ChatCompletionResponse
+            {
+                Id = response.Id,
+                Model = response.Model,
+                Choices = new[]
+                {
+                    new Choice
+                    {
+                        Message = new AssistantMessageResponse
+                        {
+                            Role = response.Message.Role,
+                            Content = response.Message.Content,
+                            ToolCalls = response.Message.ToolCalls?.Select(tc => new Saturn.OpenRouter.Models.Api.Chat.ToolCall
+                            {
+                                Id = tc.Id,
+                                Type = "function",
+                                Function = new Saturn.OpenRouter.Models.Api.Chat.ToolCall.FunctionCall
+                                {
+                                    Name = tc.Name,
+                                    Arguments = tc.Arguments
+                                }
+                            }).ToArray()
+                        },
+                        FinishReason = response.FinishReason
+                    }
+                },
+                Usage = new ResponseUsage
+                {
+                    PromptTokens = response.Usage?.InputTokens ?? 0,
+                    CompletionTokens = response.Usage?.OutputTokens ?? 0,
+                    TotalTokens = response.Usage?.TotalTokens ?? 0
+                }
+            };
+        }
+        
+        /// <summary>
+        /// Helper method to execute streaming chat completion using the abstraction layer
+        /// while maintaining backward compatibility with existing OpenRouter code.
+        /// </summary>
+        protected async IAsyncEnumerable<ChatCompletionChunk> ExecuteChatStream(
+            ChatCompletionRequest request, 
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            // If the client implements ILLMClient (modern abstraction layer), use it
+            if (Configuration.Client is ILLMClient llmClient)
+            {
+                // Convert to abstraction layer format
+                var abstractRequest = ConvertToAbstractRequest(request);
+                var streamChunks = new List<ChatCompletionChunk>();
+                
+                await llmClient.StreamChatAsync(abstractRequest, async chunk =>
+                {
+                    var openRouterChunk = new ChatCompletionChunk
+                    {
+                        Id = chunk.Id,
+                        Model = abstractRequest.Model,
+                        Choices = new[]
+                        {
+                            new StreamingChoice
+                            {
+                                Delta = new Delta
+                                {
+                                    Content = chunk.Delta,
+                                    Role = "assistant"
+                                },
+                                FinishReason = chunk.IsComplete ? "stop" : null
+                            }
+                        }
+                    };
+                    streamChunks.Add(openRouterChunk);
+                }, cancellationToken);
+                
+                foreach (var chunk in streamChunks)
+                {
+                    yield return chunk;
+                }
+            }
+            else
+            {
+                // For backward compatibility, if client is still OpenRouterClient directly
+                var clientProperty = Configuration.Client.GetType().GetProperty("_client", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                
+                if (clientProperty?.GetValue(Configuration.Client) is OpenRouterClient openRouterClient)
+                {
+                    await foreach (var chunk in openRouterClient.ChatStreaming.StreamAsync(request, cancellationToken))
+                    {
+                        yield return chunk;
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException("Unable to execute streaming chat completion with the provided client");
+                }
             }
         }
 

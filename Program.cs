@@ -4,10 +4,14 @@ using Saturn.Agents.MultiAgent;
 using Saturn.Configuration;
 using Saturn.Core;
 using Saturn.OpenRouter;
+using Saturn.Providers;
+using Saturn.Providers.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.UI;
+using Saturn.UI.Dialogs;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -35,48 +39,209 @@ namespace Saturn
                     await Task.Delay(1000);
                 }
 
-                var (agent, client) = await CreateAgent();
-                using var chatInterface = new ChatInterface(agent, client);
+                var (agent, provider, client) = await CreateAgent();
+                using var chatInterface = new ChatInterface(agent, provider);
                 chatInterface.Initialize();
                 chatInterface.Run();
             }
             catch (InvalidOperationException ex)
             {
                 Console.WriteLine($"Configuration Error: {ex.Message}");
+                
+                if (ex.Message.Contains("No provider selected"))
+                {
+                    Console.WriteLine("\nTo resolve this:");
+                    Console.WriteLine("1. Run the application again and select a provider");
+                    Console.WriteLine("2. Or set OPENROUTER_API_KEY environment variable");
+                    Console.WriteLine("3. Or configure Anthropic authentication");
+                }
+                else if (ex.Message.Contains("OPENROUTER_API_KEY"))
+                {
+                    Console.WriteLine("\nTo resolve this:");
+                    Console.WriteLine("1. Set the OPENROUTER_API_KEY environment variable");
+                    Console.WriteLine("2. Or switch to a different provider using the Provider menu");
+                }
+                
+                Console.WriteLine($"\nFor more help, visit: https://github.com/xyOz-dev/Saturn/wiki");
                 Environment.Exit(1);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Fatal Error: {ex.Message}");
                 Console.WriteLine($"Stack Trace: {ex.StackTrace}");
+                
+                // Log to file for debugging
+                LogErrorToFile(ex);
+                
+                Console.WriteLine("\nAn error log has been saved for debugging purposes.");
+                Console.WriteLine("Please report this issue at: https://github.com/xyOz-dev/Saturn/issues");
                 Environment.Exit(1);
             }
         }
         
 
-        static async Task<(Agent, OpenRouterClient)> CreateAgent()
+        static async Task<(Agent, ILLMProvider, OpenRouterClient)> CreateAgent()
         {
-            var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
-            if (string.IsNullOrWhiteSpace(apiKey))
+            ILLMProvider provider;
+            ILLMClient llmClient;
+            OpenRouterClient legacyClient = null;
+            
+            // Load existing configuration to determine provider preference
+            var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
+            var defaultProvider = await ConfigurationManagerExtensions.GetDefaultProviderAsync();
+            
+            // Priority: 1. Saved configuration provider, 2. Default provider, 3. Environment variable check, 4. New user flow
+            string selectedProvider = null;
+            
+            if (!string.IsNullOrEmpty(persistedConfig?.ProviderName))
             {
-                throw new InvalidOperationException("OPENROUTER_API_KEY environment variable is not set. Please set it before running the application.");
+                selectedProvider = persistedConfig.ProviderName;
+            }
+            else if (!string.IsNullOrEmpty(defaultProvider))
+            {
+                selectedProvider = defaultProvider;
+            }
+            else
+            {
+                // Check if legacy OpenRouter setup exists
+                var hasOpenRouterKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENROUTER_API_KEY"));
+                if (hasOpenRouterKey)
+                {
+                    selectedProvider = "openrouter";
+                    Console.WriteLine("Detected existing OpenRouter setup. Migrating to provider system...");
+                }
+                else
+                {
+                    // New user - show provider selection
+                    selectedProvider = await ShowProviderSelectionForNewUser();
+                    if (string.IsNullOrEmpty(selectedProvider))
+                    {
+                        throw new InvalidOperationException("No provider selected. Cannot continue without a configured provider.");
+                    }
+                }
             }
             
-            OpenRouterOptions options = new OpenRouterOptions()
+            // Initialize provider with error handling and fallbacks
+            try
             {
-                ApiKey = apiKey,
-                Referer = "https://github.com/xyOz-dev/Saturn",
-                Title = "Saturn"
-            };
-
-            var client = new OpenRouterClient(options);
+                Console.WriteLine($"Initializing {selectedProvider} provider...");
+                provider = await ProviderFactory.CreateAndAuthenticateAsync(selectedProvider);
+                llmClient = await provider.GetClientAsync();
+                
+                // Create legacy client for backward compatibility if OpenRouter
+                if (selectedProvider.Equals("openrouter", StringComparison.OrdinalIgnoreCase))
+                {
+                    var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+                    if (!string.IsNullOrWhiteSpace(apiKey))
+                    {
+                        legacyClient = new OpenRouterClient(new OpenRouterOptions
+                        {
+                            ApiKey = apiKey,
+                            Referer = "https://github.com/xyOz-dev/Saturn",
+                            Title = "Saturn"
+                        });
+                    }
+                }
+                
+                Console.WriteLine($"Successfully initialized {provider.Name} provider.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to initialize {selectedProvider} provider: {ex.Message}");
+                
+                // Try fallback to OpenRouter if available
+                if (!selectedProvider.Equals("openrouter", StringComparison.OrdinalIgnoreCase))
+                {
+                    var fallbackKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+                    if (!string.IsNullOrWhiteSpace(fallbackKey))
+                    {
+                        Console.WriteLine("Falling back to OpenRouter...");
+                        try
+                        {
+                            provider = await ProviderFactory.CreateAndAuthenticateAsync("openrouter");
+                            llmClient = await provider.GetClientAsync();
+                            legacyClient = new OpenRouterClient(new OpenRouterOptions
+                            {
+                                ApiKey = fallbackKey,
+                                Referer = "https://github.com/xyOz-dev/Saturn",
+                                Title = "Saturn"
+                            });
+                            selectedProvider = "openrouter";
+                            Console.WriteLine("Successfully fell back to OpenRouter.");
+                        }
+                        catch
+                        {
+                            throw new InvalidOperationException($"Primary provider '{selectedProvider}' failed and OpenRouter fallback also failed. Please check your configuration.");
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Provider '{selectedProvider}' failed to initialize and no fallback available. Error: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    throw new InvalidOperationException($"OpenRouter provider failed to initialize. Please check your OPENROUTER_API_KEY environment variable. Error: {ex.Message}");
+                }
+            }
             
-            AgentManager.Instance.Initialize(client);
+            // Initialize agent manager
+            AgentManager.Instance.Initialize(llmClient);
 
-            var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
+            // Create agent configuration with provider-aware settings
+            var agentConfig = await CreateAgentConfiguration(llmClient, persistedConfig, selectedProvider);
             
+            // Save configuration with provider information
+            if (persistedConfig == null)
+            {
+                persistedConfig = ConfigurationManager.FromAgentConfiguration(agentConfig);
+            }
+            
+            persistedConfig.ProviderName = selectedProvider;
+            await ConfigurationManager.SaveConfigurationAsync(persistedConfig);
+            
+            Console.WriteLine($"Agent configured with {provider.Name} provider using model {agentConfig.Model}");
+            
+            return (new Agent(agentConfig), provider, legacyClient);
+        }
+        
+        private static async Task<string> ShowProviderSelectionForNewUser()
+        {
+            Console.Clear();
+            Console.WriteLine("Welcome to Saturn!");
+            Console.WriteLine("═══════════════════════════════════════════════");
+            Console.WriteLine();
+            Console.WriteLine("To get started, please select an AI provider:");
+            Console.WriteLine();
+            Console.WriteLine("1. OpenRouter - Access multiple models through one API");
+            Console.WriteLine("2. Anthropic - Direct integration with Claude models");
+            Console.WriteLine();
+            Console.Write("Select provider (1-2): ");
+            
+            var input = Console.ReadLine();
+            switch (input?.Trim())
+            {
+                case "1":
+                    return "openrouter";
+                case "2":
+                    return "anthropic";
+                default:
+                    Console.WriteLine("Invalid selection. Please run the application again and choose a valid option.");
+                    return null;
+            }
+        }
+        
+        private static async Task<Saturn.Agents.Core.AgentConfiguration> CreateAgentConfiguration(ILLMClient llmClient, PersistedAgentConfiguration persistedConfig, string providerName)
+        {
             var model = "anthropic/claude-sonnet-4";
             var temperature = 0.15;
+            
+            // Adjust default model based on provider
+            if (providerName.Equals("anthropic", StringComparison.OrdinalIgnoreCase))
+            {
+                model = "claude-sonnet-4-20250514";
+            }
+            
             if (model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
             {
                 temperature = 1.0;
@@ -189,7 +354,7 @@ Operating Principles
    - Monitor agent status to avoid resource exhaustion.
    - Avoid redundant work - if a sub-agent did it, it's done.
    - Efficiency means trusting delegation, not redoing completed tasks."),
-                Client = client,
+                Client = llmClient,
                 Model = model,
                 Temperature = temperature,
                 MaxTokens = 4096,
@@ -208,6 +373,7 @@ Operating Principles
                 },
             };
 
+            // Apply saved configuration if available
             if (persistedConfig != null)
             {
                 ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
@@ -217,13 +383,42 @@ Operating Principles
                 await ConfigurationManager.SaveConfigurationAsync(
                     ConfigurationManager.FromAgentConfiguration(agentConfig));
             }
-            
+
             if (agentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
             {
                 agentConfig.Temperature = 1.0;
             }
 
-            return (new Agent(agentConfig), client);
+            return agentConfig;
+        }
+        
+        private static void LogErrorToFile(Exception ex)
+        {
+            try
+            {
+                var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Saturn", "logs");
+                Directory.CreateDirectory(logDir);
+                
+                var logFile = Path.Combine(logDir, $"error-{DateTime.Now:yyyy-MM-dd-HH-mm-ss}.log");
+                var logContent = $"Saturn Error Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n";
+                logContent += $"═══════════════════════════════════════════════\n";
+                logContent += $"Error: {ex.Message}\n";
+                logContent += $"Type: {ex.GetType().FullName}\n";
+                logContent += $"Stack Trace:\n{ex.StackTrace}\n";
+                
+                if (ex.InnerException != null)
+                {
+                    logContent += $"\nInner Exception: {ex.InnerException.Message}\n";
+                    logContent += $"Inner Stack Trace:\n{ex.InnerException.StackTrace}\n";
+                }
+                
+                File.WriteAllText(logFile, logContent);
+                Console.WriteLine($"Error logged to: {logFile}");
+            }
+            catch
+            {
+                // If logging fails, we can't do much about it
+            }
         }
     }
 }

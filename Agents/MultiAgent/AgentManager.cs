@@ -10,7 +10,7 @@ using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent.Objects;
 using Saturn.Config;
 using Saturn.Data;
-using Saturn.OpenRouter;
+using Saturn.Providers;
 using Saturn.OpenRouter.Models.Api.Chat;
 
 namespace Saturn.Agents.MultiAgent
@@ -22,7 +22,7 @@ namespace Saturn.Agents.MultiAgent
         private readonly ConcurrentDictionary<string, AgentTaskResult> _completedTasks;
         private readonly ConcurrentDictionary<string, ReviewerContext> _reviewers;
         private readonly SemaphoreSlim _reviewerSemaphore = new SemaphoreSlim(25);
-        private OpenRouterClient _client = null!;
+        private ILLMClient _client = null!;
         private const int MaxConcurrentAgents = 25;
         private string? _parentSessionId;
         
@@ -39,7 +39,7 @@ namespace Saturn.Agents.MultiAgent
             _reviewers = new ConcurrentDictionary<string, ReviewerContext>();
         }
         
-        public void Initialize(OpenRouterClient client)
+        public void Initialize(ILLMClient client)
         {
             if (_instance != null)
             {
