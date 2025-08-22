@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Saturn.Agents.Core;
+using Saturn.Configuration.Objects;
 
 namespace Saturn.Configuration
 {
@@ -100,20 +101,5 @@ namespace Saturn.Configuration
             target.ToolNames = source.ToolNames ?? target.ToolNames;
             target.RequireCommandApproval = source.RequireCommandApproval ?? true;
         }
-    }
-
-    public class PersistedAgentConfiguration
-    {
-        public string? Name { get; set; }
-        public string? Model { get; set; }
-        public double? Temperature { get; set; }
-        public int? MaxTokens { get; set; }
-        public double? TopP { get; set; }
-        public bool EnableStreaming { get; set; } = true;
-        public bool MaintainHistory { get; set; } = true;
-        public int? MaxHistoryMessages { get; set; }
-        public bool EnableTools { get; set; } = true;
-        public List<string>? ToolNames { get; set; }
-        public bool? RequireCommandApproval { get; set; }
     }
 }
