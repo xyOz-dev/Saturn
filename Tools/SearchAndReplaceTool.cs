@@ -259,7 +259,7 @@ Safety features:
             var result = new FileResult
             {
                 Path = filePath,
-                Matches = new List<MatchInfo>()
+                Matches = new List<SearchMatchInfo>()
             };
             
             var content = await File.ReadAllTextAsync(filePath);
@@ -338,7 +338,7 @@ Safety features:
             return content.Substring(start, end - start);
         }
         
-        private string GeneratePreview(string original, string modified, List<MatchInfo> matches)
+        private string GeneratePreview(string original, string modified, List<SearchMatchInfo> matches)
         {
             var preview = new StringBuilder();
             var maxMatches = Math.Min(matches.Count, 3);
