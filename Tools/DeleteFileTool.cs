@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 
 namespace Saturn.Tools
 {
@@ -308,21 +309,6 @@ Safety features:
             }
             
             return $"{size:0.##} {sizes[order]}";
-        }
-        
-        private class DeletionInfo
-        {
-            public List<DeletionItem> ItemsToDelete { get; set; } = new List<DeletionItem>();
-            public int TotalItems { get; set; }
-            public long TotalSize { get; set; }
-        }
-        
-        private class DeletionItem
-        {
-            public string Path { get; set; } = string.Empty;
-            public string Type { get; set; } = string.Empty;
-            public long Size { get; set; }
-            public bool IsReadOnly { get; set; }
         }
     }
 }

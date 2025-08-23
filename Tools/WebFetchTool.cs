@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 using HtmlAgilityPack;
 using ReverseMarkdown;
 using System.Collections.Concurrent;
@@ -443,12 +444,6 @@ When to use:
             }
 
             return false;
-        }
-
-        private class CachedContent
-        {
-            public ToolResult Result { get; set; } = new ToolResult { FormattedOutput = string.Empty, RawData = string.Empty };
-            public DateTime CachedAt { get; set; }
         }
     }
 }

@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 
 namespace Saturn.Tools
 {
@@ -251,13 +252,6 @@ Examples:
             }
             
             return $"{size:0.##} {sizes[order]}";
-        }
-        
-        private class FileContent
-        {
-            public List<string> Lines { get; set; } = new List<string>();
-            public int TotalLines { get; set; }
-            public int ReadLines { get; set; }
         }
     }
 }

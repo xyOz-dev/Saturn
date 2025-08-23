@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 
 namespace Saturn.Tools
 {
@@ -354,48 +355,5 @@ namespace Saturn.Tools
         public IReadOnlyList<CommandHistory> GetCommandHistory() => _commandHistory.AsReadOnly();
 
         public void ClearHistory() => _commandHistory.Clear();
-    }
-
-    public class CommandExecutorConfig
-    {
-        public SecurityMode SecurityMode { get; set; } = SecurityMode.Unrestricted;
-        public int DefaultTimeout { get; set; } = 30;
-        public bool EnableHistory { get; set; } = true;
-        public int MaxHistorySize { get; set; } = 100;
-        public Func<string, CommandValidationResult>? CustomValidator { get; set; }
-    }
-
-    public enum SecurityMode
-    {
-        Unrestricted,
-        Restricted,
-        Strict
-    }
-
-    public class CommandValidationResult
-    {
-        public bool IsValid { get; set; }
-        public string Reason { get; set; } = string.Empty;
-    }
-
-    public class CommandResult
-    {
-        public int ExitCode { get; set; }
-        public string StandardOutput { get; set; } = string.Empty;
-        public string StandardError { get; set; } = string.Empty;
-        public TimeSpan Duration { get; set; }
-        public string Command { get; set; } = string.Empty;
-        public string WorkingDirectory { get; set; } = string.Empty;
-    }
-
-    public class CommandHistory
-    {
-        public string Command { get; set; } = string.Empty;
-        public string WorkingDirectory { get; set; } = string.Empty;
-        public DateTime ExecutedAt { get; set; }
-        public int? ExitCode { get; set; }
-        public TimeSpan? Duration { get; set; }
-        public bool Success { get; set; }
-        public string? Error { get; set; }
     }
 }
