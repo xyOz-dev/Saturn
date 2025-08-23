@@ -436,7 +436,7 @@ Safety features:
                 throw new SecurityException($"Access denied: Path '{path}' is outside the working directory");
             }
         }
-        
+         
         private Encoding DetectEncoding(string filePath)
         {
             using var reader = new StreamReader(filePath, Encoding.UTF8, true);
