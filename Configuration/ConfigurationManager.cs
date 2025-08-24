@@ -53,6 +53,13 @@ namespace Saturn.Configuration
 
         public static async Task SaveConfigurationAsync(PersistedAgentConfiguration config)
         {
+            // Validate input parameters
+            if (config == null)
+                throw new ArgumentNullException(nameof(config));
+            
+            // Validate configuration values
+            ValidateConfiguration(config);
+            
             try
             {
                 if (!Directory.Exists(AppDataPath))
@@ -61,17 +68,24 @@ namespace Saturn.Configuration
                 }
 
                 var json = JsonSerializer.Serialize(config, JsonOptions);
+                
+                if (string.IsNullOrEmpty(json))
+                    throw new InvalidOperationException("Failed to serialize configuration to JSON");
+                
                 await File.WriteAllTextAsync(ConfigFilePath, json);
             }
             catch (Exception ex)
             {
-
+                throw new InvalidOperationException($"Failed to save configuration: {ex.Message}", ex);
             }
         }
 
         public static PersistedAgentConfiguration FromAgentConfiguration(AgentConfiguration agentConfig)
         {
-            return new PersistedAgentConfiguration
+            if (agentConfig == null)
+                throw new ArgumentNullException(nameof(agentConfig));
+            
+            var config = new PersistedAgentConfiguration
             {
                 Name = agentConfig.Name,
                 Model = agentConfig.Model,
@@ -85,10 +99,24 @@ namespace Saturn.Configuration
                 ToolNames = agentConfig.ToolNames,
                 RequireCommandApproval = agentConfig.RequireCommandApproval
             };
+            
+            // Validate the created configuration
+            ValidateConfiguration(config);
+            
+            return config;
         }
 
         public static void ApplyToAgentConfiguration(AgentConfiguration target, PersistedAgentConfiguration source)
         {
+            if (target == null)
+                throw new ArgumentNullException(nameof(target));
+            
+            if (source == null)
+                throw new ArgumentNullException(nameof(source));
+            
+            // Validate source configuration before applying
+            ValidateConfiguration(source);
+            
             target.Name = source.Name ?? target.Name;
             target.Model = source.Model ?? target.Model;
             target.Temperature = source.Temperature ?? target.Temperature;
@@ -100,6 +128,57 @@ namespace Saturn.Configuration
             target.EnableTools = source.EnableTools;
             target.ToolNames = source.ToolNames ?? target.ToolNames;
             target.RequireCommandApproval = source.RequireCommandApproval ?? true;
+        }
+        
+        private static void ValidateConfiguration(PersistedAgentConfiguration config)
+        {
+            // Validate name
+            if (!string.IsNullOrEmpty(config.Name) && string.IsNullOrWhiteSpace(config.Name))
+                throw new ArgumentException("Configuration name cannot be whitespace only");
+            
+            // Validate model
+            if (!string.IsNullOrEmpty(config.Model) && string.IsNullOrWhiteSpace(config.Model))
+                throw new ArgumentException("Model name cannot be whitespace only");
+            
+            // Validate temperature
+            if (config.Temperature.HasValue && (config.Temperature.Value < 0 || config.Temperature.Value > 2))
+                throw new ArgumentException("Temperature must be between 0 and 2");
+            
+            // Validate max tokens
+            if (config.MaxTokens.HasValue && config.MaxTokens.Value <= 0)
+                throw new ArgumentException("MaxTokens must be greater than 0");
+            
+            // Validate top P
+            if (config.TopP.HasValue && (config.TopP.Value <= 0 || config.TopP.Value > 1))
+                throw new ArgumentException("TopP must be between 0 and 1 (exclusive)");
+            
+            // Validate max history messages
+            if (config.MaxHistoryMessages.HasValue && config.MaxHistoryMessages.Value < 0)
+                throw new ArgumentException("MaxHistoryMessages cannot be negative");
+            
+            // Validate tool names
+            if (config.ToolNames != null)
+            {
+                foreach (var toolName in config.ToolNames)
+                {
+                    if (string.IsNullOrEmpty(toolName))
+                        throw new ArgumentException("Tool names cannot be null or empty");
+                    
+                    if (string.IsNullOrWhiteSpace(toolName))
+                        throw new ArgumentException("Tool names cannot be whitespace only");
+                }
+            }
+            
+            // Validate provider name
+            if (!string.IsNullOrEmpty(config.ProviderName))
+            {
+                if (string.IsNullOrWhiteSpace(config.ProviderName))
+                    throw new ArgumentException("Provider name cannot be whitespace only");
+                
+                // Validate provider name format
+                if (!System.Text.RegularExpressions.Regex.IsMatch(config.ProviderName, @"^[a-zA-Z0-9\-_]+$"))
+                    throw new ArgumentException("Provider name must contain only alphanumeric characters, hyphens, and underscores");
+            }
         }
     }
 }

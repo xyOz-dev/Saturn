@@ -7,12 +7,13 @@ using Saturn.Agents.Core;
 using Saturn.Tools.Core;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
 {
     public class ModeEditorDialog : Dialog
     {
-        private OpenRouterClient? openRouterClient;
+        private ILLMClient? llmClient;
         private TextField nameField = null!;
         private TextField agentNameField = null!;
         private TextField descriptionField = null!;
@@ -36,11 +37,11 @@ namespace Saturn.UI.Dialogs
         
         public Mode? ResultMode { get; private set; }
         
-        public ModeEditorDialog(Mode? existingMode = null, OpenRouterClient? client = null)
+        public ModeEditorDialog(Mode? existingMode = null, ILLMClient? client = null)
             : base(existingMode != null ? $"Edit Mode: {existingMode.Name}" : "Create New Mode", 90, 26)
         {
             ColorScheme = Colors.Dialog;
-            openRouterClient = client;
+            llmClient = client;
             
             isEditMode = existingMode != null;
             mode = existingMode ?? new Mode();
@@ -252,13 +253,13 @@ namespace Saturn.UI.Dialogs
         
         private async void OnSelectModelClicked()
         {
-            if (openRouterClient == null)
+            if (llmClient == null)
             {
-                MessageBox.ErrorQuery("Error", "OpenRouter client not available", "OK");
+                MessageBox.ErrorQuery("Error", "LLM client not available", "OK");
                 return;
             }
             
-            var models = await UI.AgentConfiguration.GetAvailableModels(openRouterClient);
+            var models = await UI.AgentConfiguration.GetAvailableModels(llmClient);
             var modelNames = models.Select(m => m.Name ?? m.Id).ToArray();
             var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == mode.Model);
             if (currentIndex < 0) currentIndex = 0;

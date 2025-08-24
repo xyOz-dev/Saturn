@@ -6,6 +6,7 @@ using Terminal.Gui;
 using Saturn.Config;
 using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
 {
@@ -25,15 +26,15 @@ namespace Saturn.UI.Dialogs
         private Button cancelButton;
         
         private List<Model> availableModels = new();
-        private OpenRouterClient? client;
+        private ILLMClient? client;
         private SubAgentPreferences preferences;
         
         public bool ConfigurationSaved { get; private set; }
         
-        public SubAgentConfigDialog(OpenRouterClient? openRouterClient = null)
+        public SubAgentConfigDialog(ILLMClient? llmClient = null)
             : base("Default Sub-Agent Configuration", 80, 22)
         {
-            client = openRouterClient;
+            client = llmClient;
             preferences = SubAgentPreferences.Instance;
             
             InitializeComponents();
@@ -227,10 +228,11 @@ namespace Saturn.UI.Dialogs
             
             try
             {
-                var response = await client.Models.ListAllAsync();
-                if (response?.Data != null)
+                var modelInfos = await client.GetModelsAsync();
+                if (modelInfos != null && modelInfos.Any())
                 {
-                    availableModels = response.Data
+                    availableModels = modelInfos
+                        .Select(m => new Model { Id = m.Id, Name = m.Name })
                         .OrderBy(m => m.Id)
                         .ToList();
                     

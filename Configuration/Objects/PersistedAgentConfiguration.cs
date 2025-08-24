@@ -9,6 +9,7 @@ namespace Saturn.Configuration.Objects
     public class PersistedAgentConfiguration
     {
         public string? Name { get; set; }
+        public string? ProviderName { get; set; }
         public string? Model { get; set; }
         public double? Temperature { get; set; }
         public int? MaxTokens { get; set; }
