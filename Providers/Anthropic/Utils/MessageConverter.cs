@@ -21,38 +21,47 @@ namespace Saturn.Providers.Anthropic.Utils
                 Messages = new List<AnthropicMessage>(),
                 Tools = ConvertTools(request.Tools)
             };
+            const string requiredPrefix = "You are Claude Code, Anthropic's official CLI for Claude.";
             
-            // Extract system message
+            // CRITICAL: OAuth credentials require EXACT system prompt with NO additions
+            anthropicRequest.System = requiredPrefix;
+            
+            // Handle user-provided system messages by converting them to context
             var systemMessage = request.Messages.FirstOrDefault(m => m.Role == "system");
-            if (systemMessage != null)
+            string? systemInstructions = null;
+            
+            if (systemMessage != null && !string.IsNullOrWhiteSpace(systemMessage.Content))
             {
-                // Prepend required Claude Code prefix for Anthropic API authentication
-                const string requiredPrefix = "You are Claude Code, Anthropic's official CLI for Claude.\n";
-                
-                // Console logging for debugging
-                Console.WriteLine($"[DEBUG] Original system prompt starts with: {systemMessage.Content?.Substring(0, Math.Min(50, systemMessage.Content?.Length ?? 0))}");
-                
-                // Check if the system prompt already starts with the required prefix
-                if (!systemMessage.Content.StartsWith(requiredPrefix, StringComparison.Ordinal))
+                // Extract any user-provided system instructions
+                if (!systemMessage.Content.Equals(requiredPrefix, StringComparison.Ordinal))
                 {
-                    anthropicRequest.System = requiredPrefix + systemMessage.Content;
-                    Console.WriteLine($"[DEBUG] Added Claude Code prefix. System prompt now starts with: {anthropicRequest.System?.Substring(0, Math.Min(80, anthropicRequest.System?.Length ?? 0))}");
+                    // Remove the required prefix if it's there
+                    systemInstructions = systemMessage.Content.Replace(requiredPrefix, "").Trim();
+                    if (systemInstructions.StartsWith("\n"))
+                        systemInstructions = systemInstructions.Substring(1);
+                    
+                }
+            }
+            
+            Console.WriteLine($"[DEBUG] Final system prompt: '{anthropicRequest.System}'");
+            
+            // Convert other messages, injecting system instructions if needed
+            bool firstUserMessage = true;
+            foreach (var message in request.Messages.Where(m => m.Role != "system"))
+            {
+                if (message.Role == "user" && firstUserMessage && !string.IsNullOrWhiteSpace(systemInstructions))
+                {
+                    // Inject system instructions as context in the first user message
+                    var enhancedMessage = ConvertMessage(message);
+                    enhancedMessage.Content = $"[Context: {systemInstructions}]\n\n{enhancedMessage.Content}";
+                    anthropicRequest.Messages.Add(enhancedMessage);
+                    firstUserMessage = false;
+                    Console.WriteLine("[DEBUG] Injected system instructions into first user message");
                 }
                 else
                 {
-                    anthropicRequest.System = systemMessage.Content;
-                    Console.WriteLine("[DEBUG] Claude Code prefix already present.");
+                    anthropicRequest.Messages.Add(ConvertMessage(message));
                 }
-            }
-            else
-            {
-                Console.WriteLine("[DEBUG] No system message found in request!");
-            }
-            
-            // Convert other messages
-            foreach (var message in request.Messages.Where(m => m.Role != "system"))
-            {
-                anthropicRequest.Messages.Add(ConvertMessage(message));
             }
             
             return anthropicRequest;
