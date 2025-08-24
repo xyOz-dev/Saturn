@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 
 namespace Saturn.Tools
 {
@@ -200,21 +201,6 @@ Examples:
             }
             
             return CreateSuccessResult(results, string.Join(Environment.NewLine, lines));
-        }
-        
-        public class GrepResult
-        {
-            public string FilePath { get; set; } = string.Empty;
-            public int LineNumber { get; set; }
-            public string Line { get; set; } = string.Empty;
-            public List<MatchInfo> Matches { get; set; } = new List<MatchInfo>();
-        }
-        
-        public class MatchInfo
-        {
-            public string Value { get; set; } = string.Empty;
-            public int Index { get; set; }
-            public int Length { get; set; }
         }
     }
 }

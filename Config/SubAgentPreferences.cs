@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Saturn.Config.Objects;
 using Saturn.OpenRouter.Serialization;
 
 namespace Saturn.Config
@@ -149,15 +150,5 @@ namespace Saturn.Config
             PurposeConfigurations[purpose] = config;
             Save();
         }
-    }
-    
-    public class SubAgentConfiguration
-    {
-        public string Model { get; set; } = "anthropic/claude-3.5-sonnet";
-        public double Temperature { get; set; } = 0.3;
-        public int MaxTokens { get; set; } = 4096;
-        public double TopP { get; set; } = 0.95;
-        public bool EnableTools { get; set; } = true;
-        public string? SystemPromptOverride { get; set; }
     }
 }

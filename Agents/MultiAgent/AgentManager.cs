@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Saturn.Agents;
 using Saturn.Agents.Core;
+using Saturn.Agents.MultiAgent.Objects;
 using Saturn.Config;
 using Saturn.Data;
 using Saturn.OpenRouter;
@@ -543,93 +544,5 @@ Your decision:";
         {
             return MaxConcurrentAgents;
         }
-    }
-    
-    public class SubAgentContext
-    {
-        public string Id { get; set; } = "";
-        public Agent Agent { get; set; } = null!;
-        public string Name { get; set; } = "";
-        public string Purpose { get; set; } = "";
-        public AgentStatus Status { get; set; }
-        public DateTime CreatedAt { get; set; }
-        public AgentTask? CurrentTask { get; set; }
-        public int RevisionCount { get; set; } = 0;
-    }
-    
-    public class ReviewerContext
-    {
-        public string Id { get; set; } = "";
-        public Agent ReviewerAgent { get; set; } = null!;
-        public string SubAgentId { get; set; } = "";
-        public string TaskId { get; set; } = "";
-        public int RevisionCount { get; set; } = 0;
-        public DateTime StartedAt { get; set; }
-        public TaskCompletionSource<ReviewDecision> DecisionSource { get; set; } = new();
-    }
-    
-    public class ReviewDecision
-    {
-        public ReviewStatus Status { get; set; }
-        public string Feedback { get; set; } = "";
-        public List<string> RevisionRequests { get; set; } = new();
-    }
-    
-    public class AgentTask
-    {
-        public string Id { get; set; } = "";
-        public string Description { get; set; } = "";
-        public Dictionary<string, object>? Context { get; set; }
-        public DateTime StartedAt { get; set; }
-        public TaskStatus Status { get; set; }
-    }
-    
-    public class AgentTaskResult
-    {
-        public string TaskId { get; set; } = "";
-        public string AgentId { get; set; } = "";
-        public string AgentName { get; set; } = "";
-        public bool Success { get; set; }
-        public string Result { get; set; } = "";
-        public DateTime CompletedAt { get; set; }
-        public TimeSpan Duration { get; set; }
-    }
-    
-    public class AgentStatusInfo
-    {
-        public string AgentId { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string Status { get; set; } = "";
-        public string? CurrentTask { get; set; }
-        public string? TaskId { get; set; }
-        public bool IsIdle { get; set; }
-        public bool Exists { get; set; }
-        public TimeSpan RunningTime { get; set; }
-    }
-    
-    public enum AgentStatus
-    {
-        Idle,
-        Working,
-        BeingReviewed,
-        Revising,
-        Error,
-        Terminated
-    }
-    
-    public enum TaskStatus
-    {
-        Pending,
-        Running,
-        Completed,
-        Failed
-    }
-    
-    public enum ReviewStatus
-    {
-        Pending,
-        Approved,
-        RevisionRequested,
-        Rejected
     }
 }

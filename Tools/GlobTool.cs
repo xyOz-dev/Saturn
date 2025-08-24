@@ -7,6 +7,7 @@ using System.Linq;
 using System.Security;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 
 namespace Saturn.Tools
 {
@@ -362,22 +363,6 @@ Note: Use this before grep when you need to find files first, then search within
         private bool IsSymbolicLink(FileSystemInfo info)
         {
             return info.Attributes.HasFlag(FileAttributes.ReparsePoint);
-        }
-        
-        public class GlobMatch
-        {
-            public string Path { get; set; } = string.Empty;
-            public string RelativePath { get; set; } = string.Empty;
-            public bool IsDirectory { get; set; }
-            public long Size { get; set; }
-            public DateTime LastModified { get; set; }
-            public bool IsSymbolicLink { get; set; }
-        }
-        
-        public class GlobMatchResult
-        {
-            public List<GlobMatch> Matches { get; set; } = new List<GlobMatch>();
-            public int TotalCount { get; set; }
         }
     }
 }

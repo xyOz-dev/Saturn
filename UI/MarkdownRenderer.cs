@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
+using Saturn.UI.Objects;
 using Terminal.Gui;
 
 namespace Saturn.UI
@@ -186,31 +187,6 @@ namespace Saturn.UI
             }
             
             return formattedText;
-        }
-    }
-
-    public class FormattedText
-    {
-        private List<(string text, Terminal.Gui.Attribute attribute)> segments = new();
-
-        public void Add(string text, Terminal.Gui.Attribute attribute)
-        {
-            segments.Add((text, attribute));
-        }
-
-        public List<(string text, Terminal.Gui.Attribute attribute)> GetSegments()
-        {
-            return segments;
-        }
-
-        public override string ToString()
-        {
-            var sb = new StringBuilder();
-            foreach (var segment in segments)
-            {
-                sb.Append(segment.text);
-            }
-            return sb.ToString();
         }
     }
 }

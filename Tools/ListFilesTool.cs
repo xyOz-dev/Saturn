@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 
 namespace Saturn.Tools
 {
@@ -583,37 +584,6 @@ Examples
             };
             
             return stats;
-        }
-        
-        private class FileSystemItem
-        {
-            public string Name { get; set; } = string.Empty;
-            public string FullPath { get; set; } = string.Empty;
-            public string RelativePath { get; set; } = string.Empty;
-            public bool IsDirectory { get; set; }
-            public long Size { get; set; }
-            public DateTime CreatedDate { get; set; }
-            public DateTime ModifiedDate { get; set; }
-            public FileAttributes Attributes { get; set; }
-            public int Depth { get; set; }
-            public bool HasError { get; set; }
-            public string? ErrorMessage { get; set; }
-        }
-        
-        private class TreeNode
-        {
-            public string Name { get; set; } = string.Empty;
-            public string FullPath { get; set; } = string.Empty;
-            public bool IsDirectory { get; set; }
-            public FileSystemItem Item { get; set; } = new FileSystemItem();
-            public List<TreeNode> Children { get; set; } = new List<TreeNode>();
-        }
-        
-        private class Statistics
-        {
-            public int FileCount { get; set; }
-            public int DirectoryCount { get; set; }
-            public long TotalSize { get; set; }
         }
     }
 }

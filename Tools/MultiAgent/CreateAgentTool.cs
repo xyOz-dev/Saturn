@@ -60,7 +60,7 @@ namespace Saturn.Tools.MultiAgent
                     prefs.DefaultTemperature,
                     prefs.DefaultMaxTokens,
                     prefs.DefaultTopP,
-                    null // No system prompt override from defaults
+                    null
                 );
                 
                 if (result.success)

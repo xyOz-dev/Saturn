@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Saturn.Agents.Core.Objects;
 using Saturn.Data;
 using Saturn.Data.Models;
 using Saturn.OpenRouter;
@@ -26,14 +27,6 @@ namespace Saturn.Agents.Core
         private readonly List<Message> _pendingMessages = new List<Message>();
         
         public event Action<string, string>? OnToolCall;
-        
-        private class StreamingToolCall
-        {
-            public string Id { get; set; } = string.Empty;
-            public string Name { get; set; } = string.Empty;
-            public JsonStreamAccumulator ArgumentsAccumulator { get; } = new JsonStreamAccumulator();
-            public bool IsComplete => ArgumentsAccumulator.IsComplete;
-        }
 
         public string Name => Configuration.Name;
         public string SystemPrompt => Configuration.SystemPrompt;

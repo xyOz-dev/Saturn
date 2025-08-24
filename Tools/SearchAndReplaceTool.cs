@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 using Saturn.Tools.Core;
+using Saturn.Tools.Objects;
 
 namespace Saturn.Tools
 {
@@ -258,7 +259,7 @@ Safety features:
             var result = new FileResult
             {
                 Path = filePath,
-                Matches = new List<MatchInfo>()
+                Matches = new List<SearchMatchInfo>()
             };
             
             var content = await File.ReadAllTextAsync(filePath);
@@ -279,7 +280,7 @@ Safety features:
                 var lineNumber = GetLineNumber(content, match.Index);
                 var lineContent = GetLineContent(content, match.Index);
                 
-                result.Matches.Add(new MatchInfo
+                result.Matches.Add(new SearchMatchInfo
                 {
                     Line = lineNumber,
                     Column = GetColumnNumber(content, match.Index),
@@ -337,7 +338,7 @@ Safety features:
             return content.Substring(start, end - start);
         }
         
-        private string GeneratePreview(string original, string modified, List<MatchInfo> matches)
+        private string GeneratePreview(string original, string modified, List<SearchMatchInfo> matches)
         {
             var preview = new StringBuilder();
             var maxMatches = Math.Min(matches.Count, 3);
@@ -435,7 +436,7 @@ Safety features:
                 throw new SecurityException($"Access denied: Path '{path}' is outside the working directory");
             }
         }
-        
+         
         private Encoding DetectEncoding(string filePath)
         {
             using var reader = new StreamReader(filePath, Encoding.UTF8, true);
@@ -450,32 +451,6 @@ Safety features:
             if (content.Contains("\n"))
                 return "\n";
             return Environment.NewLine;
-        }
-        
-        private class SearchReplaceResults
-        {
-            public List<FileResult> ProcessedFiles { get; set; } = new List<FileResult>();
-            public int TotalFiles { get; set; }
-            public int TotalMatches { get; set; }
-            public int TotalReplacements { get; set; }
-        }
-        
-        private class FileResult
-        {
-            public string Path { get; set; } = string.Empty;
-            public int MatchCount { get; set; }
-            public int ReplacementCount { get; set; }
-            public bool Modified { get; set; }
-            public List<MatchInfo> Matches { get; set; } = new List<MatchInfo>();
-            public string Preview { get; set; } = string.Empty;
-        }
-        
-        private class MatchInfo
-        {
-            public int Line { get; set; }
-            public int Column { get; set; }
-            public string MatchedText { get; set; } = string.Empty;
-            public string LineContent { get; set; } = string.Empty;
         }
     }
 }
