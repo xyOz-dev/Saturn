@@ -20,7 +20,7 @@ namespace Saturn.Providers.Anthropic
         private const string API_BASE = "https://api.anthropic.com";
         private const string MESSAGES_ENDPOINT = "/v1/messages";
         private const string ANTHROPIC_VERSION = "2023-06-01";
-        private const string ANTHROPIC_BETA = "oauth-2025-04-20,claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14";
+        private const string ANTHROPIC_BETA = "oauth-2025-04-20";
         
         private readonly HttpClient _httpClient;
         private readonly AnthropicAuthService _authService;
@@ -87,8 +87,31 @@ namespace Saturn.Providers.Anthropic
                 var anthropicRequest = MessageConverter.ConvertToAnthropicRequest(request);
                 anthropicRequest.Stream = false;
                 
+                // Log the request body to file
+                var requestBody = JsonSerializer.Serialize(anthropicRequest, new JsonSerializerOptions 
+                { 
+                    WriteIndented = true,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                });
+                
+                var logContent = new StringBuilder();
+                logContent.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Anthropic API Request (Non-Streaming)");
+                logContent.AppendLine("Request body:");
+                logContent.AppendLine(requestBody);
+                
                 // Prepare request
                 var httpRequest = await PrepareRequestAsync(anthropicRequest);
+                
+                // Log headers
+                logContent.AppendLine("\nRequest headers:");
+                foreach (var header in httpRequest.Headers)
+                {
+                    logContent.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                
+                await File.AppendAllTextAsync("anthropic_debug.log", logContent.ToString());
+                Console.WriteLine($"[DEBUG] Request logged to anthropic_debug.log");
                 
                 // Send request
                 var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
@@ -119,6 +142,8 @@ namespace Saturn.Providers.Anthropic
             Func<StreamChunk, Task> onChunk,
             CancellationToken cancellationToken = default)
         {
+            Console.WriteLine("[DEBUG] AnthropicClient.StreamChatAsync called");
+            
             // Validate input parameters
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
@@ -134,6 +159,8 @@ namespace Saturn.Providers.Anthropic
             
             if (string.IsNullOrWhiteSpace(request.Model))
                 throw new ArgumentException("Model name cannot be whitespace only", nameof(request));
+            
+            Console.WriteLine($"[DEBUG] Model: {request.Model}, Messages count: {request.Messages.Count}");
             
             // Validate message content (reuse validation logic)
             foreach (var message in request.Messages)
@@ -161,6 +188,8 @@ namespace Saturn.Providers.Anthropic
             if (request.TopP.HasValue && (request.TopP.Value <= 0 || request.TopP.Value > 1))
                 throw new ArgumentException("TopP must be between 0 and 1 (exclusive)", nameof(request));
             
+            Console.WriteLine("[DEBUG] Converting to Anthropic format...");
+            
             // Convert to Anthropic format
             var anthropicRequest = MessageConverter.ConvertToAnthropicRequest(request);
             anthropicRequest.Stream = true;
@@ -168,17 +197,52 @@ namespace Saturn.Providers.Anthropic
             // Prepare request
             var httpRequest = await PrepareRequestAsync(anthropicRequest);
             
+            // Log the request body to file
+            var requestBody = JsonSerializer.Serialize(anthropicRequest, new JsonSerializerOptions 
+            { 
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+            
+            var logContent = new StringBuilder();
+            logContent.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Anthropic API Request (Streaming)");
+            logContent.AppendLine("Request body:");
+            logContent.AppendLine(requestBody);
+            logContent.AppendLine("\nRequest headers:");
+            foreach (var header in httpRequest.Headers)
+            {
+                logContent.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
+            }
+            
+            await File.AppendAllTextAsync("anthropic_debug.log", logContent.ToString());
+            
+            Console.WriteLine($"[DEBUG] Request logged to anthropic_debug.log");
+            
             // Send request
             var response = await _httpClient.SendAsync(
                 httpRequest, 
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
             
+            // Log response to file
+            var responseLog = new StringBuilder();
+            responseLog.AppendLine($"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Anthropic API Response");
+            responseLog.AppendLine($"Status: {response.StatusCode}");
+            
             if (!response.IsSuccessStatusCode)
             {
                 var error = await response.Content.ReadAsStringAsync();
+                responseLog.AppendLine($"Error response: {error}");
+                await File.AppendAllTextAsync("anthropic_debug.log", responseLog.ToString());
+                
                 var errorMessage = ErrorHandler.ParseErrorMessage(error);
                 throw new HttpRequestException($"Anthropic API error ({response.StatusCode}): {errorMessage}");
+            }
+            else
+            {
+                responseLog.AppendLine("Success - streaming response started");
+                await File.AppendAllTextAsync("anthropic_debug.log", responseLog.ToString());
             }
             
             // Process SSE stream
@@ -321,34 +385,8 @@ namespace Saturn.Providers.Anthropic
                     MaxTokens = 200000,
                     InputCost = 0, // Free with Claude Pro/Max
                     OutputCost = 0
-                },
-                new ModelInfo
-                {
-                    Id = "claude-3-5-sonnet-20241022",
-                    Name = "Claude 3.5 Sonnet",
-                    Provider = "Anthropic",
-                    MaxTokens = 200000,
-                    InputCost = 0,
-                    OutputCost = 0
-                },
-                new ModelInfo
-                {
-                    Id = "claude-3-opus-20240229",
-                    Name = "Claude 3 Opus",
-                    Provider = "Anthropic",
-                    MaxTokens = 200000,
-                    InputCost = 0,
-                    OutputCost = 0
-                },
-                new ModelInfo
-                {
-                    Id = "claude-3-haiku-20240307",
-                    Name = "Claude 3 Haiku",
-                    Provider = "Anthropic",
-                    MaxTokens = 200000,
-                    InputCost = 0,
-                    OutputCost = 0
                 }
+                
             };
         }
         
@@ -361,10 +399,11 @@ namespace Saturn.Providers.Anthropic
                 throw new InvalidOperationException("No valid authentication tokens available");
             }
             
-            // Serialize request
+            // Serialize request with minimal escaping
             var json = JsonSerializer.Serialize(request, new JsonSerializerOptions
             {
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             });
             
             // Create HTTP request
@@ -377,6 +416,9 @@ namespace Saturn.Providers.Anthropic
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
             httpRequest.Headers.Add("anthropic-version", ANTHROPIC_VERSION);
             httpRequest.Headers.Add("anthropic-beta", ANTHROPIC_BETA);
+            
+            // Add User-Agent header for Claude Code compatibility
+            httpRequest.Headers.UserAgent.ParseAdd("Claude-Code/1.0");
             
             // CRITICAL: Remove x-api-key header when using OAuth
             // Anthropic rejects requests that have both Bearer token and x-api-key

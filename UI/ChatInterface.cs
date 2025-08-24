@@ -733,8 +733,10 @@ namespace Saturn.UI
                             });
                         }
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException ocEx)
                     {
+                        Console.WriteLine($"[DEBUG] OperationCanceledException: {ocEx.Message}");
+                        Console.WriteLine($"[DEBUG] Stack trace: {ocEx.StackTrace}");
                         Application.MainLoop.Invoke(() =>
                         {
                             chatView.Text += " [Cancelled]\n\n";
@@ -743,6 +745,12 @@ namespace Saturn.UI
                     }
                     catch (Exception ex)
                     {
+                        Console.WriteLine($"[DEBUG] Exception in ProcessMessage: {ex.GetType().Name}: {ex.Message}");
+                        Console.WriteLine($"[DEBUG] Stack trace: {ex.StackTrace}");
+                        if (ex.InnerException != null)
+                        {
+                            Console.WriteLine($"[DEBUG] Inner exception: {ex.InnerException.Message}");
+                        }
                         Application.MainLoop.Invoke(() =>
                         {
                             chatView.Text += $"[Error: {ex.Message}]\n\n";

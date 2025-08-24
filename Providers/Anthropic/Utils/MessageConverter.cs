@@ -26,7 +26,27 @@ namespace Saturn.Providers.Anthropic.Utils
             var systemMessage = request.Messages.FirstOrDefault(m => m.Role == "system");
             if (systemMessage != null)
             {
-                anthropicRequest.System = systemMessage.Content;
+                // Prepend required Claude Code prefix for Anthropic API authentication
+                const string requiredPrefix = "You are Claude Code, Anthropic's official CLI for Claude.\n";
+                
+                // Console logging for debugging
+                Console.WriteLine($"[DEBUG] Original system prompt starts with: {systemMessage.Content?.Substring(0, Math.Min(50, systemMessage.Content?.Length ?? 0))}");
+                
+                // Check if the system prompt already starts with the required prefix
+                if (!systemMessage.Content.StartsWith(requiredPrefix, StringComparison.Ordinal))
+                {
+                    anthropicRequest.System = requiredPrefix + systemMessage.Content;
+                    Console.WriteLine($"[DEBUG] Added Claude Code prefix. System prompt now starts with: {anthropicRequest.System?.Substring(0, Math.Min(80, anthropicRequest.System?.Length ?? 0))}");
+                }
+                else
+                {
+                    anthropicRequest.System = systemMessage.Content;
+                    Console.WriteLine("[DEBUG] Claude Code prefix already present.");
+                }
+            }
+            else
+            {
+                Console.WriteLine("[DEBUG] No system message found in request!");
             }
             
             // Convert other messages
@@ -43,11 +63,9 @@ namespace Saturn.Providers.Anthropic.Utils
             // Map common model names to Anthropic format
             var modelMap = new Dictionary<string, string>
             {
-                ["claude-3-opus"] = "claude-3-opus-20240229",
-                ["claude-3-sonnet"] = "claude-3-5-sonnet-20241022",
-                ["claude-3-haiku"] = "claude-3-haiku-20240307",
                 ["claude-sonnet-4"] = "claude-sonnet-4-20250514",
-                ["anthropic/claude-sonnet-4"] = "claude-sonnet-4-20250514"
+                ["anthropic/claude-sonnet-4"] = "claude-sonnet-4-20250514",
+                ["anthropic(claude-opus-4.1"] = "claude-opus-4-1-20250805"
             };
             
             return modelMap.TryGetValue(model, out var mapped) ? mapped : model;

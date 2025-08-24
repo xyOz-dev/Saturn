@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Saturn": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\code\\github\\SaturnFork"
+    }
+  }
+}

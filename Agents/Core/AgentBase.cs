@@ -1189,6 +1189,46 @@ namespace Saturn.Agents.Core
             var json = JsonSerializer.Serialize(contentParts);
             return JsonDocument.Parse(json).RootElement;
         }
+        
+        /// <summary>
+        /// Extracts text content from either a plain string or JSON-wrapped content.
+        /// Handles both simple strings and cached content with TextContentPart arrays.
+        /// </summary>
+        private string ExtractTextContent(JsonElement content)
+        {
+            // If it's already a string, return it directly
+            if (content.ValueKind == JsonValueKind.String)
+            {
+                var stringContent = content.GetString() ?? string.Empty;
+                System.Diagnostics.Debug.WriteLine($"[ExtractTextContent] String content: {stringContent.Substring(0, Math.Min(100, stringContent.Length))}...");
+                return stringContent;
+            }
+            
+            // If it's an array (cached content format), extract text from TextContentPart objects
+            if (content.ValueKind == JsonValueKind.Array)
+            {
+                var textParts = new List<string>();
+                foreach (var item in content.EnumerateArray())
+                {
+                    if (item.TryGetProperty("text", out var textProp))
+                    {
+                        var text = textProp.GetString();
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            textParts.Add(text);
+                        }
+                    }
+                }
+                var result = string.Join("\n", textParts);
+                System.Diagnostics.Debug.WriteLine($"[ExtractTextContent] Extracted from array: {result.Substring(0, Math.Min(100, result.Length))}...");
+                return result;
+            }
+            
+            // Fallback for other JSON types
+            var rawText = content.GetRawText();
+            System.Diagnostics.Debug.WriteLine($"[ExtractTextContent] Raw JSON fallback: {rawText.Substring(0, Math.Min(100, rawText.Length))}...");
+            return rawText;
+        }
 
         public void Dispose()
         {
@@ -1246,7 +1286,7 @@ namespace Saturn.Agents.Core
                 Messages = request.Messages?.Select(m => new Saturn.Providers.Models.ChatMessage
                 {
                     Role = m.Role ?? "",
-                    Content = JsonToString(m.Content),
+                    Content = ExtractTextContent(m.Content),
                     ToolCallId = m.ToolCallId,
                     ToolCalls = m.ToolCalls?.Select(tc => new Saturn.Providers.Models.ToolCall
                     {
