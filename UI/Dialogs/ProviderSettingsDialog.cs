@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Terminal.Gui;
 using Saturn.Providers;
 using Saturn.Configuration;
+using Saturn.Configuration.Objects;
 
 namespace Saturn.UI.Dialogs
 {
