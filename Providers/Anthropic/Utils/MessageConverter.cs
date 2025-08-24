@@ -43,7 +43,7 @@ namespace Saturn.Providers.Anthropic.Utils
                 }
             }
             
-            Console.WriteLine($"[DEBUG] Final system prompt: '{anthropicRequest.System}'");
+            // System prompt set
             
             // Convert other messages, injecting system instructions if needed
             bool firstUserMessage = true;
@@ -56,7 +56,7 @@ namespace Saturn.Providers.Anthropic.Utils
                     enhancedMessage.Content = $"[Context: {systemInstructions}]\n\n{enhancedMessage.Content}";
                     anthropicRequest.Messages.Add(enhancedMessage);
                     firstUserMessage = false;
-                    Console.WriteLine("[DEBUG] Injected system instructions into first user message");
+                    // System instructions injected into first user message
                 }
                 else
                 {

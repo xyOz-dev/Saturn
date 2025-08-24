@@ -87,31 +87,8 @@ namespace Saturn.Providers.Anthropic
                 var anthropicRequest = MessageConverter.ConvertToAnthropicRequest(request);
                 anthropicRequest.Stream = false;
                 
-                // Log the request body to file
-                var requestBody = JsonSerializer.Serialize(anthropicRequest, new JsonSerializerOptions 
-                { 
-                    WriteIndented = true,
-                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                });
-                
-                var logContent = new StringBuilder();
-                logContent.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Anthropic API Request (Non-Streaming)");
-                logContent.AppendLine("Request body:");
-                logContent.AppendLine(requestBody);
-                
                 // Prepare request
                 var httpRequest = await PrepareRequestAsync(anthropicRequest);
-                
-                // Log headers
-                logContent.AppendLine("\nRequest headers:");
-                foreach (var header in httpRequest.Headers)
-                {
-                    logContent.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
-                }
-                
-                await File.AppendAllTextAsync("anthropic_debug.log", logContent.ToString());
-                Console.WriteLine($"[DEBUG] Request logged to anthropic_debug.log");
                 
                 // Send request
                 var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
@@ -142,7 +119,7 @@ namespace Saturn.Providers.Anthropic
             Func<StreamChunk, Task> onChunk,
             CancellationToken cancellationToken = default)
         {
-            Console.WriteLine("[DEBUG] AnthropicClient.StreamChatAsync called");
+            // StreamChatAsync called
             
             // Validate input parameters
             if (request == null)
@@ -160,7 +137,7 @@ namespace Saturn.Providers.Anthropic
             if (string.IsNullOrWhiteSpace(request.Model))
                 throw new ArgumentException("Model name cannot be whitespace only", nameof(request));
             
-            Console.WriteLine($"[DEBUG] Model: {request.Model}, Messages count: {request.Messages.Count}");
+            // Model and messages validated
             
             // Validate message content (reuse validation logic)
             foreach (var message in request.Messages)
@@ -188,7 +165,7 @@ namespace Saturn.Providers.Anthropic
             if (request.TopP.HasValue && (request.TopP.Value <= 0 || request.TopP.Value > 1))
                 throw new ArgumentException("TopP must be between 0 and 1 (exclusive)", nameof(request));
             
-            Console.WriteLine("[DEBUG] Converting to Anthropic format...");
+            // Converting to Anthropic format
             
             // Convert to Anthropic format
             var anthropicRequest = MessageConverter.ConvertToAnthropicRequest(request);
@@ -197,27 +174,7 @@ namespace Saturn.Providers.Anthropic
             // Prepare request
             var httpRequest = await PrepareRequestAsync(anthropicRequest);
             
-            // Log the request body to file
-            var requestBody = JsonSerializer.Serialize(anthropicRequest, new JsonSerializerOptions 
-            { 
-                WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            });
-            
-            var logContent = new StringBuilder();
-            logContent.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Anthropic API Request (Streaming)");
-            logContent.AppendLine("Request body:");
-            logContent.AppendLine(requestBody);
-            logContent.AppendLine("\nRequest headers:");
-            foreach (var header in httpRequest.Headers)
-            {
-                logContent.AppendLine($"  {header.Key}: {string.Join(", ", header.Value)}");
-            }
-            
-            await File.AppendAllTextAsync("anthropic_debug.log", logContent.ToString());
-            
-            Console.WriteLine($"[DEBUG] Request logged to anthropic_debug.log");
+            // Request prepared for streaming
             
             // Send request
             var response = await _httpClient.SendAsync(
@@ -225,24 +182,11 @@ namespace Saturn.Providers.Anthropic
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
             
-            // Log response to file
-            var responseLog = new StringBuilder();
-            responseLog.AppendLine($"\n[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Anthropic API Response");
-            responseLog.AppendLine($"Status: {response.StatusCode}");
-            
             if (!response.IsSuccessStatusCode)
             {
                 var error = await response.Content.ReadAsStringAsync();
-                responseLog.AppendLine($"Error response: {error}");
-                await File.AppendAllTextAsync("anthropic_debug.log", responseLog.ToString());
-                
                 var errorMessage = ErrorHandler.ParseErrorMessage(error);
                 throw new HttpRequestException($"Anthropic API error ({response.StatusCode}): {errorMessage}");
-            }
-            else
-            {
-                responseLog.AppendLine("Success - streaming response started");
-                await File.AppendAllTextAsync("anthropic_debug.log", responseLog.ToString());
             }
             
             // Process SSE stream
@@ -363,7 +307,7 @@ namespace Saturn.Providers.Anthropic
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error parsing stream event: {ex.Message}");
+                        // Error parsing stream event, continue processing
                     }
                 }
             }

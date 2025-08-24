@@ -1200,7 +1200,6 @@ namespace Saturn.Agents.Core
             if (content.ValueKind == JsonValueKind.String)
             {
                 var stringContent = content.GetString() ?? string.Empty;
-                System.Diagnostics.Debug.WriteLine($"[ExtractTextContent] String content: {stringContent.Substring(0, Math.Min(100, stringContent.Length))}...");
                 return stringContent;
             }
             
@@ -1220,13 +1219,11 @@ namespace Saturn.Agents.Core
                     }
                 }
                 var result = string.Join("\n", textParts);
-                System.Diagnostics.Debug.WriteLine($"[ExtractTextContent] Extracted from array: {result.Substring(0, Math.Min(100, result.Length))}...");
                 return result;
             }
             
             // Fallback for other JSON types
             var rawText = content.GetRawText();
-            System.Diagnostics.Debug.WriteLine($"[ExtractTextContent] Raw JSON fallback: {rawText.Substring(0, Math.Min(100, rawText.Length))}...");
             return rawText;
         }
 
