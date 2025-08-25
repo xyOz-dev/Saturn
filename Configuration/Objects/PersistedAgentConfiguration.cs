@@ -19,5 +19,6 @@ namespace Saturn.Configuration.Objects
         public bool EnableTools { get; set; } = true;
         public List<string>? ToolNames { get; set; }
         public bool? RequireCommandApproval { get; set; }
+        public bool? EnableUserRules { get; set; }
     }
 }

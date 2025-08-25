@@ -52,6 +52,7 @@ namespace Saturn.Agents.Core
                 EnableStreaming = mode.EnableStreaming,
                 MaintainHistory = mode.MaintainHistory,
                 RequireCommandApproval = mode.RequireCommandApproval,
+                EnableUserRules = mode.EnableUserRules,
                 ToolNames = new List<string>(mode.ToolNames ?? new List<string>()),
                 EnableTools = mode.ToolNames?.Count > 0,
                 CurrentModeId = mode.Id
