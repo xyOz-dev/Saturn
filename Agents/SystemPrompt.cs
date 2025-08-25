@@ -2,6 +2,7 @@
 using Saturn.Tools.Core;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -12,8 +13,12 @@ namespace Saturn.Agents
         private const int MaxDirectoryResults = 200;
         private const string DirectorySectionStart = "\n<current_directory>";
         private const string DirectorySectionEnd = "</current_directory>\n";
+        private const string UserRulesSectionStart = "\n<user_rules>";
+        private const string UserRulesSectionEnd = "</user_rules>\n";
+        private const int MaxUserRulesSize = 1024 * 1024; // 1MB limit
+        private const int MaxUserRulesLength = 50000; // 50k character limit
 
-        public static async Task<string> Create(string prompt, bool includeDirectories = true)
+        public static async Task<string> Create(string prompt, bool includeDirectories = true, bool includeUserRules = true)
         {
             if (string.IsNullOrEmpty(prompt))
                 throw new ArgumentException("Prompt cannot be null or empty", nameof(prompt));
@@ -24,6 +29,15 @@ namespace Saturn.Agents
             {
                 var directoryView = await GenerateDirectoryView();
                 output.AppendLine().Append(directoryView);
+            }
+
+            if (includeUserRules)
+            {
+                var userRules = await LoadUserRules();
+                if (!string.IsNullOrEmpty(userRules))
+                {
+                    output.AppendLine().Append(userRules);
+                }
             }
 
             var result = output.ToString();
@@ -49,6 +63,56 @@ namespace Saturn.Agents
             {
                 return $"{DirectorySectionStart}\nError retrieving directory information: {ex.Message}\n{DirectorySectionEnd}";
             }
+        }
+
+        private static async Task<string> LoadUserRules()
+        {
+            var saturnDir = Path.Combine(Environment.CurrentDirectory, ".saturn");
+            var rulesPath = Path.Combine(saturnDir, "rules.md");
+
+            if (!File.Exists(rulesPath))
+                return string.Empty;
+
+            try
+            {
+                var fileInfo = new FileInfo(rulesPath);
+                if (fileInfo.Length > MaxUserRulesSize)
+                {
+                    return $"{UserRulesSectionStart}\nUser rules file too large (max 1MB)\n{UserRulesSectionEnd}";
+                }
+
+                var content = await File.ReadAllTextAsync(rulesPath).ConfigureAwait(false);
+                
+                if (string.IsNullOrWhiteSpace(content))
+                    return string.Empty;
+
+                if (content.Length > MaxUserRulesLength)
+                {
+                    content = content.Substring(0, MaxUserRulesLength) + "\n[Content truncated - rules file too long]";
+                }
+
+                var safeContent = EscapeXmlContent(content.Trim());
+                return $"{UserRulesSectionStart}\n{safeContent}\n{UserRulesSectionEnd}";
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return $"{UserRulesSectionStart}\nAccess denied to rules file\n{UserRulesSectionEnd}";
+            }
+            catch (Exception ex)
+            {
+                return $"{UserRulesSectionStart}\nError loading user rules: {ex.Message}\n{UserRulesSectionEnd}";
+            }
+        }
+
+        private static string EscapeXmlContent(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return content;
+
+            return content
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;");
         }
     }
 }
