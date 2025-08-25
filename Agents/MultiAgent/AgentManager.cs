@@ -82,7 +82,7 @@ Report your progress clearly and concisely.";
             var config = new AgentConfiguration
             {
                 Name = name,
-                SystemPrompt = await SystemPrompt.Create(systemPrompt),
+                SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: true),
                 Client = _client,
                 Model = model,
                 Temperature = temperature ?? 0.3,
@@ -404,7 +404,7 @@ Your decision:";
                 var reviewerConfig = new AgentConfiguration
                 {
                     Name = $"Reviewer for {subAgentContext.Name}",
-                    SystemPrompt = await SystemPrompt.Create("You are a specialized quality assurance reviewer. Be thorough but fair in your assessments."),
+                    SystemPrompt = await SystemPrompt.Create("You are a specialized quality assurance reviewer. Be thorough but fair in your assessments.", includeDirectories: true, includeUserRules: false),
                     Client = _client,
                     Model = prefs.ReviewerModel,
                     Temperature = 0.2,
