@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Saturn.Core;
 using Terminal.Gui;
 
 namespace Saturn.UI.Dialogs
@@ -15,14 +16,13 @@ namespace Saturn.UI.Dialogs
         private Button clearButton = null!;
         private CheckBox enabledCheckBox = null!;
         
-        private readonly string rulesFilePath;
         public bool RulesSaved { get; private set; }
         public bool RulesEnabled { get; private set; } = true;
         
-        public UserRulesEditorDialog() : base("Edit User Rules", 80, 24)
+        public UserRulesEditorDialog(bool initialEnableUserRules = true) : base("Edit User Rules", 80, 24)
         {
             ColorScheme = Colors.Dialog;
-            rulesFilePath = GetRulesFilePath();
+            RulesEnabled = initialEnableUserRules;
             InitializeComponents();
             _ = LoadExistingRulesAsync();
         }
@@ -51,7 +51,7 @@ namespace Saturn.UI.Dialogs
             {
                 X = 1,
                 Y = 3,
-                Checked = true
+                Checked = RulesEnabled
             };
             enabledCheckBox.Toggled += (prev) => RulesEnabled = enabledCheckBox.Checked;
             
@@ -114,30 +114,42 @@ namespace Saturn.UI.Dialogs
             rulesTextView.SetFocus();
         }
         
-        private string GetRulesFilePath()
-        {
-            var saturnDir = Path.Combine(Environment.CurrentDirectory, ".saturn");
-            if (!Directory.Exists(saturnDir))
-            {
-                Directory.CreateDirectory(saturnDir);
-            }
-            return Path.Combine(saturnDir, "rules.md");
-        }
         
         private async Task LoadExistingRulesAsync()
         {
             try
             {
-                if (File.Exists(rulesFilePath))
+                var (content, wasTruncated, error) = await UserRulesManager.LoadUserRules();
+                
+                if (!string.IsNullOrEmpty(error))
                 {
-                    var content = await File.ReadAllTextAsync(rulesFilePath);
-                    rulesTextView.Text = content;
-                    statusLabel.Text = $"Loaded existing rules file ({content.Length} characters)";
+                    statusLabel.Text = $"Error loading rules: {error}";
+                    statusLabel.ColorScheme = new ColorScheme 
+                    { 
+                        Normal = Application.Driver.MakeAttribute(Color.BrightRed, Color.Black) 
+                    };
+                    rulesTextView.Text = UserRulesManager.GetDefaultRulesTemplate();
+                    return;
+                }
+                
+                if (string.IsNullOrEmpty(content))
+                {
+                    rulesTextView.Text = UserRulesManager.GetDefaultRulesTemplate();
+                    statusLabel.Text = "No existing rules file found - using template";
                 }
                 else
                 {
-                    rulesTextView.Text = GetDefaultRulesTemplate();
-                    statusLabel.Text = "No existing rules file found - using template";
+                    rulesTextView.Text = content;
+                    var statusText = $"Loaded existing rules file ({content.Length} characters)";
+                    if (wasTruncated)
+                    {
+                        statusText += " - TRUNCATED";
+                        statusLabel.ColorScheme = new ColorScheme 
+                        { 
+                            Normal = Application.Driver.MakeAttribute(Color.BrightYellow, Color.Black) 
+                        };
+                    }
+                    statusLabel.Text = statusText;
                 }
             }
             catch (Exception ex)
@@ -147,85 +159,42 @@ namespace Saturn.UI.Dialogs
                 { 
                     Normal = Application.Driver.MakeAttribute(Color.BrightRed, Color.Black) 
                 };
+                rulesTextView.Text = UserRulesManager.GetDefaultRulesTemplate();
             }
         }
         
-        private string GetDefaultRulesTemplate()
-        {
-            return @"# User Rules
-
-These rules will be applied to all AI interactions in this workspace.
-
-## General Guidelines
-- Follow established code conventions and patterns
-- Provide clear and concise explanations
-- Focus on maintainable and readable solutions";
-        }
         
         private async Task SaveRulesAsync()
         {
             try
             {
                 var content = rulesTextView.Text.ToString();
+                var (maxFileSize, maxContentLength, fileName) = UserRulesManager.GetLimits();
                 
                 if (!enabledCheckBox.Checked)
                 {
-                    if (File.Exists(rulesFilePath))
-                    {
-                        try
-                        {
-                            File.Delete(rulesFilePath);
-                        }
-                        catch (Exception ex)
-                        {
-                            statusLabel.Text = $"Error removing rules file: {ex.Message}";
-                            statusLabel.ColorScheme = new ColorScheme 
-                            { 
-                                Normal = Application.Driver.MakeAttribute(Color.BrightRed, Color.Black) 
-                            };
-                            return;
-                        }
-                    }
-                    statusLabel.Text = "Rules disabled and file removed";
+                    // Just disable rules without deleting the file
+                    RulesEnabled = enabledCheckBox.Checked;
+                    statusLabel.Text = "Rules disabled (file preserved)";
+                    statusLabel.ColorScheme = new ColorScheme 
+                    { 
+                        Normal = Application.Driver.MakeAttribute(Color.BrightYellow, Color.Black) 
+                    };
                     RulesSaved = true;
                     Application.RequestStop();
                     return;
                 }
                 
-                if (string.IsNullOrWhiteSpace(content))
-                {
-                    if (File.Exists(rulesFilePath))
-                    {
-                        try
-                        {
-                            File.Delete(rulesFilePath);
-                        }
-                        catch (Exception ex)
-                        {
-                            statusLabel.Text = $"Error removing rules file: {ex.Message}";
-                            statusLabel.ColorScheme = new ColorScheme 
-                            { 
-                                Normal = Application.Driver.MakeAttribute(Color.BrightRed, Color.Black) 
-                            };
-                            return;
-                        }
-                    }
-                    statusLabel.Text = "Empty rules - file removed";
-                    RulesSaved = true;
-                    Application.RequestStop();
-                    return;
-                }
-                
-                // Validation
-                if (content.Length > 50000)
+                // Check content length and offer to truncate if too long
+                if (content.Length > maxContentLength)
                 {
                     var result = MessageBox.Query("Content Too Long", 
-                        $"Rules content is {content.Length} characters (max 50,000). Truncate?", 
+                        $"Rules content is {content.Length} characters (max {maxContentLength:N0}). Truncate?", 
                         "Truncate", "Cancel");
                     
                     if (result == 0)
                     {
-                        content = content.Substring(0, 50000);
+                        content = content.Substring(0, maxContentLength);
                         rulesTextView.Text = content;
                     }
                     else
@@ -234,29 +203,43 @@ These rules will be applied to all AI interactions in this workspace.
                     }
                 }
                 
-                // Create backup if file exists
-                if (File.Exists(rulesFilePath))
+                // Use centralized save with backup
+                var success = await UserRulesManager.SaveRulesAsync(content, createBackup: true);
+                
+                if (success)
                 {
-                    var backupPath = rulesFilePath + ".backup";
-                    File.Copy(rulesFilePath, backupPath, true);
+                    statusLabel.Text = $"Rules saved successfully ({content.Length} characters)";
+                    statusLabel.ColorScheme = new ColorScheme 
+                    { 
+                        Normal = Application.Driver.MakeAttribute(Color.BrightGreen, Color.Black) 
+                    };
+                    
+                    RulesSaved = true;
+                    
+                    // Auto-close after brief delay
+                    Application.MainLoop.AddTimeout(TimeSpan.FromMilliseconds(1500), (timer) =>
+                    {
+                        Application.RequestStop();
+                        return false;
+                    });
                 }
-                
-                await File.WriteAllTextAsync(rulesFilePath, content);
-                
-                statusLabel.Text = $"Rules saved successfully ({content.Length} characters)";
+                else
+                {
+                    statusLabel.Text = "Failed to save rules";
+                    statusLabel.ColorScheme = new ColorScheme 
+                    { 
+                        Normal = Application.Driver.MakeAttribute(Color.BrightRed, Color.Black) 
+                    };
+                }
+            }
+            catch (ArgumentException ex)
+            {
+                // Handle content too long error from UserRulesManager
+                statusLabel.Text = ex.Message;
                 statusLabel.ColorScheme = new ColorScheme 
                 { 
-                    Normal = Application.Driver.MakeAttribute(Color.BrightGreen, Color.Black) 
+                    Normal = Application.Driver.MakeAttribute(Color.BrightRed, Color.Black) 
                 };
-                
-                RulesSaved = true;
-                
-                // Auto-close after brief delay
-                Application.MainLoop.AddTimeout(TimeSpan.FromMilliseconds(1500), (timer) =>
-                {
-                    Application.RequestStop();
-                    return false;
-                });
             }
             catch (Exception ex)
             {
@@ -278,6 +261,21 @@ These rules will be applied to all AI interactions in this workspace.
             {
                 rulesTextView.Text = "";
                 statusLabel.Text = "Rules content cleared";
+            }
+        }
+        
+        private void ShowFileInfo()
+        {
+            var (exists, size, lastModified) = UserRulesManager.GetRulesFileStatus();
+            var (maxFileSize, maxContentLength, fileName) = UserRulesManager.GetLimits();
+            
+            if (exists)
+            {
+                statusLabel.Text = $"File: {fileName} | Size: {size:N0} bytes | Modified: {lastModified:yyyy-MM-dd HH:mm}";
+            }
+            else
+            {
+                statusLabel.Text = $"No rules file exists | Max size: {maxFileSize / 1024 / 1024}MB | Max length: {maxContentLength:N0} chars";
             }
         }
         
