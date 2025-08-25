@@ -6,9 +6,10 @@ namespace Saturn.Core
 {
     public static class UserRulesManager
     {
-        private static readonly string RulesFileName = "rules.md";
-        private static readonly int MaxFileSize = 1024 * 1024; // 1MB
-        private static readonly int MaxContentLength = 50000; // 50k characters
+        public static readonly string RulesFileName = "rules.md";
+        public static readonly int MaxFileSize = 1024 * 1024; // 1MB
+        public static readonly int MaxContentLength = 50000; // 50k characters
+        public static readonly string TruncationNotice = "\n[Content truncated - rules file too long]";
         
         public static string GetRulesFilePath()
         {
@@ -27,31 +28,41 @@ namespace Saturn.Core
         
         public static async Task<string> LoadRulesAsync()
         {
+            var result = await LoadUserRules();
+            return result.content;
+        }
+        
+        public static async Task<(string content, bool wasTruncated, string? error)> LoadUserRules()
+        {
             var rulesPath = GetRulesFilePath();
             
             if (!File.Exists(rulesPath))
-                return string.Empty;
+                return (string.Empty, false, null);
                 
             try
             {
                 var fileInfo = new FileInfo(rulesPath);
                 if (fileInfo.Length > MaxFileSize)
                 {
-                    throw new InvalidOperationException($"Rules file too large (max {MaxFileSize / (1024 * 1024)}MB)");
+                    return (string.Empty, false, $"Rules file too large (max {MaxFileSize / (1024 * 1024)}MB)");
                 }
                 
                 var content = await File.ReadAllTextAsync(rulesPath).ConfigureAwait(false);
                 
                 if (content.Length > MaxContentLength)
                 {
-                    content = content.Substring(0, MaxContentLength) + "\n[Content truncated - rules file too long]";
+                    return (content.Substring(0, MaxContentLength) + TruncationNotice, true, null);
                 }
                 
-                return content;
+                return (content, false, null);
             }
             catch (UnauthorizedAccessException)
             {
-                throw new InvalidOperationException("Access denied to rules file");
+                return (string.Empty, false, "Access denied to rules file");
+            }
+            catch (Exception ex)
+            {
+                return (string.Empty, false, $"Error reading rules: {ex.Message}");
             }
         }
         
@@ -149,6 +160,11 @@ These rules will be applied to all AI interactions in this workspace.
 
 ---
 *These rules are automatically included in the system prompt for every agent interaction.*";
+        }
+        
+        public static (int maxFileSize, int maxContentLength, string fileName) GetLimits()
+        {
+            return (MaxFileSize, MaxContentLength, RulesFileName);
         }
         
         public static FileInfo? GetRulesFileInfo()

@@ -1,4 +1,5 @@
-﻿using Saturn.Tools;
+﻿using Saturn.Core;
+using Saturn.Tools;
 using Saturn.Tools.Core;
 using System;
 using System.Collections.Generic;
@@ -15,8 +16,6 @@ namespace Saturn.Agents
         private const string DirectorySectionEnd = "</current_directory>\n";
         private const string UserRulesSectionStart = "\n<user_rules>";
         private const string UserRulesSectionEnd = "</user_rules>\n";
-        private const int MaxUserRulesSize = 1024 * 1024; // 1MB limit
-        private const int MaxUserRulesLength = 50000; // 50k character limit
 
         public static async Task<string> Create(string prompt, bool includeDirectories = true, bool includeUserRules = true)
         {
@@ -67,41 +66,18 @@ namespace Saturn.Agents
 
         private static async Task<string> LoadUserRules()
         {
-            var saturnDir = Path.Combine(Environment.CurrentDirectory, ".saturn");
-            var rulesPath = Path.Combine(saturnDir, "rules.md");
-
-            if (!File.Exists(rulesPath))
+            var (content, wasTruncated, error) = await UserRulesManager.LoadUserRules();
+            
+            if (!string.IsNullOrEmpty(error))
+            {
+                return $"{UserRulesSectionStart}\n{error}\n{UserRulesSectionEnd}";
+            }
+            
+            if (string.IsNullOrWhiteSpace(content))
                 return string.Empty;
-
-            try
-            {
-                var fileInfo = new FileInfo(rulesPath);
-                if (fileInfo.Length > MaxUserRulesSize)
-                {
-                    return $"{UserRulesSectionStart}\nUser rules file too large (max 1MB)\n{UserRulesSectionEnd}";
-                }
-
-                var content = await File.ReadAllTextAsync(rulesPath).ConfigureAwait(false);
-                
-                if (string.IsNullOrWhiteSpace(content))
-                    return string.Empty;
-
-                if (content.Length > MaxUserRulesLength)
-                {
-                    content = content.Substring(0, MaxUserRulesLength) + "\n[Content truncated - rules file too long]";
-                }
-
-                var safeContent = EscapeXmlContent(content.Trim());
-                return $"{UserRulesSectionStart}\n{safeContent}\n{UserRulesSectionEnd}";
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return $"{UserRulesSectionStart}\nAccess denied to rules file\n{UserRulesSectionEnd}";
-            }
-            catch (Exception ex)
-            {
-                return $"{UserRulesSectionStart}\nError loading user rules: {ex.Message}\n{UserRulesSectionEnd}";
-            }
+            
+            var safeContent = EscapeXmlContent(content.Trim());
+            return $"{UserRulesSectionStart}\n{safeContent}\n{UserRulesSectionEnd}";
         }
 
         private static string EscapeXmlContent(string content)
