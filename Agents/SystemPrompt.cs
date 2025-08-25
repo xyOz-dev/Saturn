@@ -70,7 +70,8 @@ namespace Saturn.Agents
             
             if (!string.IsNullOrEmpty(error))
             {
-                return $"{UserRulesSectionStart}\n{error}\n{UserRulesSectionEnd}";
+                var escapedError = EscapeXmlContent(error);
+                return $"{UserRulesSectionStart}\n{escapedError}\n{UserRulesSectionEnd}";
             }
             
             if (string.IsNullOrWhiteSpace(content))
