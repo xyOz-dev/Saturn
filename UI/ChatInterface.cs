@@ -36,6 +36,11 @@ namespace Saturn.UI
         private AgentConfiguration currentConfig;
         private OpenRouterClient? openRouterClient;
         private MarkdownRenderer markdownRenderer;
+        
+        // Rules file monitoring
+        private DateTime? lastRulesCheckTime;
+        private DateTime? lastRulesModifiedTime;
+        private string? cachedSystemPromptWithRules;
 
         public ChatInterface(Agent aiAgent, OpenRouterClient? client = null)
         {
@@ -210,6 +215,7 @@ namespace Saturn.UI
                         { Checked = currentConfig.RequireCommandApproval },
                     new MenuItem("Max _History Messages...", "", () => ShowMaxHistoryDialog()),
                     null,
+                    new MenuItem("Edit _User Rules...", "", async () => await ShowUserRulesEditorAsync()),
                     new MenuItem("_Edit System Prompt...", "", () => ShowSystemPromptDialog()),
                     new MenuItem("_View Configuration...", "", () => ShowConfigurationDialog())
                 }),
@@ -591,6 +597,9 @@ namespace Saturn.UI
 
             try
             {
+                // Check and update system prompt if rules have changed
+                await CheckAndUpdateSystemPromptIfNeeded();
+                
                 if (agent.CurrentSessionId == null)
                 {
                     await agent.InitializeSessionAsync("main");
@@ -1117,6 +1126,37 @@ namespace Saturn.UI
             }
         }
 
+        private async Task ShowUserRulesEditorAsync()
+        {
+            var dialog = new UserRulesEditorDialog();
+            Application.Run(dialog);
+            
+            if (dialog.RulesSaved)
+            {
+                MessageBox.Query("User Rules", "User rules have been saved successfully.", "OK");
+                
+                var rulesPath = Path.Combine(Environment.CurrentDirectory, ".saturn", "rules.md");
+                var statusText = File.Exists(rulesPath) ? "Rules file exists and will be included" : "No rules file - rules disabled";
+                UpdateAgentStatus($"Ready - {statusText}");
+                
+                // Force regeneration of the system prompt with the updated rules
+                // Extract base prompt without current directory or user rules sections
+                var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
+                var newSystemPrompt = await SystemPrompt.Create(basePrompt, includeDirectories: true, includeUserRules: currentConfig.EnableUserRules);
+                
+                // Update both agent and current config
+                agent.Configuration.SystemPrompt = newSystemPrompt;
+                currentConfig.SystemPrompt = newSystemPrompt;
+                
+                // Save the updated configuration
+                await ConfigurationManager.SaveConfigurationAsync(
+                    ConfigurationManager.FromAgentConfiguration(agent.Configuration));
+                    
+                UpdateConfigurationDisplay();
+                Application.Refresh();
+            }
+        }
+
         private void ShowSystemPromptDialog()
         {
             var dialog = new Dialog("Edit System Prompt", 70, 20);
@@ -1219,6 +1259,7 @@ namespace Saturn.UI
             currentConfig.EnableStreaming = mode.EnableStreaming;
             currentConfig.MaintainHistory = mode.MaintainHistory;
             currentConfig.RequireCommandApproval = mode.RequireCommandApproval;
+            currentConfig.EnableUserRules = mode.EnableUserRules;
             currentConfig.ToolNames = new List<string>(mode.ToolNames ?? new List<string>());
             currentConfig.EnableTools = mode.ToolNames?.Count > 0;
             
@@ -1293,7 +1334,7 @@ namespace Saturn.UI
                     else
                     {
                         // Needs wrapping with directory context
-                        agent.Configuration.SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt);
+                        agent.Configuration.SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt, includeDirectories: true, includeUserRules: currentConfig.EnableUserRules);
                     }
                 }
 
@@ -1309,6 +1350,112 @@ namespace Saturn.UI
             }
         }
 
+        private string ExtractBaseSystemPrompt(string fullPrompt)
+        {
+            if (string.IsNullOrWhiteSpace(fullPrompt))
+                return fullPrompt;
+            
+            // Remove the <current_directory> section if present
+            var dirStartIndex = fullPrompt.IndexOf("\n<current_directory>");
+            var dirEndIndex = fullPrompt.IndexOf("</current_directory>\n");
+            if (dirStartIndex >= 0 && dirEndIndex > dirStartIndex)
+            {
+                fullPrompt = fullPrompt.Remove(dirStartIndex, dirEndIndex - dirStartIndex + "</current_directory>\n".Length);
+            }
+            
+            // Remove the <user_rules> section if present
+            var rulesStartIndex = fullPrompt.IndexOf("\n<user_rules>");
+            var rulesEndIndex = fullPrompt.IndexOf("</user_rules>\n");
+            if (rulesStartIndex >= 0 && rulesEndIndex > rulesStartIndex)
+            {
+                fullPrompt = fullPrompt.Remove(rulesStartIndex, rulesEndIndex - rulesStartIndex + "</user_rules>\n".Length);
+            }
+            
+            return fullPrompt.TrimEnd();
+        }
+        
+        private async Task CheckAndUpdateSystemPromptIfNeeded()
+        {
+            // Only check every 2 seconds to avoid excessive file system access
+            var now = DateTime.UtcNow;
+            if (lastRulesCheckTime.HasValue && (now - lastRulesCheckTime.Value).TotalSeconds < 2)
+            {
+                return;
+            }
+            
+            lastRulesCheckTime = now;
+            
+            var rulesPath = Path.Combine(Environment.CurrentDirectory, ".saturn", "rules.md");
+            DateTime? currentModifiedTime = null;
+            
+            if (File.Exists(rulesPath))
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(rulesPath);
+                    currentModifiedTime = fileInfo.LastWriteTimeUtc;
+                }
+                catch
+                {
+                    // If we can't read the file info, skip the check
+                    return;
+                }
+            }
+            
+            // Check if rules file has changed or if we need to initialize
+            bool needsUpdate = false;
+            
+            if (cachedSystemPromptWithRules == null)
+            {
+                // First time - need to initialize
+                needsUpdate = true;
+            }
+            else if (lastRulesModifiedTime.HasValue && currentModifiedTime.HasValue)
+            {
+                // Both times exist - check if file was modified
+                needsUpdate = currentModifiedTime.Value > lastRulesModifiedTime.Value;
+            }
+            else if (lastRulesModifiedTime.HasValue != currentModifiedTime.HasValue)
+            {
+                // One exists and the other doesn't - file was created or deleted
+                needsUpdate = true;
+            }
+            
+            if (needsUpdate)
+            {
+                // Extract the base prompt (without directory/rules sections)
+                var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
+                
+                // Regenerate with current rules state
+                var freshSystemPrompt = await SystemPrompt.Create(
+                    basePrompt, 
+                    includeDirectories: true, 
+                    includeUserRules: currentConfig.EnableUserRules
+                );
+                
+                // Update the cache
+                cachedSystemPromptWithRules = freshSystemPrompt;
+                lastRulesModifiedTime = currentModifiedTime;
+                
+                // Apply to both configurations
+                agent.Configuration.SystemPrompt = freshSystemPrompt;
+                currentConfig.SystemPrompt = freshSystemPrompt;
+                
+                // If we're in an active session, update the system message in chat history
+                if (agent.CurrentSessionId != null && agent.ChatHistory.Count > 0)
+                {
+                    var firstMessage = agent.ChatHistory[0];
+                    if (firstMessage.Role == "system")
+                    {
+                        // Update the system message with the new prompt
+                        firstMessage.Content = JsonDocument.Parse(
+                            JsonSerializer.Serialize(freshSystemPrompt)
+                        ).RootElement;
+                    }
+                }
+            }
+        }
+        
         private void UpdateConfigurationDisplay()
         {
             var currentText = chatView.Text.ToString();
