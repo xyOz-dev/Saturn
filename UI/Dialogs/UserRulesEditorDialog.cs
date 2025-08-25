@@ -159,23 +159,7 @@ These rules will be applied to all AI interactions in this workspace.
 ## General Guidelines
 - Follow established code conventions and patterns
 - Provide clear and concise explanations
-- Focus on maintainable and readable solutions
-
-## Project-Specific Rules
-- Add your custom rules here
-- Use markdown formatting for clarity
-- Examples:
-  - Always use async/await for database operations
-  - Include XML documentation for public methods
-  - Follow specific naming conventions
-
-## Response Format
-- Prefer structured responses when appropriate
-- Include reasoning for architectural decisions
-- Mention potential trade-offs or alternatives
-
----
-*These rules are automatically included in the system prompt for every agent interaction.*";
+- Focus on maintainable and readable solutions";
         }
         
         private async Task SaveRulesAsync()
