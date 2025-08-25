@@ -82,6 +82,9 @@ namespace Saturn
                 temperature = 1.0;
             }
             
+            // Determine EnableUserRules from persisted config or default to true
+            bool enableUserRules = persistedConfig?.EnableUserRules ?? true;
+            
             var agentConfig = new Saturn.Agents.Core.AgentConfiguration
             {
                 Name = "Assistant",
@@ -188,7 +191,7 @@ Operating Principles
    - Be mindful of the number of concurrent sub-agents.
    - Monitor agent status to avoid resource exhaustion.
    - Avoid redundant work - if a sub-agent did it, it's done.
-   - Efficiency means trusting delegation, not redoing completed tasks.", includeDirectories: true, includeUserRules: true),
+   - Efficiency means trusting delegation, not redoing completed tasks.", includeDirectories: true, includeUserRules: enableUserRules),
                 Client = client,
                 Model = model,
                 Temperature = temperature,
@@ -199,6 +202,7 @@ Operating Principles
                 EnableTools = true,
                 EnableStreaming = true,
                 RequireCommandApproval = true,
+                EnableUserRules = enableUserRules,
                 ToolNames = new List<string>() { 
                     "apply_diff", "grep", "glob", "read_file", "list_files", 
                     "write_file", "search_and_replace", "delete_file",
