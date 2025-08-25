@@ -20,6 +20,7 @@ namespace Saturn.Agents.Core
         public bool EnableStreaming { get; set; }
         public bool MaintainHistory { get; set; }
         public bool RequireCommandApproval { get; set; }
+        public bool EnableUserRules { get; set; }
         public DateTime CreatedDate { get; set; }
         public DateTime ModifiedDate { get; set; }
         public bool IsDefault { get; set; }
@@ -38,6 +39,7 @@ namespace Saturn.Agents.Core
             EnableStreaming = true;
             MaintainHistory = true;
             RequireCommandApproval = false;
+            EnableUserRules = true;
             Model = "anthropic/claude-sonnet-4";
         }
 
@@ -66,7 +68,8 @@ namespace Saturn.Agents.Core
                 PresencePenalty = 0,
                 EnableStreaming = true,
                 MaintainHistory = true,
-                RequireCommandApproval = true
+                RequireCommandApproval = true,
+                EnableUserRules = true
             };
         }
 
@@ -87,6 +90,7 @@ namespace Saturn.Agents.Core
             config.EnableStreaming = EnableStreaming;
             config.MaintainHistory = MaintainHistory;
             config.RequireCommandApproval = RequireCommandApproval;
+            config.EnableUserRules = EnableUserRules;
             
             // Only override system prompt if provided
             if (!string.IsNullOrWhiteSpace(SystemPromptOverride))
@@ -119,7 +123,8 @@ namespace Saturn.Agents.Core
                 PresencePenalty = config.PresencePenalty ?? 0,
                 EnableStreaming = config.EnableStreaming,
                 MaintainHistory = config.MaintainHistory,
-                RequireCommandApproval = config.RequireCommandApproval
+                RequireCommandApproval = config.RequireCommandApproval,
+                EnableUserRules = config.EnableUserRules
             };
         }
 
@@ -142,6 +147,7 @@ namespace Saturn.Agents.Core
                 EnableStreaming = EnableStreaming,
                 MaintainHistory = MaintainHistory,
                 RequireCommandApproval = RequireCommandApproval,
+                EnableUserRules = EnableUserRules,
                 CreatedDate = DateTime.UtcNow,
                 ModifiedDate = DateTime.UtcNow,
                 IsDefault = false
