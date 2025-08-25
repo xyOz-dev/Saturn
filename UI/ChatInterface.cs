@@ -607,6 +607,7 @@ namespace Saturn.UI
                     if (agent.CurrentSessionId != null)
                     {
                         AgentManager.Instance.SetParentSessionId(agent.CurrentSessionId);
+                        AgentManager.Instance.SetParentEnableUserRules(agent.Configuration.EnableUserRules);
                     }
                 }
                 
@@ -1128,12 +1129,16 @@ namespace Saturn.UI
 
         private async Task ShowUserRulesEditorAsync()
         {
-            var dialog = new UserRulesEditorDialog();
+            var dialog = new UserRulesEditorDialog(currentConfig.EnableUserRules);
             Application.Run(dialog);
             
             if (dialog.RulesSaved)
             {
                 MessageBox.Query("User Rules", "User rules have been saved successfully.", "OK");
+                
+                // Update EnableUserRules from dialog's RulesEnabled flag
+                agent.Configuration.EnableUserRules = dialog.RulesEnabled;
+                currentConfig.EnableUserRules = dialog.RulesEnabled;
                 
                 var rulesPath = Path.Combine(Environment.CurrentDirectory, ".saturn", "rules.md");
                 var statusText = File.Exists(rulesPath) ? "Rules file exists and will be included" : "No rules file - rules disabled";
@@ -1142,7 +1147,7 @@ namespace Saturn.UI
                 // Force regeneration of the system prompt with the updated rules
                 // Extract base prompt without current directory or user rules sections
                 var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
-                var newSystemPrompt = await SystemPrompt.Create(basePrompt, includeDirectories: true, includeUserRules: currentConfig.EnableUserRules);
+                var newSystemPrompt = await SystemPrompt.Create(basePrompt, includeDirectories: true, includeUserRules: dialog.RulesEnabled);
                 
                 // Update both agent and current config
                 agent.Configuration.SystemPrompt = newSystemPrompt;
