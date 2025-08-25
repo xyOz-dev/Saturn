@@ -25,6 +25,7 @@ namespace Saturn.Agents.MultiAgent
         private OpenRouterClient _client = null!;
         private const int MaxConcurrentAgents = 25;
         private string? _parentSessionId;
+        private bool _parentEnableUserRules = true;
         
         public static AgentManager Instance => _instance ??= new AgentManager();
         
@@ -52,6 +53,16 @@ namespace Saturn.Agents.MultiAgent
             _parentSessionId = sessionId;
         }
         
+        public void SetParentEnableUserRules(bool enableUserRules)
+        {
+            _parentEnableUserRules = enableUserRules;
+        }
+        
+        public bool GetParentEnableUserRules()
+        {
+            return _parentEnableUserRules;
+        }
+        
         public async Task<(bool success, string result, List<string>? runningTaskIds)> TryCreateSubAgent(
             string name, 
             string purpose, 
@@ -60,7 +71,8 @@ namespace Saturn.Agents.MultiAgent
             double? temperature = null,
             int? maxTokens = null,
             double? topP = null,
-            string? systemPromptOverride = null)
+            string? systemPromptOverride = null,
+            bool? includeUserRules = null)
         {
             if (_runningAgents.Count >= MaxConcurrentAgents)
             {
@@ -82,7 +94,7 @@ Report your progress clearly and concisely.";
             var config = new AgentConfiguration
             {
                 Name = name,
-                SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: true),
+                SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
                 Client = _client,
                 Model = model,
                 Temperature = temperature ?? 0.3,
