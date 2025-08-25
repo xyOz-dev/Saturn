@@ -188,7 +188,7 @@ Operating Principles
    - Be mindful of the number of concurrent sub-agents.
    - Monitor agent status to avoid resource exhaustion.
    - Avoid redundant work - if a sub-agent did it, it's done.
-   - Efficiency means trusting delegation, not redoing completed tasks."),
+   - Efficiency means trusting delegation, not redoing completed tasks.", includeDirectories: true, includeUserRules: true),
                 Client = client,
                 Model = model,
                 Temperature = temperature,
