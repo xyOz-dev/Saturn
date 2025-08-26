@@ -34,6 +34,7 @@
     <PackageReference Include="HtmlAgilityPack" Version="1.11.57" />
     <PackageReference Include="ReverseMarkdown" Version="4.0.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Discord.Net" Version="3.13.0" />
   </ItemGroup>
 
   <!-- Exclude test files from main project compilation -->
