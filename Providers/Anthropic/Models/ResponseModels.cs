@@ -6,28 +6,28 @@ namespace Saturn.Providers.Anthropic.Models
     public class AnthropicChatResponse
     {
         [JsonPropertyName("id")]
-        public string Id { get; set; }
+        public string Id { get; set; } = string.Empty;
         
         [JsonPropertyName("type")]
-        public string Type { get; set; }
+        public string Type { get; set; } = string.Empty;
         
         [JsonPropertyName("role")]
-        public string Role { get; set; }
+        public string Role { get; set; } = string.Empty;
         
         [JsonPropertyName("content")]
-        public List<ContentBlock> Content { get; set; }
+        public List<ContentBlock> Content { get; set; } = new();
         
         [JsonPropertyName("model")]
-        public string Model { get; set; }
+        public string Model { get; set; } = string.Empty;
         
         [JsonPropertyName("stop_reason")]
-        public string StopReason { get; set; }
+        public string? StopReason { get; set; }
         
         [JsonPropertyName("stop_sequence")]
-        public string StopSequence { get; set; }
+        public string? StopSequence { get; set; }
         
         [JsonPropertyName("usage")]
-        public AnthropicUsage Usage { get; set; }
+        public AnthropicUsage Usage { get; set; } = new();
     }
     
     public class AnthropicUsage
@@ -43,36 +43,36 @@ namespace Saturn.Providers.Anthropic.Models
     public class AnthropicStreamEvent
     {
         [JsonPropertyName("type")]
-        public string Type { get; set; }
+        public string Type { get; set; } = string.Empty;
         
         [JsonPropertyName("message")]
-        public AnthropicChatResponse Message { get; set; }
+        public AnthropicChatResponse? Message { get; set; }
         
         [JsonPropertyName("index")]
         public int? Index { get; set; }
         
         [JsonPropertyName("content_block")]
-        public ContentBlock ContentBlock { get; set; }
+        public ContentBlock? ContentBlock { get; set; }
         
         [JsonPropertyName("delta")]
-        public StreamDelta Delta { get; set; }
+        public StreamDelta? Delta { get; set; }
         
         [JsonPropertyName("usage")]
-        public AnthropicUsage Usage { get; set; }
+        public AnthropicUsage? Usage { get; set; }
     }
     
     public class StreamDelta
     {
         [JsonPropertyName("type")]
-        public string Type { get; set; }
+        public string Type { get; set; } = string.Empty;
         
         [JsonPropertyName("text")]
-        public string Text { get; set; }
+        public string? Text { get; set; }
         
         [JsonPropertyName("partial_json")]
-        public string PartialJson { get; set; }
+        public string? PartialJson { get; set; }
         
         [JsonPropertyName("stop_reason")]
-        public string StopReason { get; set; }
+        public string? StopReason { get; set; }
     }
 }

@@ -8,8 +8,8 @@ namespace Saturn.Providers.Anthropic.Utils
     {
         public class PKCEPair
         {
-            public string Verifier { get; set; }
-            public string Challenge { get; set; }
+            public string Verifier { get; set; } = string.Empty;
+            public string Challenge { get; set; } = string.Empty;
         }
         
         public static PKCEPair Generate()

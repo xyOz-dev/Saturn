@@ -8,8 +8,8 @@ namespace Saturn.Providers.Anthropic
     public class AnthropicProvider : ILLMProvider
     {
         private readonly AnthropicAuthService _authService;
-        private AnthropicClient _client;
-        private StoredTokens _currentTokens;
+        private AnthropicClient? _client;
+        private StoredTokens? _currentTokens;
         
         public AnthropicProvider()
         {

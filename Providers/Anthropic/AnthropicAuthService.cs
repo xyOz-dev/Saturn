@@ -22,8 +22,8 @@ namespace Saturn.Providers.Anthropic
         
         private readonly HttpClient _httpClient;
         private readonly TokenStore _tokenStore;
-        private PKCEGenerator.PKCEPair _currentPKCE;
-        private string _currentStateToken;
+        private PKCEGenerator.PKCEPair? _currentPKCE;
+        private string? _currentStateToken;
         
         public AnthropicAuthService()
         {
