@@ -82,9 +82,16 @@ namespace Saturn.Providers.Anthropic.Utils
         
         private static AnthropicMessage ConvertMessage(ChatMessage message)
         {
+            // Tool results must be sent as user messages in Anthropic API
+            var role = message.Role;
+            if (role == "tool" || !string.IsNullOrEmpty(message.ToolCallId))
+            {
+                role = "user";
+            }
+            
             var anthropicMessage = new AnthropicMessage
             {
-                Role = message.Role == "user" ? "user" : "assistant"
+                Role = role == "user" ? "user" : "assistant"
             };
             
             // Handle tool calls

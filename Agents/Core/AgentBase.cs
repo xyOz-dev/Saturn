@@ -1353,7 +1353,7 @@ namespace Saturn.Agents.Core
                 var abstractRequest = ConvertToAbstractRequest(request);
                 var streamChunks = new List<ChatCompletionChunk>();
                 
-                await llmClient.StreamChatAsync(abstractRequest, async chunk =>
+                var finalResponse = await llmClient.StreamChatAsync(abstractRequest, async chunk =>
                 {
                     var openRouterChunk = new ChatCompletionChunk
                     {
@@ -1374,6 +1374,38 @@ namespace Saturn.Agents.Core
                     };
                     streamChunks.Add(openRouterChunk);
                 }, cancellationToken);
+                
+                // If the final response has tool calls, add them as a final chunk
+                if (finalResponse?.Message?.ToolCalls != null && finalResponse.Message.ToolCalls.Count > 0)
+                {
+                    var toolCallChunk = new ChatCompletionChunk
+                    {
+                        Id = finalResponse.Id,
+                        Model = abstractRequest.Model,
+                        Choices = new[]
+                        {
+                            new StreamingChoice
+                            {
+                                Delta = new Delta
+                                {
+                                    Role = "assistant",
+                                    ToolCalls = finalResponse.Message.ToolCalls.Select(tc => new Saturn.OpenRouter.Models.Api.Chat.ToolCall
+                                    {
+                                        Id = tc.Id,
+                                        Type = "function",
+                                        Function = new Saturn.OpenRouter.Models.Api.Chat.ToolCall.FunctionCall
+                                        {
+                                            Name = tc.Name,
+                                            Arguments = tc.Arguments
+                                        }
+                                    }).ToArray()
+                                },
+                                FinishReason = "stop"
+                            }
+                        }
+                    };
+                    streamChunks.Add(toolCallChunk);
+                }
                 
                 foreach (var chunk in streamChunks)
                 {

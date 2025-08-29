@@ -382,6 +382,7 @@ namespace Saturn.Providers.Anthropic
                 "system" => true,
                 "user" => true,
                 "assistant" => true,
+                "tool" => true,  // Tool results are converted to user messages by MessageConverter
                 _ => false
             };
         }
