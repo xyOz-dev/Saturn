@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Saturn.Agents.Core;
 using Saturn.Configuration.Objects;
@@ -10,6 +11,8 @@ namespace Saturn.Configuration
 {
     public class ConfigurationManager
     {
+        private static readonly Regex providerNameRegex =
+            new(@"^[a-zA-Z0-9\-_]+$", RegexOptions.Compiled);
         private static readonly string AppDataPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Saturn"
@@ -196,8 +199,8 @@ namespace Saturn.Configuration
                 throw new ArgumentException("MaxTokens must be greater than 0");
             
             // Validate top P
-            if (config.TopP.HasValue && (config.TopP.Value <= 0 || config.TopP.Value > 1))
-                throw new ArgumentException("TopP must be between 0 and 1 (exclusive)");
+            if (config.TopP.HasValue && (config.TopP.Value < 0 || config.TopP.Value > 1))
+                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)");
             
             // Validate max history messages
             if (config.MaxHistoryMessages.HasValue && config.MaxHistoryMessages.Value < 0)
@@ -208,11 +211,8 @@ namespace Saturn.Configuration
             {
                 foreach (var toolName in config.ToolNames)
                 {
-                    if (string.IsNullOrEmpty(toolName))
-                        throw new ArgumentException("Tool names cannot be null or empty");
-                    
                     if (string.IsNullOrWhiteSpace(toolName))
-                        throw new ArgumentException("Tool names cannot be whitespace only");
+                        throw new ArgumentException("Tool names cannot be null, empty, or whitespace only");
                 }
             }
             
@@ -223,7 +223,7 @@ namespace Saturn.Configuration
                     throw new ArgumentException("Provider name cannot be whitespace only");
                 
                 // Validate provider name format
-                if (!System.Text.RegularExpressions.Regex.IsMatch(config.ProviderName, @"^[a-zA-Z0-9\-_]+$"))
+                if (!providerNameRegex.IsMatch(config.ProviderName))
                     throw new ArgumentException("Provider name must contain only alphanumeric characters, hyphens, and underscores");
             }
         }

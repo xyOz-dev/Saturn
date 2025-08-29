@@ -111,7 +111,7 @@ namespace Saturn
                 else
                 {
                     // New user - show provider selection
-                    selectedProvider = await ShowProviderSelectionForNewUser();
+                    selectedProvider = ShowProviderSelectionForNewUser();
                     if (string.IsNullOrEmpty(selectedProvider))
                     {
                         throw new InvalidOperationException("No provider selected. Cannot continue without a configured provider.");
@@ -203,7 +203,7 @@ namespace Saturn
             return (new Agent(agentConfig), provider, legacyClient);
         }
         
-        private static async Task<string> ShowProviderSelectionForNewUser()
+        private static string ShowProviderSelectionForNewUser()
         {
             Console.Clear();
             Console.WriteLine("Welcome to Saturn!");

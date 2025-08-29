@@ -78,8 +78,8 @@ namespace Saturn.Providers.Anthropic
             if (request.MaxTokens.HasValue && request.MaxTokens.Value <= 0)
                 throw new ArgumentException("MaxTokens must be greater than 0", nameof(request));
             
-            if (request.TopP.HasValue && (request.TopP.Value <= 0 || request.TopP.Value > 1))
-                throw new ArgumentException("TopP must be between 0 and 1 (exclusive)", nameof(request));
+            if (request.TopP.HasValue && (request.TopP.Value < 0 || request.TopP.Value > 1))
+                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request));
             
             return await ErrorHandler.ExecuteWithRetryAsync(async () =>
             {
@@ -162,8 +162,8 @@ namespace Saturn.Providers.Anthropic
             if (request.MaxTokens.HasValue && request.MaxTokens.Value <= 0)
                 throw new ArgumentException("MaxTokens must be greater than 0", nameof(request));
             
-            if (request.TopP.HasValue && (request.TopP.Value <= 0 || request.TopP.Value > 1))
-                throw new ArgumentException("TopP must be between 0 and 1 (exclusive)", nameof(request));
+            if (request.TopP.HasValue && (request.TopP.Value < 0 || request.TopP.Value > 1))
+                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request));
             
             // Converting to Anthropic format
             

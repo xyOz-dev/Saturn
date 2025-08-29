@@ -718,7 +718,7 @@ namespace Saturn.UI
                                 chatView.Text += renderedResponse;
                                 
                                 var updatedText = chatView.Text;
-                                bool endsWithNewline = updatedText.EndsWith("\n\n");
+                                bool endsWithNewline = updatedText.EndsWith("\n");
                                 bool endsWithDoubleNewline = updatedText.EndsWith("\n\n");
                                 
                                 var trimmedResponse = renderedResponse.TrimEnd();
@@ -802,7 +802,7 @@ namespace Saturn.UI
             {
                 var models = await AgentConfiguration.GetAvailableModels(agent.Configuration.Client);
                 var modelNames = models.Select(m => m.Name ?? m.Id).ToArray();
-                var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == currentConfig.Model);
+                var currentIndex = models.FindIndex(m => string.Equals(m.Id, currentConfig.Model, StringComparison.OrdinalIgnoreCase));
                 if (currentIndex < 0) currentIndex = 0;
 
                 var providerName = currentProvider?.Name ?? "Unknown";

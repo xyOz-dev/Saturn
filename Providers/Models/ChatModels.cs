@@ -116,8 +116,8 @@ namespace Saturn.Providers.Models
             if (request.MaxTokens.HasValue && request.MaxTokens.Value <= 0)
                 throw new ArgumentException("MaxTokens must be greater than 0");
             
-            if (request.TopP.HasValue && (request.TopP.Value <= 0 || request.TopP.Value > 1))
-                throw new ArgumentException("TopP must be between 0 and 1 (exclusive)");
+            if (request.TopP.HasValue && (request.TopP.Value < 0 || request.TopP.Value > 1))
+                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)");
             
             // Validate tools
             if (request.Tools != null)
