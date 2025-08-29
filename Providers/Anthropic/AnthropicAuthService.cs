@@ -23,6 +23,7 @@ namespace Saturn.Providers.Anthropic
         private readonly HttpClient _httpClient;
         private readonly TokenStore _tokenStore;
         private PKCEGenerator.PKCEPair _currentPKCE;
+        private string _currentStateToken;
         
         public AnthropicAuthService()
         {
@@ -72,6 +73,9 @@ namespace Saturn.Providers.Anthropic
         {
             // Generate PKCE pair for security
             _currentPKCE = PKCEGenerator.Generate();
+            
+            // Generate separate state token for CSRF protection
+            _currentStateToken = GenerateStateToken();
             
             // Build authorization URL
             var authUrl = BuildAuthorizationUrl(useClaudeMax);
@@ -134,7 +138,7 @@ namespace Saturn.Providers.Anthropic
                 ["scope"] = SCOPES,
                 ["code_challenge"] = _currentPKCE.Challenge,
                 ["code_challenge_method"] = "S256",
-                ["state"] = _currentPKCE.Verifier
+                ["state"] = _currentStateToken
             };
             
             var queryString = string.Join("&", 
@@ -162,7 +166,7 @@ namespace Saturn.Providers.Anthropic
             {
                 // Parse code and state if combined with #
                 string code = authCode.Trim();
-                string state = _currentPKCE.Verifier;
+                string receivedState = null;
                 
                 if (code.Contains("#"))
                 {
@@ -170,7 +174,7 @@ namespace Saturn.Providers.Anthropic
                     code = parts[0];
                     if (parts.Length > 1)
                     {
-                        state = parts[1];
+                        receivedState = parts[1];
                     }
                 }
                 
@@ -178,16 +182,30 @@ namespace Saturn.Providers.Anthropic
                 if (string.IsNullOrEmpty(code))
                     throw new ArgumentException("Parsed authorization code is empty");
                 
-                // Validate state parameter
-                if (string.IsNullOrEmpty(state))
-                    throw new ArgumentException("State parameter is missing or invalid");
+                // Validate state parameter for CSRF protection (optional for backward compatibility)
+                if (!string.IsNullOrEmpty(receivedState) && !string.IsNullOrEmpty(_currentStateToken))
+                {
+                    if (receivedState != _currentStateToken)
+                    {
+                        Console.WriteLine("⚠️  Warning: State parameter mismatch detected. This could indicate a security issue.");
+                        throw new ArgumentException("Invalid state parameter - possible CSRF attack");
+                    }
+                }
+                else if (string.IsNullOrEmpty(receivedState))
+                {
+                    Console.WriteLine("⚠️  Warning: State parameter not provided in OAuth response. Proceeding without state validation.");
+                }
+                else if (string.IsNullOrEmpty(_currentStateToken))
+                {
+                    Console.WriteLine("⚠️  Warning: Current state token is missing. Proceeding without state validation.");
+                }
                 
                 // Prepare token request
                 var request = new
                 {
                     grant_type = "authorization_code",
                     code = code,
-                    state = state,
+                    state = receivedState ?? _currentStateToken, // Include state in token request
                     client_id = CLIENT_ID,
                     redirect_uri = REDIRECT_URI,
                     code_verifier = _currentPKCE.Verifier
@@ -347,6 +365,23 @@ namespace Saturn.Providers.Anthropic
         {
             _tokenStore.DeleteTokens();
             _currentPKCE = null;
+            _currentStateToken = null;
+        }
+        
+        private string GenerateStateToken()
+        {
+            // Generate a cryptographically secure random state token
+            var tokenBytes = new byte[32]; // 256-bit token
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(tokenBytes);
+            }
+            
+            // Convert to URL-safe base64 string
+            return Convert.ToBase64String(tokenBytes)
+                .Replace("+", "-")
+                .Replace("/", "_")
+                .TrimEnd('=');
         }
         
         public void Dispose()

@@ -72,11 +72,51 @@ namespace Saturn.Configuration
                 if (string.IsNullOrEmpty(json))
                     throw new InvalidOperationException("Failed to serialize configuration to JSON");
                 
-                await File.WriteAllTextAsync(ConfigFilePath, json);
+                // Use atomic write pattern to prevent corruption
+                await WriteFileAtomicallyAsync(ConfigFilePath, json);
             }
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Failed to save configuration: {ex.Message}", ex);
+            }
+        }
+        
+        private static async Task WriteFileAtomicallyAsync(string filePath, string content)
+        {
+            var tempPath = filePath + ".tmp";
+            
+            try
+            {
+                // Write to temporary file first
+                await File.WriteAllTextAsync(tempPath, content);
+                
+                // Atomically replace the original file
+#if NET8_0_OR_GREATER
+                File.Move(tempPath, filePath, overwrite: true);
+#else
+                // For older versions, delete and move
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                }
+                File.Move(tempPath, filePath);
+#endif
+            }
+            catch
+            {
+                // Clean up temporary file if something went wrong
+                if (File.Exists(tempPath))
+                {
+                    try
+                    {
+                        File.Delete(tempPath);
+                    }
+                    catch
+                    {
+                        // Ignore cleanup errors
+                    }
+                }
+                throw;
             }
         }
 

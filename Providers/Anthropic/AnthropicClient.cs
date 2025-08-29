@@ -328,7 +328,8 @@ namespace Saturn.Providers.Anthropic
                     Provider = "Anthropic",
                     MaxTokens = 200000,
                     InputCost = 0, // Free with Claude Pro/Max
-                    OutputCost = 0
+                    OutputCost = 0,
+                    Description = "The latest Claude model with improved reasoning and coding capabilities"
                 }
                 
             };

@@ -93,7 +93,8 @@ namespace Saturn.Providers.OpenRouter
                 Provider = m.Id?.Split('/')[0] ?? "",
                 MaxTokens = m.ContextLength ?? 0,
                 InputCost = double.TryParse(m.Pricing?.Prompt, out var promptCost) ? promptCost : 0,
-                OutputCost = double.TryParse(m.Pricing?.Completion, out var completionCost) ? completionCost : 0
+                OutputCost = double.TryParse(m.Pricing?.Completion, out var completionCost) ? completionCost : 0,
+                Description = m.Description ?? ""
             }).ToList() ?? new List<ModelInfo>();
         }
         

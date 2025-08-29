@@ -55,6 +55,7 @@ namespace Saturn.Providers.Models
         public int MaxTokens { get; set; }
         public double InputCost { get; set; }
         public double OutputCost { get; set; }
+        public string Description { get; set; } = string.Empty;
     }
     
     public class ToolDefinition
@@ -262,6 +263,12 @@ namespace Saturn.Providers.Models
             
             if (model.OutputCost < 0)
                 throw new ArgumentException("Model output cost cannot be negative");
+            
+            if (string.IsNullOrEmpty(model.Description))
+                throw new ArgumentException("Model description cannot be null or empty");
+            
+            if (string.IsNullOrWhiteSpace(model.Description))
+                throw new ArgumentException("Model description cannot be whitespace only");
         }
     }
 }

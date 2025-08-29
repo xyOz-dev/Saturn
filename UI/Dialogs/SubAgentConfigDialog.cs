@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Terminal.Gui;
 using Saturn.Config;
 using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers.Models;
 using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
@@ -25,7 +25,7 @@ namespace Saturn.UI.Dialogs
         private Button saveButton;
         private Button cancelButton;
         
-        private List<Model> availableModels = new();
+        private List<ModelInfo> availableModels = new();
         private ILLMClient? client;
         private SubAgentPreferences preferences;
         
@@ -232,7 +232,6 @@ namespace Saturn.UI.Dialogs
                 if (modelInfos != null && modelInfos.Any())
                 {
                     availableModels = modelInfos
-                        .Select(m => new Model { Id = m.Id, Name = m.Name })
                         .OrderBy(m => m.Id)
                         .ToList();
                     
@@ -275,10 +274,10 @@ namespace Saturn.UI.Dialogs
             
             if (model != null)
             {
-                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
-                    ? $"{model.ContextLength.Value:N0} tokens" 
+                var contextLengthText = model.MaxTokens > 0 
+                    ? $"{model.MaxTokens:N0} tokens" 
                     : "Unknown";
-                var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
+                var pricing = model.InputCost > 0 || model.OutputCost > 0 ? $" | ${model.InputCost:F5}/{model.OutputCost:F5}" : "";
                 modelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
             }
         }
@@ -292,10 +291,10 @@ namespace Saturn.UI.Dialogs
             
             if (model != null)
             {
-                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
-                    ? $"{model.ContextLength.Value:N0} tokens" 
+                var contextLengthText = model.MaxTokens > 0 
+                    ? $"{model.MaxTokens:N0} tokens" 
                     : "Unknown";
-                var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
+                var pricing = model.InputCost > 0 || model.OutputCost > 0 ? $" | ${model.InputCost:F5}/{model.OutputCost:F5}" : "";
                 reviewerModelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
             }
         }

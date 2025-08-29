@@ -6,7 +6,7 @@ using Terminal.Gui;
 using Saturn.Agents.Core;
 using Saturn.Tools.Core;
 using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers.Models;
 using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
@@ -296,8 +296,8 @@ namespace Saturn.UI.Dialogs
             {
                 var selectedModel = models[args.Item];
                 var info = $"ID: {selectedModel.Id}";
-                if (selectedModel.ContextLength.HasValue)
-                    info += $" | Context: {selectedModel.ContextLength:N0} tokens";
+                if (selectedModel.MaxTokens > 0)
+                    info += $" | Context: {selectedModel.MaxTokens:N0} tokens";
                 infoLabel.Text = info;
             };
 
@@ -331,8 +331,8 @@ namespace Saturn.UI.Dialogs
                 listView.SelectedItem = currentIndex;
                 var selectedModel = models[currentIndex];
                 var info = $"ID: {selectedModel.Id}";
-                if (selectedModel.ContextLength.HasValue)
-                    info += $" | Context: {selectedModel.ContextLength:N0} tokens";
+                if (selectedModel.MaxTokens > 0)
+                    info += $" | Context: {selectedModel.MaxTokens:N0} tokens";
                 infoLabel.Text = info;
             }
             

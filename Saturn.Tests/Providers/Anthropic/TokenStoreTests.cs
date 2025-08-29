@@ -1,7 +1,7 @@
 using Xunit;
 using FluentAssertions;
-using SaturnFork.Providers.Anthropic;
-using SaturnFork.Providers.Anthropic.Models;
+using Saturn.Providers.Anthropic;
+using Saturn.Providers.Anthropic.Models;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -19,7 +19,7 @@ namespace Saturn.Tests.Providers.Anthropic
         {
             // Use a test-specific directory to avoid conflicts
             var testId = Guid.NewGuid().ToString("N")[..8];
-            _testDir = Path.Combine(Path.GetTempPath(), "SaturnFork", "auth_test_" + testId);
+            _testDir = Path.Combine(Path.GetTempPath(), "Saturn", "auth_test_" + testId);
             Directory.CreateDirectory(_testDir);
             
             _testPath = Path.Combine(_testDir, "anthropic.tokens");
@@ -335,7 +335,7 @@ namespace Saturn.Tests.Providers.Anthropic
             
             var actualPath = GetActualTokenPath();
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var authDir = Path.Combine(appData, "SaturnFork", "auth");
+            var authDir = Path.Combine(appData, "Saturn", "auth");
             var keyPath = Path.Combine(authDir, ".keystore");
             var saltPath = Path.Combine(authDir, ".salt");
             
@@ -432,7 +432,7 @@ namespace Saturn.Tests.Providers.Anthropic
         private string GetActualTokenPath()
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            return Path.Combine(appData, "SaturnFork", "auth", "anthropic.tokens");
+            return Path.Combine(appData, "Saturn", "auth", "anthropic.tokens");
         }
         
         private void CleanupTokenFile()

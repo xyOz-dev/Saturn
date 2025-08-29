@@ -15,7 +15,9 @@ namespace Saturn.Providers.Anthropic
         private readonly string _keyPath;
         private readonly string _saltPath;
         private const int KeySize = 256 / 8; // 256-bit key
-        private const int IvSize = 128 / 8;  // 128-bit IV
+        private const int IvSize = 128 / 8;  // 128-bit IV (legacy)
+        private const int NonceSize = 12;    // 96-bit nonce for AES-GCM
+        private const int TagSize = 16;      // 128-bit authentication tag
         private const int SaltSize = 16;     // 128-bit salt
         private const string EncryptionPrefix = "SATURN_ENC_V1:"; // Version prefix for future upgrades
         
@@ -210,31 +212,32 @@ namespace Saturn.Providers.Anthropic
                     var plainBytes = Encoding.UTF8.GetBytes(plainText);
                     var key = GetOrCreateSecureKey();
                     
-                    using (var aes = Aes.Create())
+                    // Generate 96-bit nonce for AES-GCM
+                    var nonce = new byte[NonceSize];
+                    using (var rng = RandomNumberGenerator.Create())
                     {
-                        aes.KeySize = 256;
-                        aes.BlockSize = 128;
-                        aes.Mode = CipherMode.CBC;
-                        aes.Padding = PaddingMode.PKCS7;
-                        aes.Key = key;
-                        aes.GenerateIV();
-                        
-                        using (var encryptor = aes.CreateEncryptor())
-                        {
-                            var encrypted = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-                            
-                            // Combine IV + encrypted data
-                            var result = new byte[aes.IV.Length + encrypted.Length];
-                            Array.Copy(aes.IV, 0, result, 0, aes.IV.Length);
-                            Array.Copy(encrypted, 0, result, aes.IV.Length, encrypted.Length);
-                            
-                            return EncryptionPrefix + Convert.ToBase64String(result);
-                        }
+                        rng.GetBytes(nonce);
                     }
+                    
+                    var ciphertext = new byte[plainBytes.Length];
+                    var tag = new byte[TagSize];
+                    
+                    using (var aesGcm = new AesGcm(key, TagSize))
+                    {
+                        aesGcm.Encrypt(nonce, plainBytes, ciphertext, tag);
+                    }
+                    
+                    // Combine nonce + ciphertext + tag
+                    var result = new byte[NonceSize + ciphertext.Length + TagSize];
+                    Array.Copy(nonce, 0, result, 0, NonceSize);
+                    Array.Copy(ciphertext, 0, result, NonceSize, ciphertext.Length);
+                    Array.Copy(tag, 0, result, NonceSize + ciphertext.Length, TagSize);
+                    
+                    return EncryptionPrefix + Convert.ToBase64String(result);
                 }
                 catch (Exception ex)
                 {
-                    throw new InvalidOperationException("AES encryption failed", ex);
+                    throw new InvalidOperationException("AES-GCM encryption failed", ex);
                 }
             });
         }
@@ -243,42 +246,46 @@ namespace Saturn.Providers.Anthropic
         {
             return await Task.Run(() =>
             {
+                // First try AES-GCM decryption (current format)
                 try
                 {
                     var cipherBytes = Convert.FromBase64String(encryptedData);
                     var key = GetOrCreateSecureKey();
                     
-                    if (cipherBytes.Length < IvSize)
+                    if (cipherBytes.Length >= NonceSize + TagSize)
                     {
-                        throw new InvalidOperationException("Invalid encrypted data format");
-                    }
-                    
-                    using (var aes = Aes.Create())
-                    {
-                        aes.KeySize = 256;
-                        aes.BlockSize = 128;
-                        aes.Mode = CipherMode.CBC;
-                        aes.Padding = PaddingMode.PKCS7;
-                        aes.Key = key;
+                        // Extract nonce, ciphertext, and tag for AES-GCM
+                        var nonce = new byte[NonceSize];
+                        var tag = new byte[TagSize];
+                        var ciphertext = new byte[cipherBytes.Length - NonceSize - TagSize];
                         
-                        // Extract IV and encrypted data
-                        var iv = new byte[IvSize];
-                        var encrypted = new byte[cipherBytes.Length - IvSize];
-                        Array.Copy(cipherBytes, 0, iv, 0, IvSize);
-                        Array.Copy(cipherBytes, IvSize, encrypted, 0, encrypted.Length);
+                        Array.Copy(cipherBytes, 0, nonce, 0, NonceSize);
+                        Array.Copy(cipherBytes, NonceSize, ciphertext, 0, ciphertext.Length);
+                        Array.Copy(cipherBytes, NonceSize + ciphertext.Length, tag, 0, TagSize);
                         
-                        aes.IV = iv;
+                        var plaintext = new byte[ciphertext.Length];
                         
-                        using (var decryptor = aes.CreateDecryptor())
+                        using (var aesGcm = new AesGcm(key, TagSize))
                         {
-                            var plainBytes = decryptor.TransformFinalBlock(encrypted, 0, encrypted.Length);
-                            return Encoding.UTF8.GetString(plainBytes);
+                            aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
                         }
+                        
+                        return Encoding.UTF8.GetString(plaintext);
                     }
+                }
+                catch
+                {
+                    // AES-GCM failed, try legacy AES-CBC format
+                }
+                
+                // Fallback to legacy AES-CBC decryption
+                try
+                {
+                    return DecryptWithLegacyAesCbc(encryptedData);
                 }
                 catch (Exception ex)
                 {
-                    throw new InvalidOperationException("AES decryption failed", ex);
+                    throw new InvalidOperationException("Both AES-GCM and legacy AES-CBC decryption failed", ex);
                 }
             });
         }
@@ -402,29 +409,7 @@ namespace Saturn.Providers.Anthropic
             // Try as the old AES format
             try
             {
-                var cipherBytes = Convert.FromBase64String(data);
-                var legacyKey = GetLegacyKey();
-                
-                if (legacyKey != null && cipherBytes.Length > 16)
-                {
-                    using (var aes = Aes.Create())
-                    {
-                        aes.Key = legacyKey;
-                        
-                        var iv = new byte[16];
-                        var encrypted = new byte[cipherBytes.Length - 16];
-                        Array.Copy(cipherBytes, 0, iv, 0, 16);
-                        Array.Copy(cipherBytes, 16, encrypted, 0, encrypted.Length);
-                        
-                        aes.IV = iv;
-                        
-                        using (var decryptor = aes.CreateDecryptor())
-                        {
-                            var plainBytes = decryptor.TransformFinalBlock(encrypted, 0, encrypted.Length);
-                            return Encoding.UTF8.GetString(plainBytes);
-                        }
-                    }
-                }
+                return DecryptWithLegacyAesCbc(data);
             }
             catch
             {
@@ -432,6 +417,38 @@ namespace Saturn.Providers.Anthropic
             }
             
             throw new InvalidOperationException("Unable to decrypt legacy format");
+        }
+        
+        private string DecryptWithLegacyAesCbc(string encryptedData)
+        {
+            var cipherBytes = Convert.FromBase64String(encryptedData);
+            var legacyKey = GetLegacyKey();
+            
+            // If no legacy key exists, try with current key derivation but AES-CBC format
+            byte[] key = legacyKey ?? GetOrCreateSecureKey();
+            
+            if (cipherBytes.Length > IvSize)
+            {
+                using (var aes = Aes.Create())
+                {
+                    aes.Key = key;
+                    
+                    var iv = new byte[IvSize];
+                    var encrypted = new byte[cipherBytes.Length - IvSize];
+                    Array.Copy(cipherBytes, 0, iv, 0, IvSize);
+                    Array.Copy(cipherBytes, IvSize, encrypted, 0, encrypted.Length);
+                    
+                    aes.IV = iv;
+                    
+                    using (var decryptor = aes.CreateDecryptor())
+                    {
+                        var plainBytes = decryptor.TransformFinalBlock(encrypted, 0, encrypted.Length);
+                        return Encoding.UTF8.GetString(plainBytes);
+                    }
+                }
+            }
+            
+            throw new InvalidOperationException("Invalid legacy AES-CBC format");
         }
         
         private async Task<StoredTokens> TryMigrateLegacyTokens(string legacyData)

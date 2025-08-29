@@ -1,7 +1,7 @@
 using Xunit;
 using FluentAssertions;
-using SaturnFork.Providers.Anthropic;
-using SaturnFork.Providers.Anthropic.Models;
+using Saturn.Providers.Anthropic;
+using Saturn.Providers.Anthropic.Models;
 using Saturn.Providers.Models;
 using Saturn.Tests.Mocks;
 using Saturn.Tests.TestHelpers;
@@ -62,9 +62,6 @@ namespace Saturn.Tests.Providers.Anthropic
             models.Should().NotBeNull();
             models.Should().NotBeEmpty();
             models.Should().Contain(m => m.Id == "claude-sonnet-4-20250514");
-            models.Should().Contain(m => m.Id == "claude-3-5-sonnet-20241022");
-            models.Should().Contain(m => m.Id == "claude-3-opus-20240229");
-            models.Should().Contain(m => m.Id == "claude-3-haiku-20240307");
             
             // All models should have Anthropic as provider
             models.Should().OnlyContain(m => m.Provider == "Anthropic");

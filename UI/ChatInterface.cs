@@ -16,6 +16,7 @@ using Saturn.Data.Models;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.UI.Dialogs;
 using Saturn.Providers;
+using Saturn.Providers.Models;
 using Saturn.Configuration.Objects;
 
 namespace Saturn.UI
@@ -833,8 +834,8 @@ namespace Saturn.UI
                 {
                     var selectedModel = models[args.Item];
                     var info = $"ID: {selectedModel.Id}";
-                    if (selectedModel.ContextLength.HasValue)
-                        info += $" | Context: {selectedModel.ContextLength:N0} tokens";
+                    if (selectedModel.MaxTokens > 0)
+                        info += $" | Context: {selectedModel.MaxTokens:N0} tokens";
                     infoLabel.Text = info;
                 };
                 
@@ -865,8 +866,8 @@ namespace Saturn.UI
                 {
                     var initialModel = models[currentIndex];
                     var info = $"ID: {initialModel.Id}";
-                    if (initialModel.ContextLength.HasValue)
-                        info += $" | Context: {initialModel.ContextLength:N0} tokens";
+                    if (initialModel.MaxTokens > 0)
+                        info += $" | Context: {initialModel.MaxTokens:N0} tokens";
                     infoLabel.Text = info;
                 }
                 

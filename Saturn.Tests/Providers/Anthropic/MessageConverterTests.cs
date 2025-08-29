@@ -1,8 +1,8 @@
 using Xunit;
 using FluentAssertions;
 using Saturn.Providers.Models;
-using SaturnFork.Providers.Anthropic.Utils;
-using SaturnFork.Providers.Anthropic.Models;
+using Saturn.Providers.Anthropic.Utils;
+using Saturn.Providers.Anthropic.Models;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Linq;
@@ -29,15 +29,20 @@ namespace Saturn.Tests.Providers.Anthropic
             var result = MessageConverter.ConvertToAnthropicRequest(request);
             
             // Assert
-            result.System.Should().Be("You are helpful");
+            result.System.Should().Be("You are Claude Code, Anthropic's official CLI for Claude.");
             result.Messages.Should().HaveCount(1);
             result.Messages[0].Role.Should().Be("user");
+            // User system instructions should be injected into first user message as context
+            var userMessage = result.Messages[0];
+            var userContent = userMessage.Content.ToString();
+            userContent.Should().Contain("[Context: You are helpful]");
+            userContent.Should().Contain("Hello");
         }
         
         [Theory]
-        [InlineData("claude-3-opus", "claude-3-opus-20240229")]
-        [InlineData("claude-3-sonnet", "claude-3-5-sonnet-20241022")]
-        [InlineData("claude-3-haiku", "claude-3-haiku-20240307")]
+        [InlineData("claude-3-opus", "claude-3-opus")]
+        [InlineData("claude-3-sonnet", "claude-3-sonnet")]
+        [InlineData("claude-3-haiku", "claude-3-haiku")]
         [InlineData("claude-sonnet-4", "claude-sonnet-4-20250514")]
         [InlineData("anthropic/claude-sonnet-4", "claude-sonnet-4-20250514")]
         [InlineData("unknown-model", "unknown-model")]
