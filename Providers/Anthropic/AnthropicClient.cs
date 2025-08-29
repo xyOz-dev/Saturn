@@ -305,7 +305,7 @@ namespace Saturn.Providers.Anthropic
                             });
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         // Error parsing stream event, continue processing
                     }

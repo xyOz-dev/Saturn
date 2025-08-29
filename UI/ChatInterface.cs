@@ -1500,7 +1500,6 @@ namespace Saturn.UI
             var updatedLines = new List<string>();
             bool inHeader = false;
             bool skipConfigLines = false;
-            int headerEndIndex = -1;
             
             for (int i = 0; i < lines.Length; i++)
             {

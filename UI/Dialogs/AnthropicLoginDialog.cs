@@ -6,15 +6,15 @@ namespace Saturn.UI.Dialogs
 {
     public class AnthropicLoginDialog : Dialog
     {
-        private TextView instructionsView;
-        private TextField codeField;
-        private Button loginButton;
-        private Button pasteButton;
-        private Button okButton;
-        private Button cancelButton;
-        private RadioGroup authMethodGroup;
+        private TextView instructionsView = null!;
+        private TextField codeField = null!;
+        private Button loginButton = null!;
+        private Button pasteButton = null!;
+        private Button okButton = null!;
+        private Button cancelButton = null!;
+        private RadioGroup authMethodGroup = null!;
         
-        public string AuthorizationCode { get; private set; }
+        public string AuthorizationCode { get; private set; } = null!;
         public bool UseClaudeMax { get; private set; }
         public bool Success { get; private set; }
         

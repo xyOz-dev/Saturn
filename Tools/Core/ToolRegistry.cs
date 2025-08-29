@@ -34,7 +34,7 @@ namespace Saturn.Tools.Core
                     var tool = (ITool)Activator.CreateInstance(type);
                     Register(tool);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                    
                 }

@@ -364,7 +364,7 @@ namespace Saturn.Agents.Core
                             assistantMessageId = savedMessage.Id;
                             _currentAssistantMessageId = assistantMessageId;
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             
                         }

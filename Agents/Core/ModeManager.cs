@@ -232,7 +232,7 @@ namespace Saturn.Agents.Core
                         _modes.Add(mode);
                     } 
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
 
                 }

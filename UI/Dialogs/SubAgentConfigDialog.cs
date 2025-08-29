@@ -12,18 +12,18 @@ namespace Saturn.UI.Dialogs
 {
     public class SubAgentConfigDialog : Dialog
     {
-        private ComboBox modelComboBox;
-        private Label modelInfoLabel;
-        private TextField temperatureField;
-        private TextField maxTokensField;
-        private TextField topPField;
-        private CheckBox enableToolsCheckBox;
-        private CheckBox enableReviewStageCheckBox;
-        private Label reviewerModelLabel;
-        private ComboBox reviewerModelComboBox;
-        private Label reviewerModelInfoLabel;
-        private Button saveButton;
-        private Button cancelButton;
+        private ComboBox modelComboBox = null!;
+        private Label modelInfoLabel = null!;
+        private TextField temperatureField = null!;
+        private TextField maxTokensField = null!;
+        private TextField topPField = null!;
+        private CheckBox enableToolsCheckBox = null!;
+        private CheckBox enableReviewStageCheckBox = null!;
+        private Label reviewerModelLabel = null!;
+        private ComboBox reviewerModelComboBox = null!;
+        private Label reviewerModelInfoLabel = null!;
+        private Button saveButton = null!;
+        private Button cancelButton = null!;
         
         private List<ModelInfo> availableModels = new();
         private ILLMClient? client;

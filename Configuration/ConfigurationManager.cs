@@ -49,7 +49,7 @@ namespace Saturn.Configuration
                 
                 return config;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
 
                 return null;

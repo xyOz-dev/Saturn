@@ -8,13 +8,13 @@ namespace Saturn.UI.Dialogs
 {
     public class ProviderSelectionDialog : Dialog
     {
-        private RadioGroup providerRadioGroup;
-        private Label descriptionLabel;
-        private CheckBox saveDefaultCheckbox;
-        private Button okButton;
-        private Button cancelButton;
+        private RadioGroup providerRadioGroup = null!;
+        private Label descriptionLabel = null!;
+        private CheckBox saveDefaultCheckbox = null!;
+        private Button okButton = null!;
+        private Button cancelButton = null!;
         
-        public string SelectedProvider { get; private set; }
+        public string SelectedProvider { get; private set; } = null!;
         public bool SaveAsDefault { get; private set; }
         
         private readonly Dictionary<string, string> providerDescriptions = new()

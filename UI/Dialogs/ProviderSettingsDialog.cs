@@ -9,12 +9,12 @@ namespace Saturn.UI.Dialogs
 {
     public class ProviderSettingsDialog : Dialog
     {
-        private Label currentProviderLabel;
-        private Label authStatusLabel;
-        private Button changeProviderButton;
-        private Button reauthenticateButton;
-        private Button logoutButton;
-        private Button closeButton;
+        private Label currentProviderLabel = null!;
+        private Label authStatusLabel = null!;
+        private Button changeProviderButton = null!;
+        private Button reauthenticateButton = null!;
+        private Button logoutButton = null!;
+        private Button closeButton = null!;
         private ILLMProvider currentProvider;
         
         public bool ProviderChanged { get; private set; }
