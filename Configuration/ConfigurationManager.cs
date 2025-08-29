@@ -42,6 +42,11 @@ namespace Saturn.Configuration
                     config.RequireCommandApproval = true;
                 }
                 
+                if (config != null && config.EnableUserRules == null)
+                {
+                    config.EnableUserRules = true;
+                }
+                
                 return config;
             }
             catch (Exception ex)
@@ -137,7 +142,8 @@ namespace Saturn.Configuration
                 MaxHistoryMessages = agentConfig.MaxHistoryMessages,
                 EnableTools = agentConfig.EnableTools,
                 ToolNames = agentConfig.ToolNames,
-                RequireCommandApproval = agentConfig.RequireCommandApproval
+                RequireCommandApproval = agentConfig.RequireCommandApproval,
+                EnableUserRules = agentConfig.EnableUserRules
             };
             
             // Validate the created configuration
@@ -168,6 +174,7 @@ namespace Saturn.Configuration
             target.EnableTools = source.EnableTools;
             target.ToolNames = source.ToolNames ?? target.ToolNames;
             target.RequireCommandApproval = source.RequireCommandApproval ?? true;
+            target.EnableUserRules = source.EnableUserRules ?? true;
         }
         
         private static void ValidateConfiguration(PersistedAgentConfiguration config)

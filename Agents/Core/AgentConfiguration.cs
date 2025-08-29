@@ -24,6 +24,7 @@ namespace Saturn.Agents.Core
         public bool EnableStreaming { get; set; } = false;
         public int StreamBufferSize { get; set; } = 1024;
         public bool RequireCommandApproval { get; set; } = true;
+        public bool EnableUserRules { get; set; } = true;
         public Guid? CurrentModeId { get; set; }
         
         public static AgentConfiguration FromMode(Mode mode, ILLMClient client)
@@ -52,6 +53,7 @@ namespace Saturn.Agents.Core
                 EnableStreaming = mode.EnableStreaming,
                 MaintainHistory = mode.MaintainHistory,
                 RequireCommandApproval = mode.RequireCommandApproval,
+                EnableUserRules = mode.EnableUserRules,
                 ToolNames = new List<string>(mode.ToolNames ?? new List<string>()),
                 EnableTools = mode.ToolNames?.Count > 0,
                 CurrentModeId = mode.Id

@@ -71,10 +71,7 @@ namespace Saturn
                 Console.WriteLine($"Fatal Error: {ex.Message}");
                 Console.WriteLine($"Stack Trace: {ex.StackTrace}");
                 
-                // Log to file for debugging
-                LogErrorToFile(ex);
-                
-                Console.WriteLine("\nAn error log has been saved for debugging purposes.");
+                Console.WriteLine("\nPlease report this issue if it persists.");
                 Console.WriteLine("Please report this issue at: https://github.com/xyOz-dev/Saturn/issues");
                 Environment.Exit(1);
             }
@@ -248,6 +245,9 @@ namespace Saturn
                 temperature = 1.0;
             }
             
+            // Determine EnableUserRules from persisted config or default to true
+            bool enableUserRules = persistedConfig?.EnableUserRules ?? true;
+            
             var agentConfig = new Saturn.Agents.Core.AgentConfiguration
             {
                 Name = "Assistant",
@@ -354,7 +354,7 @@ Operating Principles
    - Be mindful of the number of concurrent sub-agents.
    - Monitor agent status to avoid resource exhaustion.
    - Avoid redundant work - if a sub-agent did it, it's done.
-   - Efficiency means trusting delegation, not redoing completed tasks."),
+   - Efficiency means trusting delegation, not redoing completed tasks.", includeDirectories: true, includeUserRules: enableUserRules),
                 Client = llmClient,
                 Model = model,
                 Temperature = temperature,
@@ -365,6 +365,7 @@ Operating Principles
                 EnableTools = true,
                 EnableStreaming = true,
                 RequireCommandApproval = true,
+                EnableUserRules = enableUserRules,
                 ToolNames = new List<string>() { 
                     "apply_diff", "grep", "glob", "read_file", "list_files", 
                     "write_file", "search_and_replace", "delete_file",
@@ -391,35 +392,6 @@ Operating Principles
             }
 
             return agentConfig;
-        }
-        
-        private static void LogErrorToFile(Exception ex)
-        {
-            try
-            {
-                var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Saturn", "logs");
-                Directory.CreateDirectory(logDir);
-                
-                var logFile = Path.Combine(logDir, $"error-{DateTime.Now:yyyy-MM-dd-HH-mm-ss}.log");
-                var logContent = $"Saturn Error Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n";
-                logContent += $"═══════════════════════════════════════════════\n";
-                logContent += $"Error: {ex.Message}\n";
-                logContent += $"Type: {ex.GetType().FullName}\n";
-                logContent += $"Stack Trace:\n{ex.StackTrace}\n";
-                
-                if (ex.InnerException != null)
-                {
-                    logContent += $"\nInner Exception: {ex.InnerException.Message}\n";
-                    logContent += $"Inner Stack Trace:\n{ex.InnerException.StackTrace}\n";
-                }
-                
-                File.WriteAllText(logFile, logContent);
-                Console.WriteLine($"Error logged to: {logFile}");
-            }
-            catch
-            {
-                // If logging fails, we can't do much about it
-            }
         }
     }
 }
