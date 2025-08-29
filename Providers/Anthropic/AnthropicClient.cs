@@ -203,7 +203,7 @@ namespace Saturn.Providers.Anthropic
             using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);
             
-            var currentToolCall = (ToolCall)null;
+            ToolCall? currentToolCall = null;
             var toolCallJson = "";
             
             while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
@@ -224,29 +224,29 @@ namespace Saturn.Providers.Anthropic
                     {
                         var streamEvent = JsonSerializer.Deserialize<AnthropicStreamEvent>(data);
                         
-                        if (streamEvent.Type == "message_start")
+                        if (streamEvent?.Type == "message_start")
                         {
-                            finalResponse.Id = streamEvent.Message?.Id;
-                            finalResponse.Model = streamEvent.Message?.Model;
+                            finalResponse.Id = streamEvent.Message?.Id ?? string.Empty;
+                            finalResponse.Model = streamEvent.Message?.Model ?? string.Empty;
                         }
-                        else if (streamEvent.Type == "content_block_start")
+                        else if (streamEvent?.Type == "content_block_start")
                         {
                             if (streamEvent.ContentBlock?.Type == "tool_use")
                             {
                                 currentToolCall = new ToolCall
                                 {
-                                    Id = streamEvent.ContentBlock.Id,
-                                    Name = streamEvent.ContentBlock.Name,
+                                    Id = streamEvent.ContentBlock?.Id ?? string.Empty,
+                                    Name = streamEvent.ContentBlock?.Name ?? string.Empty,
                                     Arguments = ""
                                 };
                                 toolCallJson = "";
                             }
                         }
-                        else if (streamEvent.Type == "content_block_delta")
+                        else if (streamEvent?.Type == "content_block_delta")
                         {
                             if (streamEvent.Delta?.Type == "text_delta")
                             {
-                                var text = streamEvent.Delta.Text;
+                                var text = streamEvent.Delta?.Text ?? string.Empty;
                                 finalResponse.Message.Content += text;
                                 
                                 await onChunk(new StreamChunk
@@ -258,10 +258,10 @@ namespace Saturn.Providers.Anthropic
                             }
                             else if (streamEvent.Delta?.Type == "input_json_delta" && currentToolCall != null)
                             {
-                                toolCallJson += streamEvent.Delta.PartialJson;
+                                toolCallJson += streamEvent.Delta?.PartialJson ?? string.Empty;
                             }
                         }
-                        else if (streamEvent.Type == "content_block_stop")
+                        else if (streamEvent?.Type == "content_block_stop")
                         {
                             if (currentToolCall != null)
                             {
@@ -279,14 +279,14 @@ namespace Saturn.Providers.Anthropic
                                 toolCallJson = "";
                             }
                         }
-                        else if (streamEvent.Type == "message_delta")
+                        else if (streamEvent?.Type == "message_delta")
                         {
                             if (streamEvent.Delta?.StopReason != null)
                             {
                                 finalResponse.FinishReason = streamEvent.Delta.StopReason;
                             }
                         }
-                        else if (streamEvent.Type == "message_stop")
+                        else if (streamEvent?.Type == "message_stop")
                         {
                             if (streamEvent.Usage != null)
                             {
@@ -315,11 +315,11 @@ namespace Saturn.Providers.Anthropic
             return finalResponse;
         }
         
-        public async Task<List<ModelInfo>> GetModelsAsync()
+        public Task<List<ModelInfo>> GetModelsAsync()
         {
             // Anthropic doesn't have a models endpoint for OAuth users
             // Return hardcoded list of available models
-            return new List<ModelInfo>
+            return Task.FromResult(new List<ModelInfo>
             {
                 new ModelInfo
                 {
@@ -331,8 +331,7 @@ namespace Saturn.Providers.Anthropic
                     OutputCost = 0,
                     Description = "The latest Claude model with improved reasoning and coding capabilities"
                 }
-                
-            };
+            });
         }
         
         private async Task<HttpRequestMessage> PrepareRequestAsync(AnthropicChatRequest request)
