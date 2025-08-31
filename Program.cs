@@ -60,7 +60,7 @@ namespace Saturn
                 {
                     Console.WriteLine("\nTo resolve this:");
                     Console.WriteLine("1. Set the OPENROUTER_API_KEY environment variable");
-                    Console.WriteLine("2. Or switch to a different provider using the Provider menu");
+                    Console.WriteLine("2. Or run the application to select a different provider (Anthropic, etc.)");
                 }
                 
                 Console.WriteLine($"\nFor more help, visit: https://github.com/xyOz-dev/Saturn/wiki");
