@@ -33,8 +33,8 @@ namespace Saturn.Core.Abstractions
         public string? Reason { get; set; }
         public string? ApprovedBy { get; set; }
         public DateTime RespondedAt { get; set; } = DateTime.UtcNow;
-        public TimeSpan ResponseTime => RespondedAt - RequestedAt;
-        public DateTime RequestedAt { get; set; }
+        public TimeSpan ResponseTime => RequestedAt == default(DateTime) ? TimeSpan.Zero : RespondedAt - RequestedAt;
+        public DateTime RequestedAt { get; set; } = DateTime.UtcNow;
     }
     
     public enum ApprovalLevel
