@@ -1140,9 +1140,10 @@ namespace Saturn.UI
                 agent.Configuration.EnableUserRules = dialog.RulesEnabled;
                 currentConfig.EnableUserRules = dialog.RulesEnabled;
                 
-                var rulesPath = Path.Combine(Environment.CurrentDirectory, ".saturn", "rules.md");
-                var statusText = File.Exists(rulesPath) ? "Rules file exists and will be included" : "No rules file - rules disabled";
-                UpdateAgentStatus($"Ready - {statusText}");
+                chatView.Text += "\n[ Rules Update ]\n\n";
+                ScrollChatToBottom();
+                
+                UpdateAgentStatus("Ready");
                 
                 // Force regeneration of the system prompt with the updated rules
                 // Extract base prompt without current directory or user rules sections
