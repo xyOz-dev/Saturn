@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Saturn.Core.Abstractions.WorkspaceProviders
 {
-    public class LocalWorkspaceProvider : IWorkspaceProvider
+    public class LocalWorkspaceProvider : IWorkspaceProvider, IDisposable
     {
         private readonly string _rootPath;
         private FileSystemWatcher? _watcher;
@@ -19,7 +20,7 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
         
         public LocalWorkspaceProvider(string? rootPath = null)
         {
-            _rootPath = rootPath ?? Directory.GetCurrentDirectory();
+            _rootPath = Path.GetFullPath(rootPath ?? Directory.GetCurrentDirectory());
             WorkspaceId = $"local_{Path.GetFileName(_rootPath)}_{Guid.NewGuid():N}".Substring(0, 20);
             InitializeWatcher();
         }
@@ -34,14 +35,15 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
                                   NotifyFilters.DirectoryName | 
                                   NotifyFilters.LastWrite | 
                                   NotifyFilters.Size,
-                    IncludeSubdirectories = true,
-                    EnableRaisingEvents = true
+                    IncludeSubdirectories = true
                 };
                 
                 _watcher.Created += (s, e) => OnWorkspaceChanged(e.FullPath, WorkspaceChangeType.Created);
                 _watcher.Changed += (s, e) => OnWorkspaceChanged(e.FullPath, WorkspaceChangeType.Modified);
                 _watcher.Deleted += (s, e) => OnWorkspaceChanged(e.FullPath, WorkspaceChangeType.Deleted);
-                _watcher.Renamed += (s, e) => OnWorkspaceChanged(e.FullPath, WorkspaceChangeType.Renamed);
+                _watcher.Renamed += (s, e) => OnWorkspaceChanged(e.FullPath, WorkspaceChangeType.Renamed, e.OldFullPath);
+                
+                _watcher.EnableRaisingEvents = true;
             }
             catch
             {
@@ -49,45 +51,35 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
             }
         }
         
-        private void OnWorkspaceChanged(string path, WorkspaceChangeType changeType)
+        private void OnWorkspaceChanged(string path, WorkspaceChangeType changeType, string? oldPath = null)
         {
             WorkspaceChanged?.Invoke(this, new WorkspaceChangeEventArgs
             {
                 Path = path,
+                OldPath = oldPath ?? string.Empty,
                 ChangeType = changeType
             });
         }
         
-        public Task<bool> ExistsAsync(string path)
+        public Task<bool> ExistsAsync(string path, CancellationToken cancellation = default)
         {
             var fullPath = GetFullPath(path);
             return Task.FromResult(File.Exists(fullPath) || Directory.Exists(fullPath));
         }
         
-        public async Task<string> ReadTextAsync(string path)
+        public async Task<string> ReadTextAsync(string path, CancellationToken cancellation = default)
         {
             var fullPath = GetFullPath(path);
-            return await File.ReadAllTextAsync(fullPath);
+            return await File.ReadAllTextAsync(fullPath, cancellation);
         }
         
-        public async Task<byte[]> ReadBytesAsync(string path)
+        public async Task<byte[]> ReadBytesAsync(string path, CancellationToken cancellation = default)
         {
             var fullPath = GetFullPath(path);
-            return await File.ReadAllBytesAsync(fullPath);
+            return await File.ReadAllBytesAsync(fullPath, cancellation);
         }
         
-        public async Task WriteTextAsync(string path, string content)
-        {
-            var fullPath = GetFullPath(path);
-            var directory = Path.GetDirectoryName(fullPath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-            await File.WriteAllTextAsync(fullPath, content);
-        }
-        
-        public async Task WriteBytesAsync(string path, byte[] content)
+        public async Task WriteTextAsync(string path, string content, CancellationToken cancellation = default)
         {
             var fullPath = GetFullPath(path);
             var directory = Path.GetDirectoryName(fullPath);
@@ -95,10 +87,21 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
             {
                 Directory.CreateDirectory(directory);
             }
-            await File.WriteAllBytesAsync(fullPath, content);
+            await File.WriteAllTextAsync(fullPath, content, cancellation);
         }
         
-        public Task<bool> DeleteAsync(string path)
+        public async Task WriteBytesAsync(string path, byte[] content, CancellationToken cancellation = default)
+        {
+            var fullPath = GetFullPath(path);
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+            await File.WriteAllBytesAsync(fullPath, content, cancellation);
+        }
+        
+        public Task<bool> DeleteAsync(string path, CancellationToken cancellation = default)
         {
             try
             {
@@ -121,7 +124,7 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
             }
         }
         
-        public Task<IEnumerable<WorkspaceItem>> ListAsync(string path, bool recursive = false)
+        public Task<IEnumerable<WorkspaceItem>> ListAsync(string path, bool recursive = false, CancellationToken cancellation = default)
         {
             var fullPath = GetFullPath(path);
             var items = new List<WorkspaceItem>();
@@ -161,7 +164,7 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
             return Task.FromResult<IEnumerable<WorkspaceItem>>(items);
         }
         
-        public Task<WorkspaceInfo> GetInfoAsync(string path)
+        public Task<WorkspaceInfo> GetInfoAsync(string path, CancellationToken cancellation = default)
         {
             var fullPath = GetFullPath(path);
             
@@ -201,12 +204,12 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
             });
         }
         
-        public Task<string> GetAbsolutePathAsync(string relativePath)
+        public Task<string> GetAbsolutePathAsync(string relativePath, CancellationToken cancellation = default)
         {
             return Task.FromResult(GetFullPath(relativePath));
         }
         
-        public Task<bool> CreateDirectoryAsync(string path)
+        public Task<bool> CreateDirectoryAsync(string path, CancellationToken cancellation = default)
         {
             try
             {
@@ -222,10 +225,33 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
         
         private string GetFullPath(string path)
         {
+            string candidatePath;
+            
             if (Path.IsPathRooted(path))
-                return path;
-                
-            return Path.GetFullPath(Path.Combine(_rootPath, path));
+            {
+                candidatePath = Path.GetFullPath(path);
+            }
+            else
+            {
+                candidatePath = Path.GetFullPath(Path.Combine(_rootPath, path));
+            }
+            
+            // Ensure the resolved path is contained within the root path
+            if (!IsPathContainedInRoot(candidatePath, _rootPath))
+            {
+                throw new UnauthorizedAccessException($"Path '{path}' resolves to '{candidatePath}' which is outside the workspace root '{_rootPath}'.");
+            }
+            
+            return candidatePath;
+        }
+        
+        private static bool IsPathContainedInRoot(string candidatePath, string rootPath)
+        {
+            // Normalize both paths to ensure consistent comparison
+            var normalizedCandidate = Path.GetFullPath(candidatePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            
+            return normalizedCandidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
         }
         
         private string GetRelativePath(string fullPath)
