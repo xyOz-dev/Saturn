@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Saturn.Core.Abstractions
@@ -11,16 +12,16 @@ namespace Saturn.Core.Abstractions
         string WorkspacePath { get; }
         WorkspaceType Type { get; }
         
-        Task<bool> ExistsAsync(string path);
-        Task<string> ReadTextAsync(string path);
-        Task<byte[]> ReadBytesAsync(string path);
-        Task WriteTextAsync(string path, string content);
-        Task WriteBytesAsync(string path, byte[] content);
-        Task<bool> DeleteAsync(string path);
-        Task<IEnumerable<WorkspaceItem>> ListAsync(string path, bool recursive = false);
-        Task<WorkspaceInfo> GetInfoAsync(string path);
-        Task<string> GetAbsolutePathAsync(string relativePath);
-        Task<bool> CreateDirectoryAsync(string path);
+        Task<bool> ExistsAsync(string path, CancellationToken cancellation = default);
+        Task<string> ReadTextAsync(string path, CancellationToken cancellation = default);
+        Task<byte[]> ReadBytesAsync(string path, CancellationToken cancellation = default);
+        Task WriteTextAsync(string path, string content, CancellationToken cancellation = default);
+        Task WriteBytesAsync(string path, byte[] content, CancellationToken cancellation = default);
+        Task<bool> DeleteAsync(string path, CancellationToken cancellation = default);
+        Task<IEnumerable<WorkspaceItem>> ListAsync(string path, bool recursive = false, CancellationToken cancellation = default);
+        Task<WorkspaceInfo> GetInfoAsync(string path, CancellationToken cancellation = default);
+        Task<string> GetAbsolutePathAsync(string relativePath, CancellationToken cancellation = default);
+        Task<bool> CreateDirectoryAsync(string path, CancellationToken cancellation = default);
         
         event EventHandler<WorkspaceChangeEventArgs>? WorkspaceChanged;
     }
@@ -60,6 +61,7 @@ namespace Saturn.Core.Abstractions
     public class WorkspaceChangeEventArgs : EventArgs
     {
         public string Path { get; set; } = string.Empty;
+        public string OldPath { get; set; } = string.Empty;
         public WorkspaceChangeType ChangeType { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     }
