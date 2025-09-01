@@ -42,10 +42,11 @@ namespace Saturn.Core.Abstractions.ProgressReporters
         {
             lock (_lock)
             {
-                var progressBar = GenerateProgressBar(progress.Percentage);
-                Console.Write($"\r{progressBar} {progress.Percentage:F1}% - {progress.CurrentStep ?? "Processing..."}");
+                var clippedPercentage = Math.Clamp(progress.Percentage, 0, 100);
+                var progressBar = GenerateProgressBar(clippedPercentage);
+                Console.Write($"\r{progressBar} {clippedPercentage:F1}% - {progress.CurrentStep ?? "Processing..."}");
                 
-                if (progress.Percentage >= 100)
+                if (clippedPercentage >= 100)
                 {
                     Console.WriteLine();
                 }
@@ -150,7 +151,8 @@ namespace Saturn.Core.Abstractions.ProgressReporters
         
         private string GenerateProgressBar(double percentage, int width = 30)
         {
-            var filled = (int)(width * percentage / 100);
+            var rawFilled = (int)(width * percentage / 100);
+            var filled = Math.Clamp(rawFilled, 0, width);
             var empty = width - filled;
             return $"[{new string('█', filled)}{new string('░', empty)}]";
         }
