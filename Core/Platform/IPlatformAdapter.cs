@@ -146,7 +146,7 @@ namespace Saturn.Core.Platform
     
     public class PlatformMessageEventArgs : EventArgs
     {
-        public PlatformMessage Message { get; set; } = null!;
+        public required PlatformMessage Message { get; set; }
         public PlatformSession? Session { get; set; }
     }
     
@@ -159,7 +159,7 @@ namespace Saturn.Core.Platform
     
     public class PlatformErrorEventArgs : EventArgs
     {
-        public Exception Exception { get; set; } = null!;
+        public required Exception Exception { get; set; }
         public string Context { get; set; } = string.Empty;
         public bool IsRecoverable { get; set; }
     }
