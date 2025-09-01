@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -141,7 +142,7 @@ namespace Saturn.Tests.Configuration
                 MaintainHistory = true,
                 MaxHistoryMessages = 20,
                 EnableTools = true,
-                ToolNames = new[] { "tool1", "tool2" },
+                ToolNames = new List<string> { "tool1", "tool2" },
                 RequireCommandApproval = false,
                 EnableUserRules = true
             };
