@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Saturn.OpenRouter.Models.Api.Chat;
@@ -14,7 +15,7 @@ namespace Saturn.Core.Platform.Formatters
         
         public Task<FormattedResponse> FormatMessageAsync(Message message, FormattingContext context)
         {
-            var content = message.Content.ToString() ?? string.Empty;
+            var content = message?.Content?.ToString() ?? string.Empty;
             
             if (context.PreferPlainText)
             {
@@ -145,7 +146,7 @@ namespace Saturn.Core.Platform.Formatters
             {
                 var formatted = await FormatMessageAsync(new Message 
                 { 
-                    Content = System.Text.Json.JsonDocument.Parse($"\"{chunk}\"").RootElement 
+                    Content = JsonDocument.Parse(JsonSerializer.Serialize(chunk)).RootElement 
                 }, context);
                 
                 responses.Add(formatted);
@@ -172,14 +173,11 @@ namespace Saturn.Core.Platform.Formatters
         
         public string SanitizeContent(string content)
         {
-            content = Regex.Replace(content, @"@everyone|@here", "@\u200beveryone");
+            content = Regex.Replace(content, @"@(everyone|here)\b", "@\u200b$1");
             
             content = Regex.Replace(content, @"<@!?\d+>", match => match.Value.Insert(2, "\u200b"));
             
-            content = Regex.Replace(content, @"```[\s\S]*?```", match =>
-            {
-                return match.Value;
-            }, RegexOptions.Multiline);
+            // Code blocks are preserved as-is during sanitization
             
             return content;
         }
