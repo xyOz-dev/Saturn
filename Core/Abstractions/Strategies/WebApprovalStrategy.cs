@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Saturn.Core.Abstractions.Strategies
@@ -7,7 +9,9 @@ namespace Saturn.Core.Abstractions.Strategies
     public class WebApprovalStrategy : IApprovalStrategy
     {
         private ApprovalConfiguration _configuration = new();
-        private readonly ConcurrentDictionary<string, TaskCompletionSource<ApprovalResult>> _pendingApprovals = new();
+        private readonly ConcurrentDictionary<string, PendingApproval> _pendingApprovals = new();
+        
+        private record PendingApproval(TaskCompletionSource<ApprovalResult> TaskCompletionSource, ApprovalRequest Request);
         
         public string PlatformName => "Web";
         
@@ -16,23 +20,25 @@ namespace Saturn.Core.Abstractions.Strategies
         public async Task<ApprovalResult> RequestApprovalAsync(ApprovalRequest request)
         {
             var tcs = new TaskCompletionSource<ApprovalResult>();
-            _pendingApprovals[request.Id] = tcs;
+            var pendingApproval = new PendingApproval(tcs, request);
+            _pendingApprovals[request.Id] = pendingApproval;
             
             OnApprovalRequested?.Invoke(request);
             
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(request.TimeoutSeconds));
             
+            CancellationTokenRegistration registration = default;
             try
             {
-                cts.Token.Register(() =>
+                registration = cts.Token.Register(() =>
                 {
-                    if (_pendingApprovals.TryRemove(request.Id, out var timeoutTcs))
+                    if (_pendingApprovals.TryRemove(request.Id, out var pendingApproval))
                     {
-                        timeoutTcs.TrySetResult(new ApprovalResult
+                        pendingApproval.TaskCompletionSource.TrySetResult(new ApprovalResult
                         {
                             Approved = false,
                             Reason = "Request timed out",
-                            RequestedAt = request.RequestedAt
+                            RequestedAt = pendingApproval.Request.RequestedAt
                         });
                     }
                 });
@@ -48,18 +54,23 @@ namespace Saturn.Core.Abstractions.Strategies
                     RequestedAt = request.RequestedAt
                 };
             }
+            finally
+            {
+                registration.Dispose();
+                _pendingApprovals.TryRemove(request.Id, out _);
+            }
         }
         
         public void ProcessApprovalResponse(string requestId, bool approved, string? approvedBy = null, string? reason = null)
         {
-            if (_pendingApprovals.TryRemove(requestId, out var tcs))
+            if (_pendingApprovals.TryRemove(requestId, out var pendingApproval))
             {
-                tcs.TrySetResult(new ApprovalResult
+                pendingApproval.TaskCompletionSource.TrySetResult(new ApprovalResult
                 {
                     Approved = approved,
                     Reason = reason ?? (approved ? "Approved via web" : "Denied via web"),
                     ApprovedBy = approvedBy ?? "Web User",
-                    RequestedAt = DateTime.UtcNow
+                    RequestedAt = pendingApproval.Request.RequestedAt
                 });
             }
         }
