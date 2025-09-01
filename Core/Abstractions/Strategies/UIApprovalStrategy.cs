@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Saturn.UI.Dialogs;
 
@@ -7,40 +8,36 @@ namespace Saturn.Core.Abstractions.Strategies
     public class UIApprovalStrategy : IApprovalStrategy
     {
         private ApprovalConfiguration _configuration = new();
-        private readonly Func<CommandApprovalDialog>? _dialogFactory;
+        private readonly Func<ApprovalRequest, CommandApprovalDialog>? _dialogFactory;
         
         public string PlatformName => "UI";
         
-        public UIApprovalStrategy(Func<CommandApprovalDialog>? dialogFactory = null)
+        public UIApprovalStrategy(Func<ApprovalRequest, CommandApprovalDialog>? dialogFactory = null)
         {
             _dialogFactory = dialogFactory;
         }
         
-        public async Task<ApprovalResult> RequestApprovalAsync(ApprovalRequest request)
+        public Task<ApprovalResult> RequestApprovalAsync(ApprovalRequest request)
         {
-            if (_dialogFactory == null)
-            {
-                return new ApprovalResult
-                {
-                    Approved = false,
-                    Reason = "No UI dialog factory configured",
-                    RequestedAt = request.RequestedAt
-                };
-            }
-            
-            // Create a new dialog with command and description
-            var dialog = new CommandApprovalDialog(request.Command, request.Description);
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            // Create dialog using factory if present, otherwise create default
+            var dialog = _dialogFactory?.Invoke(request) ?? 
+                        new CommandApprovalDialog(request.Command ?? string.Empty, request.Description ?? string.Empty);
             
             // Run the dialog and get the result
             Terminal.Gui.Application.Run(dialog);
             
-            return new ApprovalResult
+            var result = new ApprovalResult
             {
                 Approved = dialog.Approved,
                 Reason = dialog.Approved ? "User approved" : "User denied",
                 ApprovedBy = "User",
                 RequestedAt = request.RequestedAt
             };
+            
+            return Task.FromResult(result);
         }
         
         public Task<bool> IsApprovalRequiredAsync(string command, string context)
