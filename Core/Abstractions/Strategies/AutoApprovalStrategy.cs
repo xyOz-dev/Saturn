@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Saturn.Core.Abstractions.Strategies
@@ -17,10 +18,16 @@ namespace Saturn.Core.Abstractions.Strategies
         
         public Task<ApprovalResult> RequestApprovalAsync(ApprovalRequest request)
         {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            var command = request.Command ?? string.Empty;
+            var autoApprovedCommands = _configuration.AutoApprovedCommands ?? Enumerable.Empty<string>();
+            
             var shouldApprove = _approveAll || 
                                !_configuration.RequireApprovalByDefault ||
-                               _configuration.AutoApprovedCommands.Any(cmd => 
-                                   request.Command.StartsWith(cmd, StringComparison.OrdinalIgnoreCase));
+                               autoApprovedCommands.Any(cmd => 
+                                   !string.IsNullOrEmpty(cmd) && command.StartsWith(cmd, StringComparison.OrdinalIgnoreCase));
             
             return Task.FromResult(new ApprovalResult
             {
