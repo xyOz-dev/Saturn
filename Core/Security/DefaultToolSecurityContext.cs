@@ -154,12 +154,20 @@ namespace Saturn.Core.Security
             }
             
             var rateLimitInfo = CheckRateLimit(policy, request.Principal);
-            if (rateLimitInfo?.IsExceeded == true)
+            if (rateLimitInfo?.IsAnyLimitExceeded == true)
             {
+                var reason = "Rate limit exceeded:";
+                if (rateLimitInfo.IsMinuteExceeded)
+                    reason += $" per-minute limit ({rateLimitInfo.MinuteCount}/{rateLimitInfo.MaxPerMinute}), resets at {rateLimitInfo.MinuteResetTime:HH:mm:ss}";
+                if (rateLimitInfo.IsHourExceeded)
+                    reason += $" per-hour limit ({rateLimitInfo.HourCount}/{rateLimitInfo.MaxPerHour}), resets at {rateLimitInfo.HourResetTime:HH:mm:ss}";
+                if (rateLimitInfo.IsDayExceeded)
+                    reason += $" per-day limit ({rateLimitInfo.DayCount}/{rateLimitInfo.MaxPerDay}), resets at {rateLimitInfo.DayResetTime:HH:mm:ss}";
+                
                 return new ToolPermission
                 {
                     IsAllowed = false,
-                    Reason = $"Rate limit exceeded. Resets at {rateLimitInfo.ResetTime:HH:mm:ss}",
+                    Reason = reason,
                     Level = policy.RequiredLevel,
                     RateLimit = rateLimitInfo
                 };
@@ -175,7 +183,7 @@ namespace Saturn.Core.Security
             };
         }
         
-        public Task<bool> IsToolAllowedAsync(string toolName, SecurityPrincipal principal)
+        public async Task<bool> IsToolAllowedAsync(string toolName, SecurityPrincipal principal)
         {
             var request = new ToolAccessRequest
             {
@@ -184,7 +192,8 @@ namespace Saturn.Core.Security
                 Parameters = new Dictionary<string, object>()
             };
             
-            return Task.FromResult(CheckPermissionAsync(request).Result.IsAllowed);
+            var permission = await CheckPermissionAsync(request);
+            return permission.IsAllowed;
         }
         
         public Task<bool> ValidateParametersAsync(string toolName, Dictionary<string, object> parameters, SecurityPrincipal principal)
@@ -325,16 +334,18 @@ namespace Saturn.Core.Security
             if (policy.RateLimit == null)
                 return null;
             
-            var key = policy.RateLimit.PerUser 
-                ? $"{policy.ToolName}:{principal.UserId ?? principal.Id}"
-                : $"{policy.ToolName}:{principal.ChannelId ?? "global"}";
+            // Build composite key including tool + user + channel
+            var userKey = policy.RateLimit.PerUser ? (principal.UserId ?? principal.Id ?? "anon") : "anon";
+            var channelKey = policy.RateLimit.PerChannel ? (principal.ChannelId ?? "global") : "global";
+            var compositeKey = $"{policy.ToolName}:{userKey}:{channelKey}";
             
-            var limits = _rateLimits.GetOrAdd(key, _ => new ConcurrentDictionary<string, RateLimitInfo>());
+            var limits = _rateLimits.GetOrAdd(compositeKey, _ => new ConcurrentDictionary<string, RateLimitInfo>());
             
             var now = DateTime.UtcNow;
             var minuteKey = now.ToString("yyyy-MM-dd-HH-mm");
             
-            var info = limits.GetOrAdd(minuteKey, _ => new RateLimitInfo
+            // Get or create the minute bucket
+            var minuteBucket = limits.GetOrAdd(minuteKey, _ => new RateLimitInfo
             {
                 MaxCalls = policy.RateLimit.MaxCallsPerMinute,
                 Period = TimeSpan.FromMinutes(1),
@@ -342,11 +353,76 @@ namespace Saturn.Core.Security
                 ResetTime = now.AddMinutes(1)
             });
             
-            info.CurrentCount++;
+            // Increment the current minute bucket
+            minuteBucket.CurrentCount++;
             
-            limits.TryRemove(now.AddMinutes(-2).ToString("yyyy-MM-dd-HH-mm"), out _);
+            // Calculate rolling sums for hour and day windows
+            var minuteCount = minuteBucket.CurrentCount;
+            var hourCount = CalculateRollingSum(limits, now, 60); // Last 60 minutes
+            var dayCount = CalculateRollingSum(limits, now, 1440); // Last 1440 minutes (24 hours)
             
-            return info;
+            // Clean up old buckets beyond 1440 minutes to bound memory
+            CleanupOldBuckets(limits, now, 1440);
+            
+            // Create comprehensive rate limit info
+            var rateLimitInfo = new RateLimitInfo
+            {
+                // Legacy properties for backward compatibility
+                MaxCalls = policy.RateLimit.MaxCallsPerMinute,
+                Period = TimeSpan.FromMinutes(1),
+                CurrentCount = minuteCount,
+                ResetTime = now.AddMinutes(1),
+                
+                // Multi-window properties
+                MinuteCount = minuteCount,
+                HourCount = hourCount,
+                DayCount = dayCount,
+                MaxPerMinute = policy.RateLimit.MaxCallsPerMinute,
+                MaxPerHour = policy.RateLimit.MaxCallsPerHour,
+                MaxPerDay = policy.RateLimit.MaxCallsPerDay,
+                MinuteResetTime = now.AddMinutes(1),
+                HourResetTime = now.AddMinutes(60 - now.Minute).AddSeconds(-now.Second),
+                DayResetTime = now.Date.AddDays(1)
+            };
+            
+            return rateLimitInfo;
+        }
+        
+        private int CalculateRollingSum(ConcurrentDictionary<string, RateLimitInfo> limits, DateTime now, int windowMinutes)
+        {
+            var sum = 0;
+            for (int i = 0; i < windowMinutes; i++)
+            {
+                var bucketTime = now.AddMinutes(-i);
+                var bucketKey = bucketTime.ToString("yyyy-MM-dd-HH-mm");
+                if (limits.TryGetValue(bucketKey, out var bucket))
+                {
+                    sum += bucket.CurrentCount;
+                }
+            }
+            return sum;
+        }
+        
+        private void CleanupOldBuckets(ConcurrentDictionary<string, RateLimitInfo> limits, DateTime now, int keepMinutes)
+        {
+            var cutoffTime = now.AddMinutes(-keepMinutes);
+            var keysToRemove = new List<string>();
+            
+            foreach (var kvp in limits)
+            {
+                if (DateTime.TryParseExact(kvp.Key, "yyyy-MM-dd-HH-mm", null, System.Globalization.DateTimeStyles.None, out var bucketTime))
+                {
+                    if (bucketTime < cutoffTime)
+                    {
+                        keysToRemove.Add(kvp.Key);
+                    }
+                }
+            }
+            
+            foreach (var key in keysToRemove)
+            {
+                limits.TryRemove(key, out _);
+            }
         }
         
         public List<ToolAccessLog> GetAccessLogs(DateTime? since = null, string? toolName = null, string? userId = null)

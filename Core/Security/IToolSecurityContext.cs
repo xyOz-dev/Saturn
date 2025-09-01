@@ -18,7 +18,7 @@ namespace Saturn.Core.Security
     {
         public string ToolName { get; set; } = string.Empty;
         public Dictionary<string, object> Parameters { get; set; } = new();
-        public SecurityPrincipal Principal { get; set; } = null!;
+        public required SecurityPrincipal Principal { get; set; }
         public string? SessionId { get; set; }
         public string? Context { get; set; }
         public DateTime RequestTime { get; set; } = DateTime.UtcNow;
@@ -81,6 +81,21 @@ namespace Saturn.Core.Security
         public int CurrentCount { get; set; }
         public DateTime ResetTime { get; set; }
         public bool IsExceeded => CurrentCount >= MaxCalls;
+        
+        // Multi-window support
+        public int MinuteCount { get; set; }
+        public int HourCount { get; set; }
+        public int DayCount { get; set; }
+        public int MaxPerMinute { get; set; }
+        public int MaxPerHour { get; set; }
+        public int MaxPerDay { get; set; }
+        public DateTime MinuteResetTime { get; set; }
+        public DateTime HourResetTime { get; set; }
+        public DateTime DayResetTime { get; set; }
+        public bool IsMinuteExceeded => MaxPerMinute > 0 && MinuteCount >= MaxPerMinute;
+        public bool IsHourExceeded => MaxPerHour > 0 && HourCount >= MaxPerHour;
+        public bool IsDayExceeded => MaxPerDay > 0 && DayCount >= MaxPerDay;
+        public bool IsAnyLimitExceeded => IsMinuteExceeded || IsHourExceeded || IsDayExceeded;
     }
     
     public enum SecurityLevel
@@ -132,7 +147,7 @@ namespace Saturn.Core.Security
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string ToolName { get; set; } = string.Empty;
-        public SecurityPrincipal Principal { get; set; } = null!;
+        public required SecurityPrincipal Principal { get; set; }
         public Dictionary<string, object>? Parameters { get; set; }
         public bool WasAllowed { get; set; }
         public string? DenialReason { get; set; }
