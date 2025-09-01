@@ -5,13 +5,13 @@ namespace Saturn.Core.Sessions
 {
     public class PlatformSession
     {
-        public string SessionId { get; set; } = Guid.NewGuid().ToString();
+        public string SessionId { get; init; } = Guid.NewGuid().ToString();
         public string? UserId { get; set; }
         public string? ChannelId { get; set; }
         public PlatformType Platform { get; set; }
         public string? PlatformSpecificId { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public DateTime LastActivityAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
+        public DateTime LastActivityAt { get; private set; } = DateTime.UtcNow;
         public SessionState State { get; set; } = SessionState.Active;
         public Dictionary<string, object> Metadata { get; set; } = new();
         public SessionConfiguration Configuration { get; set; } = new();
@@ -22,6 +22,11 @@ namespace Saturn.Core.Sessions
         public List<string> ChildSessionIds { get; set; } = new();
         
         public void UpdateActivity()
+        {
+            LastActivityAt = DateTime.UtcNow;
+        }
+        
+        internal void Touch()
         {
             LastActivityAt = DateTime.UtcNow;
         }

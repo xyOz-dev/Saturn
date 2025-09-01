@@ -10,7 +10,7 @@ namespace Saturn.Core.Sessions
     public class SessionManager : IDisposable
     {
         private readonly ConcurrentDictionary<string, PlatformSession> _sessions = new();
-        private readonly ConcurrentDictionary<string, List<string>> _userSessions = new();
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _userSessions = new();
         private readonly ConcurrentDictionary<string, string> _platformMappings = new();
         private readonly Timer _cleanupTimer;
         private readonly TimeSpan _defaultTimeout = TimeSpan.FromMinutes(30);
@@ -45,13 +45,8 @@ namespace Saturn.Core.Sessions
             
             if (!string.IsNullOrEmpty(userId))
             {
-                _userSessions.AddOrUpdate(userId,
-                    new List<string> { session.SessionId },
-                    (_, list) =>
-                    {
-                        list.Add(session.SessionId);
-                        return list;
-                    });
+                var userSessionSet = _userSessions.GetOrAdd(userId, _ => new ConcurrentDictionary<string, byte>());
+                userSessionSet.TryAdd(session.SessionId, 0);
             }
             
             var platformKey = GetPlatformKey(platform, channelId);
@@ -91,8 +86,11 @@ namespace Saturn.Core.Sessions
         
         public List<PlatformSession> GetUserSessions(string userId)
         {
-            if (!_userSessions.TryGetValue(userId, out var sessionIds))
+            if (!_userSessions.TryGetValue(userId, out var userSessionSet))
                 return new List<PlatformSession>();
+            
+            // Take a snapshot of session IDs to avoid racey enumeration
+            var sessionIds = userSessionSet.Keys.ToList();
             
             return sessionIds
                 .Select(id => GetSession(id))
@@ -117,9 +115,9 @@ namespace Saturn.Core.Sessions
             
             if (!string.IsNullOrEmpty(session.UserId))
             {
-                if (_userSessions.TryGetValue(session.UserId, out var userSessionList))
+                if (_userSessions.TryGetValue(session.UserId, out var userSessionSet))
                 {
-                    userSessionList.Remove(sessionId);
+                    userSessionSet.TryRemove(sessionId, out _);
                 }
             }
             
@@ -136,9 +134,11 @@ namespace Saturn.Core.Sessions
         
         public async Task TerminateUserSessionsAsync(string userId)
         {
-            if (!_userSessions.TryGetValue(userId, out var sessionIds))
+            if (!_userSessions.TryGetValue(userId, out var userSessionSet))
                 return;
             
+            // Take a snapshot of session IDs to avoid racey enumeration
+            var sessionIds = userSessionSet.Keys.ToList();
             var tasks = sessionIds.Select(TerminateSessionAsync);
             await Task.WhenAll(tasks);
         }
