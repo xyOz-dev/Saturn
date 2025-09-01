@@ -115,7 +115,7 @@ namespace Saturn.Core.Platform.Streaming
         
         public async Task CompleteStreamAsync(string streamId, string? finalContent = null)
         {
-            if (!_streams.TryRemove(streamId, out var buffer))
+            if (!_streams.TryGetValue(streamId, out var buffer))
                 return;
             
             await FlushBufferAsync(streamId);
@@ -124,6 +124,8 @@ namespace Saturn.Core.Platform.Streaming
             {
                 await buffer.OnFlush(finalContent, null);
             }
+            
+            _streams.TryRemove(streamId, out _);
             
             StreamCompleted?.Invoke(this, new StreamingEventArgs 
             { 
