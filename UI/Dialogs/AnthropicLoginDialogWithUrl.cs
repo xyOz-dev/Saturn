@@ -1,10 +1,11 @@
 using System;
 using Terminal.Gui;
 using Saturn.Providers.Anthropic;
+using Saturn.Providers.Anthropic.Utils;
 
 namespace Saturn.UI.Dialogs
 {
-    public class AnthropicLoginDialog : Dialog
+    public class AnthropicLoginDialogWithUrl : Dialog
     {
         private TextView instructionsView = null!;
         private TextField codeField = null!;
@@ -14,11 +15,22 @@ namespace Saturn.UI.Dialogs
         private Button cancelButton = null!;
         private RadioGroup authMethodGroup = null!;
         
+        private PKCEGenerator.PKCEPair? _currentPKCE;
+        private string? _currentStateToken;
+        private string? _authUrl;
+        
         public string AuthorizationCode { get; private set; } = null!;
         public bool UseClaudeMax { get; private set; }
         public bool Success { get; private set; }
         
-        public AnthropicLoginDialog() : base("Anthropic Authentication")
+        // OAuth Configuration Constants (same as in AnthropicAuthService)
+        private const string CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+        private const string AUTH_URL_CLAUDE = "https://claude.ai/oauth/authorize";
+        private const string AUTH_URL_CONSOLE = "https://console.anthropic.com/oauth/authorize";
+        private const string REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback";
+        private const string SCOPES = "org:create_api_key user:profile user:inference";
+        
+        public AnthropicLoginDialogWithUrl() : base("Anthropic Authentication")
         {
             InitializeComponents();
         }
@@ -50,6 +62,7 @@ namespace Saturn.UI.Dialogs
             authMethodGroup.SelectedItemChanged += (args) =>
             {
                 UpdateInstructions();
+                GenerateAuthUrl(); // Regenerate URL when method changes
             };
             
             Add(authMethodGroup);
@@ -98,7 +111,6 @@ namespace Saturn.UI.Dialogs
             
             loginButton.Clicked += () =>
             {
-                UseClaudeMax = authMethodGroup.SelectedItem == 0;
                 OpenBrowser();
             };
             
@@ -110,7 +122,6 @@ namespace Saturn.UI.Dialogs
             
             pasteButton.Clicked += () =>
             {
-                // Try to get clipboard content
                 try
                 {
                     if (Clipboard.TryGetClipboardData(out string clipboardText))
@@ -143,7 +154,16 @@ namespace Saturn.UI.Dialogs
                     return;
                 }
                 
+                // Store the full code (including STATE if present)
                 AuthorizationCode = codeField.Text.ToString();
+                
+                // Store the PKCE verifier with the code for the exchange
+                if (_currentPKCE != null)
+                {
+                    // Append PKCE verifier to the code (will be parsed by auth service)
+                    AuthorizationCode = $"{AuthorizationCode}|{_currentPKCE.Verifier}";
+                }
+                
                 UseClaudeMax = authMethodGroup.SelectedItem == 0;
                 Success = true;
                 Application.RequestStop();
@@ -166,8 +186,51 @@ namespace Saturn.UI.Dialogs
             Add(okButton);
             Add(cancelButton);
             
-            // Set initial instructions
+            // Generate initial auth URL
+            GenerateAuthUrl();
             UpdateInstructions();
+        }
+        
+        private void GenerateAuthUrl()
+        {
+            // Generate PKCE pair for security
+            _currentPKCE = PKCEGenerator.Generate();
+            
+            // Generate state token for CSRF protection
+            _currentStateToken = GenerateStateToken();
+            
+            UseClaudeMax = authMethodGroup.SelectedItem == 0;
+            var baseUrl = UseClaudeMax ? AUTH_URL_CLAUDE : AUTH_URL_CONSOLE;
+            
+            var parameters = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["code"] = "true",
+                ["client_id"] = CLIENT_ID,
+                ["response_type"] = "code",
+                ["redirect_uri"] = REDIRECT_URI,
+                ["scope"] = SCOPES,
+                ["code_challenge"] = _currentPKCE.Challenge,
+                ["code_challenge_method"] = "S256",
+                ["state"] = _currentStateToken
+            };
+            
+            var queryString = string.Join("&", 
+                parameters.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
+            
+            _authUrl = $"{baseUrl}?{queryString}";
+        }
+        
+        private string GenerateStateToken()
+        {
+            var bytes = new byte[32];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(bytes);
+            }
+            return Convert.ToBase64String(bytes)
+                .Replace("+", "-")
+                .Replace("/", "_")
+                .TrimEnd('=');
         }
         
         private void UpdateInstructions()
@@ -179,7 +242,7 @@ namespace Saturn.UI.Dialogs
                 instructionsView.Text = 
                     "1. Click 'Open Browser' to launch the Claude authentication page\n" +
                     "2. Log in with your Claude Pro/Max account\n" +
-                    "3. After authorization, copy the code shown on the page\n" +
+                    "3. After authorization, copy the ENTIRE code shown (including #STATE)\n" +
                     "4. Paste the code in the field below and click 'Authenticate'";
             }
             else
@@ -187,33 +250,35 @@ namespace Saturn.UI.Dialogs
                 instructionsView.Text = 
                     "1. Click 'Open Browser' to open the Anthropic Console\n" +
                     "2. Log in or create an Anthropic account\n" +
-                    "3. Navigate to API Keys section and create a new key\n" +
-                    "4. Copy the authorization code and paste it below";
+                    "3. After authorization, copy the ENTIRE code shown (including #STATE)\n" +
+                    "4. Paste the code in the field below and click 'Authenticate'";
             }
         }
         
         private void OpenBrowser()
         {
-            var url = UseClaudeMax 
-                ? "https://claude.ai/login" 
-                : "https://console.anthropic.com/settings/keys";
+            if (string.IsNullOrEmpty(_authUrl))
+            {
+                GenerateAuthUrl();
+            }
             
             var message = UseClaudeMax 
                 ? "Opening claude.ai for authentication..." 
-                : "Opening console.anthropic.com for API key creation...";
+                : "Opening console.anthropic.com for authentication...";
             
             try
             {
-                // Actually open the browser
+                // Actually open the browser with the OAuth URL
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = url,
+                    FileName = _authUrl,
                     UseShellExecute = true
                 });
                 
                 MessageBox.Query("Browser", 
                     message + "\n\n" +
-                    "After authentication, copy the authorization code and paste it in the field below.", 
+                    "After authentication, copy the ENTIRE authorization code\n" +
+                    "(including #STATE if present) and paste it below.", 
                     "OK");
             }
             catch
@@ -221,15 +286,16 @@ namespace Saturn.UI.Dialogs
                 // If browser fails to open, show the URL
                 MessageBox.Query("Browser", 
                     "Please open the following URL in your browser:\n\n" +
-                    url + "\n\n" +
-                    "After authentication, copy the authorization code and paste it in the field below.", 
+                    _authUrl + "\n\n" +
+                    "After authentication, copy the ENTIRE authorization code\n" +
+                    "(including #STATE if present) and paste it below.", 
                     "OK");
             }
         }
         
         public static (bool success, string code, bool useClaudeMax) Show()
         {
-            var dialog = new AnthropicLoginDialog();
+            var dialog = new AnthropicLoginDialogWithUrl();
             Application.Run(dialog);
             return (dialog.Success, dialog.AuthorizationCode, dialog.UseClaudeMax);
         }

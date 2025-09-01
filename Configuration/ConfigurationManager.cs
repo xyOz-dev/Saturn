@@ -38,23 +38,38 @@ namespace Saturn.Configuration
                 }
 
                 var json = await File.ReadAllTextAsync(ConfigFilePath);
+                
+                // Remove any carriage return characters that might break JSON parsing
+                // This handles configs saved with Windows line endings
+                json = json.Replace("\r", "");
+                
                 var config = JsonSerializer.Deserialize<PersistedAgentConfiguration>(json, JsonOptions);
                 
-                if (config != null && config.RequireCommandApproval == null)
+                if (config != null)
                 {
-                    config.RequireCommandApproval = true;
-                }
-                
-                if (config != null && config.EnableUserRules == null)
-                {
-                    config.EnableUserRules = true;
+                    // Migrate old configuration format - set defaults for new fields
+                    if (config.RequireCommandApproval == null)
+                    {
+                        config.RequireCommandApproval = true;
+                    }
+                    
+                    if (config.EnableUserRules == null)
+                    {
+                        config.EnableUserRules = true;
+                    }
+                    
+                    // Ensure ProviderName is set (default to openrouter for old configs)
+                    if (string.IsNullOrEmpty(config.ProviderName))
+                    {
+                        config.ProviderName = "openrouter";
+                    }
                 }
                 
                 return config;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                // Silently handle the error - return null to indicate failure
                 return null;
             }
         }

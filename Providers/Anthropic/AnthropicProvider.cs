@@ -2,6 +2,8 @@ using System;
 using System.Threading.Tasks;
 using Saturn.Providers;
 using Saturn.Providers.Anthropic.Models;
+using Saturn.UI.Dialogs;
+using Terminal.Gui;
 
 namespace Saturn.Providers.Anthropic
 {
@@ -34,16 +36,33 @@ namespace Saturn.Providers.Anthropic
                     return true;
                 }
                 
-                // Start OAuth flow
-                Console.WriteLine("\nSelect authentication method:");
-                Console.WriteLine("1. Claude Pro/Max (OAuth)");
-                Console.WriteLine("2. Create API Key (requires Anthropic account)");
-                Console.Write("Choice (1-2): ");
+                // Use UI dialog if Terminal.Gui is initialized, otherwise fall back to console
+                bool useClaudeMax = true;
+                bool success = false;
                 
-                var choice = Console.ReadLine();
-                var useClaudeMax = choice != "2";
-                
-                var success = await _authService.AuthenticateAsync(useClaudeMax);
+                if (Application.Top != null)
+                {
+                    // Start the OAuth flow to generate PKCE and get the auth URL
+                    success = await _authService.AuthenticateWithDialogAsync();
+                }
+                else if (!Console.IsInputRedirected && Environment.UserInteractive)
+                {
+                    // Fall back to console input
+                    Console.WriteLine("\nSelect authentication method:");
+                    Console.WriteLine("1. Claude Pro/Max (OAuth)");
+                    Console.WriteLine("2. Create API Key (requires Anthropic account)");
+                    Console.Write("Choice (1-2): ");
+                    
+                    var choice = Console.ReadLine();
+                    useClaudeMax = choice != "2";
+                    
+                    success = await _authService.AuthenticateAsync(useClaudeMax);
+                }
+                else
+                {
+                    // Non-interactive environment
+                    return false;
+                }
                 
                 if (success)
                 {

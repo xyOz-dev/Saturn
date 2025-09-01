@@ -83,8 +83,7 @@ namespace Saturn.Providers.Anthropic
             }
             catch (Exception ex)
             {
-                // Log the exception type for debugging but still handle gracefully
-                System.Diagnostics.Debug.WriteLine($"Token decryption failed: {ex.GetType().Name}");
+                // Handle decryption failure gracefully
                 
                 // If decryption fails, attempt migration or delete corrupted file
                 return await HandleDecryptionFailure(encrypted);
@@ -113,7 +112,7 @@ namespace Saturn.Providers.Anthropic
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Secure deletion failed: {ex.Message}");
+                // Ignore secure deletion errors
                 // Fallback to regular deletion
                 try
                 {
@@ -338,7 +337,7 @@ namespace Saturn.Providers.Anthropic
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to save salt: {ex.Message}");
+                // Ignore salt save errors
                 // Continue with in-memory salt (less secure but functional)
             }
             
@@ -575,7 +574,7 @@ namespace Saturn.Providers.Anthropic
             catch
             {
                 // Ignore permission setting errors
-                System.Diagnostics.Debug.WriteLine($"Could not set restrictive permissions on {filePath}");
+                // Ignore permission setting errors on non-Windows platforms
             }
         }
         

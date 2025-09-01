@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Saturn.OpenRouter;
+using Saturn.UI.Dialogs;
+using Terminal.Gui;
 
 namespace Saturn.Providers.OpenRouter
 {
@@ -41,15 +43,43 @@ namespace Saturn.Providers.OpenRouter
             
             if (string.IsNullOrEmpty(_apiKey))
             {
-                // In test environments or headless mode, don't prompt for console input
+                // In test environments or headless mode, don't prompt for input
                 if (!Console.IsInputRedirected && Environment.UserInteractive)
                 {
-                    // Prompt user for API key
-                    Console.WriteLine("Enter your OpenRouter API key:");
-                    var userInput = Console.ReadLine();
-                    if (!string.IsNullOrWhiteSpace(userInput))
+                    // Use the modal dialog to get API key
+                    try
                     {
-                        _apiKey = userInput.Trim();
+                        // Check if Terminal.Gui is already initialized
+                        bool wasInitialized = Application.Top != null;
+                        
+                        // Initialize Terminal.Gui if not already initialized
+                        if (!wasInitialized)
+                        {
+                            Application.Init();
+                        }
+                        
+                        var (success, apiKey, saveKey) = OpenRouterApiKeyDialog.Show();
+                        
+                        if (success && !string.IsNullOrWhiteSpace(apiKey))
+                        {
+                            _apiKey = apiKey.Trim();
+                        }
+                        
+                        // Only shutdown Terminal.Gui if we initialized it
+                        if (!wasInitialized && Application.Top != null)
+                        {
+                            Application.Shutdown();
+                        }
+                    }
+                    catch
+                    {
+                        // Fallback to console input if dialog fails
+                        Console.WriteLine("Enter your OpenRouter API key:");
+                        var userInput = Console.ReadLine();
+                        if (!string.IsNullOrWhiteSpace(userInput))
+                        {
+                            _apiKey = userInput.Trim();
+                        }
                     }
                 }
             }
@@ -177,7 +207,13 @@ namespace Saturn.Providers.OpenRouter
         private string DecryptData(string encrypted)
         {
             // TODO: Implement proper decryption
-            return Encoding.UTF8.GetString(Convert.FromBase64String(encrypted));
+            var decrypted = Encoding.UTF8.GetString(Convert.FromBase64String(encrypted));
+            
+            // Remove carriage return characters that can break JSON parsing
+            // This handles configs saved with Windows line endings (CRLF)
+            decrypted = decrypted.Replace("\r", "");
+            
+            return decrypted;
         }
     }
 }

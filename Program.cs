@@ -88,7 +88,7 @@ namespace Saturn
             var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
             var defaultProvider = await ConfigurationManagerExtensions.GetDefaultProviderAsync();
             
-            // Priority: 1. Saved configuration provider, 2. Default provider, 3. Environment variable check, 4. New user flow
+            // Priority: 1. Saved configuration provider, 2. Default provider, 3. OpenRouter (default)
             string selectedProvider = null;
             
             if (!string.IsNullOrEmpty(persistedConfig?.ProviderName))
@@ -101,28 +101,17 @@ namespace Saturn
             }
             else
             {
-                // Check if legacy OpenRouter setup exists
-                var hasOpenRouterKey = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENROUTER_API_KEY"));
-                if (hasOpenRouterKey)
-                {
-                    selectedProvider = "openrouter";
-                    Console.WriteLine("Detected existing OpenRouter setup. Migrating to provider system...");
-                }
-                else
-                {
-                    // New user - show provider selection
-                    selectedProvider = ShowProviderSelectionForNewUser();
-                    if (string.IsNullOrEmpty(selectedProvider))
-                    {
-                        throw new InvalidOperationException("No provider selected. Cannot continue without a configured provider.");
-                    }
-                }
+                // Default to OpenRouter for new users without any interaction
+                selectedProvider = "openrouter";
+                
+                // Save OpenRouter as the default provider
+                await ConfigurationManagerExtensions.SetDefaultProviderAsync("openrouter");
             }
             
             // Initialize provider with error handling and fallbacks
             try
             {
-                Console.WriteLine($"Initializing {selectedProvider} provider...");
+                // Silent initialization - no console output
                 provider = await ProviderFactory.CreateAndAuthenticateAsync(selectedProvider);
                 llmClient = await provider.GetClientAsync();
                 
@@ -141,19 +130,16 @@ namespace Saturn
                     }
                 }
                 
-                Console.WriteLine($"Successfully initialized {provider.Name} provider.");
+                // Successfully initialized
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Failed to initialize {selectedProvider} provider: {ex.Message}");
-                
                 // Try fallback to OpenRouter if available
                 if (!selectedProvider.Equals("openrouter", StringComparison.OrdinalIgnoreCase))
                 {
                     var fallbackKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
                     if (!string.IsNullOrWhiteSpace(fallbackKey))
                     {
-                        Console.WriteLine("Falling back to OpenRouter...");
                         try
                         {
                             provider = await ProviderFactory.CreateAndAuthenticateAsync("openrouter");
@@ -165,21 +151,20 @@ namespace Saturn
                                 Title = "Saturn"
                             });
                             selectedProvider = "openrouter";
-                            Console.WriteLine("Successfully fell back to OpenRouter.");
                         }
                         catch
                         {
-                            throw new InvalidOperationException($"Primary provider '{selectedProvider}' failed and OpenRouter fallback also failed. Please check your configuration.");
+                            throw new InvalidOperationException($"Failed to initialize. Please set your OPENROUTER_API_KEY environment variable or run Saturn to configure.");
                         }
                     }
                     else
                     {
-                        throw new InvalidOperationException($"Provider '{selectedProvider}' failed to initialize and no fallback available. Error: {ex.Message}");
+                        throw new InvalidOperationException($"Failed to initialize. Please set your OPENROUTER_API_KEY environment variable or run Saturn to configure.");
                     }
                 }
                 else
                 {
-                    throw new InvalidOperationException($"OpenRouter provider failed to initialize. Please check your OPENROUTER_API_KEY environment variable. Error: {ex.Message}");
+                    throw new InvalidOperationException($"Failed to initialize. Please set your OPENROUTER_API_KEY environment variable or run Saturn to configure.");
                 }
             }
             
@@ -198,35 +183,9 @@ namespace Saturn
             persistedConfig.ProviderName = selectedProvider;
             await ConfigurationManager.SaveConfigurationAsync(persistedConfig);
             
-            Console.WriteLine($"Agent configured with {provider.Name} provider using model {agentConfig.Model}");
+            // Agent configured successfully
             
             return (new Agent(agentConfig), provider, legacyClient);
-        }
-        
-        private static string ShowProviderSelectionForNewUser()
-        {
-            Console.Clear();
-            Console.WriteLine("Welcome to Saturn!");
-            Console.WriteLine("═══════════════════════════════════════════════");
-            Console.WriteLine();
-            Console.WriteLine("To get started, please select an AI provider:");
-            Console.WriteLine();
-            Console.WriteLine("1. OpenRouter - Access multiple models through one API");
-            Console.WriteLine("2. Anthropic - Direct integration with Claude models");
-            Console.WriteLine();
-            Console.Write("Select provider (1-2): ");
-            
-            var input = Console.ReadLine();
-            switch (input?.Trim())
-            {
-                case "1":
-                    return "openrouter";
-                case "2":
-                    return "anthropic";
-                default:
-                    Console.WriteLine("Invalid selection. Please run the application again and choose a valid option.");
-                    return null;
-            }
         }
         
         private static async Task<Saturn.Agents.Core.AgentConfiguration> CreateAgentConfiguration(ILLMClient llmClient, PersistedAgentConfiguration persistedConfig, string providerName)

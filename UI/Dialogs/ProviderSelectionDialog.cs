@@ -169,8 +169,7 @@ namespace Saturn.UI.Dialogs
             }
             catch (Exception ex)
             {
-                // Log error but don't throw - return null to indicate failure
-                System.Diagnostics.Debug.WriteLine($"Provider selection failed: {ex.Message}");
+                // Silently handle error - return null to indicate failure
                 return null;
             }
         }
@@ -196,8 +195,7 @@ namespace Saturn.UI.Dialogs
             }
             catch (Exception ex)
             {
-                // Log error but don't throw - return null provider to indicate failure
-                System.Diagnostics.Debug.WriteLine($"Provider selection with options failed: {ex.Message}");
+                // Silently handle error - return null provider to indicate failure
                 return (null, false);
             }
         }

@@ -7,6 +7,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Saturn.Providers.Anthropic.Models;
 using Saturn.Providers.Anthropic.Utils;
+using Saturn.UI.Dialogs;
+using Terminal.Gui;
 
 namespace Saturn.Providers.Anthropic
 {
@@ -65,6 +67,56 @@ namespace Saturn.Providers.Anthropic
             catch (Exception ex)
             {
                 Console.WriteLine($"Authentication error: {ex.Message}");
+                return false;
+            }
+        }
+        
+        public async Task<bool> AuthenticateWithDialogAsync()
+        {
+            try
+            {
+                // Try to load existing valid tokens first
+                var existingTokens = await GetValidTokensAsync();
+                if (existingTokens != null)
+                {
+                    return true;
+                }
+                
+                // Show dialog to let user choose authentication method
+                var dialogResult = AnthropicLoginDialogWithUrl.Show();
+                
+                if (!dialogResult.success || string.IsNullOrEmpty(dialogResult.code))
+                {
+                    return false;
+                }
+                
+                // Parse the code and PKCE verifier if present
+                var code = dialogResult.code;
+                string? verifier = null;
+                
+                if (code.Contains("|"))
+                {
+                    var parts = code.Split('|', 2);
+                    code = parts[0];
+                    if (parts.Length > 1)
+                    {
+                        verifier = parts[1];
+                        // Set the PKCE verifier for the exchange
+                        _currentPKCE = new PKCEGenerator.PKCEPair 
+                        { 
+                            Verifier = verifier,
+                            Challenge = "" // Challenge not needed for exchange
+                        };
+                    }
+                }
+                
+                // Exchange the authorization code for tokens
+                var tokens = await ExchangeCodeForTokensAsync(code);
+                return tokens != null;
+            }
+            catch (Exception ex)
+            {
+                // Silently handle authentication error
                 return false;
             }
         }
