@@ -15,7 +15,9 @@ namespace Saturn.Core.Platform.Formatters
         
         public Task<FormattedResponse> FormatMessageAsync(Message message, FormattingContext context)
         {
-            var content = message?.Content?.ToString() ?? string.Empty;
+            var content = message?.Content.ValueKind != JsonValueKind.Undefined 
+                ? message.Content.ToString() 
+                : string.Empty;
             
             if (context.PreferPlainText)
             {
