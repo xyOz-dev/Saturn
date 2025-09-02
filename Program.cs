@@ -90,19 +90,23 @@ namespace Saturn
             
             // Priority: 1. Saved configuration provider, 2. Default provider, 3. OpenRouter (default)
             string selectedProvider = null;
+            string originalSelectedProvider = null; // Track the original selection
             
             if (!string.IsNullOrEmpty(persistedConfig?.ProviderName))
             {
                 selectedProvider = persistedConfig.ProviderName;
+                originalSelectedProvider = selectedProvider; // Remember the original choice
             }
             else if (!string.IsNullOrEmpty(defaultProvider))
             {
                 selectedProvider = defaultProvider;
+                originalSelectedProvider = selectedProvider; // Remember the original choice
             }
             else
             {
                 // Default to OpenRouter for new users without any interaction
                 selectedProvider = "openrouter";
+                originalSelectedProvider = selectedProvider;
                 
                 // Save OpenRouter as the default provider
                 await ConfigurationManagerExtensions.SetDefaultProviderAsync("openrouter");
@@ -180,7 +184,7 @@ namespace Saturn
                 persistedConfig = ConfigurationManager.FromAgentConfiguration(agentConfig);
             }
             
-            persistedConfig.ProviderName = selectedProvider;
+            persistedConfig.ProviderName = originalSelectedProvider; // Use original selection, not fallback
             await ConfigurationManager.SaveConfigurationAsync(persistedConfig);
             
             // Agent configured successfully
