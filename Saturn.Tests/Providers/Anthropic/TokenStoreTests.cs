@@ -77,6 +77,40 @@ namespace Saturn.Tests.Providers.Anthropic
         }
         
         [Fact]
+        public void StoredTokens_IsExpired_Property_WorksCorrectly()
+        {
+            // Test expired tokens
+            var expiredTokens = new StoredTokens
+            {
+                AccessToken = "test",
+                RefreshToken = "test",
+                ExpiresAt = DateTime.UtcNow.AddHours(-1), // Expired 1 hour ago
+                CreatedAt = DateTime.UtcNow.AddHours(-2)
+            };
+            expiredTokens.IsExpired.Should().BeTrue("tokens expired an hour ago should be marked as expired");
+            
+            // Test valid tokens
+            var validTokens = new StoredTokens
+            {
+                AccessToken = "test",
+                RefreshToken = "test",
+                ExpiresAt = DateTime.UtcNow.AddHours(1), // Expires in 1 hour
+                CreatedAt = DateTime.UtcNow
+            };
+            validTokens.IsExpired.Should().BeFalse("tokens expiring in the future should not be marked as expired");
+            
+            // Test edge case - exactly at expiration
+            var edgeCaseTokens = new StoredTokens
+            {
+                AccessToken = "test",
+                RefreshToken = "test",
+                ExpiresAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-30)
+            };
+            edgeCaseTokens.IsExpired.Should().BeTrue("tokens at exact expiration time should be marked as expired");
+        }
+        
+        [Fact]
         public async Task LoadTokens_HandlesCorruptedFile()
         {
             // Arrange
@@ -166,77 +200,30 @@ namespace Saturn.Tests.Providers.Anthropic
         [Fact]
         public async Task LoadTokens_ReturnsCorrectExpirationStatus()
         {
-            // Arrange - Use the TokenStore's own save mechanism to ensure proper encryption
-            // Then we'll create a new TokenStore instance to test the load logic
-            var expiredTokens = TestConstants.CreateExpiredTokens();
-            
-            // We need to bypass the validation in SaveTokensAsync for expired tokens
-            // So we'll save valid tokens first, then manipulate the file
-            var validTokens = TestConstants.CreateValidTokens();
-            await _tokenStore.SaveTokensAsync(validTokens);
-            
-            // Read the encrypted format
-            var actualPath = GetActualTokenPath();
-            var encryptedContent = await File.ReadAllTextAsync(actualPath);
-            
-            // Now we need to decrypt, modify, and re-encrypt
-            // Since we can't easily do this without internal access, we'll use a different approach:
-            // Save expired tokens with a future CreatedAt date to bypass validation
-            var futureExpiredTokens = new StoredTokens
+            // Arrange - Use a time-travel approach that works on all platforms
+            // Save tokens that will expire very soon
+            var shortLivedTokens = new StoredTokens
             {
-                AccessToken = expiredTokens.AccessToken,
-                RefreshToken = expiredTokens.RefreshToken,
-                ExpiresAt = DateTime.UtcNow.AddHours(-2), // Expired 2 hours ago
-                CreatedAt = DateTime.UtcNow.AddHours(-3)  // Created 3 hours ago
+                AccessToken = TestConstants.TestAccessToken,
+                RefreshToken = TestConstants.TestRefreshToken,
+                ExpiresAt = DateTime.UtcNow.AddMilliseconds(100), // Expires in 100ms
+                CreatedAt = DateTime.UtcNow
             };
             
-            // Directly write the expired tokens using the proper encryption for each platform
-            var json = System.Text.Json.JsonSerializer.Serialize(futureExpiredTokens);
+            // Act - Save the tokens, wait for expiration, then load
+            await _tokenStore.SaveTokensAsync(shortLivedTokens);
             
-            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-            {
-                // Use DPAPI to encrypt the expired tokens properly
-                var plainBytes = System.Text.Encoding.UTF8.GetBytes(json);
-                var encryptedBytes = System.Security.Cryptography.ProtectedData.Protect(
-                    plainBytes, 
-                    null, 
-                    System.Security.Cryptography.DataProtectionScope.CurrentUser);
-                var encryptedData = "SATURN_ENC_V1:" + Convert.ToBase64String(encryptedBytes);
-                await File.WriteAllTextAsync(actualPath, encryptedData);
-            }
-            else
-            {
-                // For non-Windows, we need to handle this differently
-                // The TokenStore uses AES encryption on non-Windows platforms
-                // Since we can't easily replicate the AES encryption without the keys,
-                // we'll skip this test on non-Windows platforms
-                // OR we can test the actual behavior: that legacy/corrupted files return null
-                
-                // Create a legacy format file that will trigger migration attempt
-                var legacyData = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
-                await File.WriteAllTextAsync(actualPath, legacyData);
-            }
+            // Wait for the tokens to expire
+            await Task.Delay(200);
             
-            // Act
+            // Load the now-expired tokens
             var loadedTokens = await _tokenStore.LoadTokensAsync();
             
-            // Assert - Different expectations for different platforms
-            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-            {
-                // On Windows with DPAPI, we should successfully load the expired tokens
-                loadedTokens.Should().NotBeNull();
-                loadedTokens.IsExpired.Should().BeTrue("loaded tokens should be marked as expired");
-            }
-            else
-            {
-                // On non-Windows, the legacy format migration might fail or succeed
-                // If it succeeds, check expiration; if it fails (returns null), that's also acceptable
-                if (loadedTokens != null)
-                {
-                    loadedTokens.IsExpired.Should().BeTrue("loaded tokens should be marked as expired if migration succeeded");
-                }
-                // else: null is acceptable as the migration/decryption might fail for the test data
-            }
+            // Assert - The tokens should be loaded but marked as expired
+            loadedTokens.Should().NotBeNull("tokens should be successfully loaded");
+            loadedTokens.AccessToken.Should().Be(shortLivedTokens.AccessToken);
+            loadedTokens.RefreshToken.Should().Be(shortLivedTokens.RefreshToken);
+            loadedTokens.IsExpired.Should().BeTrue("tokens should be marked as expired after the delay");
         }
         
         [Fact]
