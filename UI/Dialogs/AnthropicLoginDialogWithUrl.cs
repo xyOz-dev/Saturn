@@ -283,14 +283,60 @@ namespace Saturn.UI.Dialogs
             }
             catch
             {
-                // If browser fails to open, show the URL
-                MessageBox.Query("Browser", 
-                    "Please open the following URL in your browser:\n\n" +
-                    _authUrl + "\n\n" +
-                    "After authentication, copy the ENTIRE authorization code\n" +
-                    "(including #STATE if present) and paste it below.", 
-                    "OK");
+                // If browser fails to open (common on WSL), show URL in a copyable dialog
+                ShowUrlDialog();
             }
+        }
+        
+        private void ShowUrlDialog()
+        {
+            var urlDialog = new Dialog("Open Browser Manually")
+            {
+                Width = Dim.Percent(70),
+                Height = 12
+            };
+            
+            var instructionLabel = new Label(
+                "Unable to open browser automatically (common on WSL).\n\n" +
+                "Click 'Copy URL to Clipboard' below, then paste it in your browser.\n" +
+                "After authentication, paste the ENTIRE code (including #STATE) below.")
+            {
+                X = 1,
+                Y = 1,
+                Width = Dim.Fill() - 2
+            };
+            urlDialog.Add(instructionLabel);
+            
+            var copyButton = new Button("Copy URL to Clipboard")
+            {
+                X = Pos.Center() - 15,
+                Y = 6
+            };
+            copyButton.Clicked += () =>
+            {
+                try
+                {
+                    Clipboard.TrySetClipboardData(_authUrl);
+                    MessageBox.Query("Success", "URL copied to clipboard!\n\nNow paste it in your browser.", "OK");
+                }
+                catch
+                {
+                    // If clipboard fails, show the URL as fallback
+                    MessageBox.Query("Copy URL Manually", 
+                        $"Unable to copy to clipboard.\n\nPlease copy this URL manually:\n\n{_authUrl}", "OK");
+                }
+            };
+            urlDialog.Add(copyButton);
+            
+            var okButton = new Button("OK")
+            {
+                X = Pos.Center() + 5,
+                Y = 6
+            };
+            okButton.Clicked += () => Application.RequestStop();
+            urlDialog.Add(okButton);
+            
+            Application.Run(urlDialog);
         }
         
         public static (bool success, string code, bool useClaudeMax) Show()

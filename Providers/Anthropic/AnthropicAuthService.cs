@@ -239,17 +239,17 @@ namespace Saturn.Providers.Anthropic
                 {
                     if (receivedState != _currentStateToken)
                     {
-                        Console.WriteLine("⚠️  Warning: State parameter mismatch detected. This could indicate a security issue.");
+                        // State mismatch is a security issue - throw without console output that disrupts UI
                         throw new ArgumentException("Invalid state parameter - possible CSRF attack");
                     }
                 }
                 else if (string.IsNullOrEmpty(receivedState))
                 {
-                    Console.WriteLine("⚠️  Warning: State parameter not provided in OAuth response. Proceeding without state validation.");
+                    // State parameter not provided - common on WSL, proceed silently
                 }
                 else if (string.IsNullOrEmpty(_currentStateToken))
                 {
-                    Console.WriteLine("⚠️  Warning: Current state token is missing. Proceeding without state validation.");
+                    // Current state token missing - proceed silently
                 }
                 
                 // Prepare token request
