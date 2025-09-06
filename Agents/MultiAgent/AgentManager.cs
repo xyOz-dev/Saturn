@@ -66,7 +66,7 @@ namespace Saturn.Agents.MultiAgent
         public async Task<(bool success, string result, List<string>? runningTaskIds)> TryCreateSubAgent(
             string name, 
             string purpose, 
-            string model = "anthropic/claude-3.5-sonnet",
+            string model = "anthropic/claude-sonnet-4",
             bool enableTools = true,
             double? temperature = null,
             int? maxTokens = null,

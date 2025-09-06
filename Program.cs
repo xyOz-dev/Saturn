@@ -92,15 +92,24 @@ namespace Saturn
             string selectedProvider = null;
             string originalSelectedProvider = null; // Track the original selection
             
+            // First check persisted config
             if (!string.IsNullOrEmpty(persistedConfig?.ProviderName))
             {
                 selectedProvider = persistedConfig.ProviderName;
                 originalSelectedProvider = selectedProvider; // Remember the original choice
             }
+            // Then check default provider preference
             else if (!string.IsNullOrEmpty(defaultProvider))
             {
                 selectedProvider = defaultProvider;
                 originalSelectedProvider = selectedProvider; // Remember the original choice
+                
+                // If we have a default provider but no persisted config provider,
+                // ensure it gets saved to persisted config
+                if (persistedConfig != null)
+                {
+                    persistedConfig.ProviderName = defaultProvider;
+                }
             }
             else
             {

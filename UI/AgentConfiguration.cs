@@ -150,8 +150,6 @@ Operating Principles
                 ("anthropic/claude-opus-4.1", "Anthropic: Opus-4.1"),
                 ("anthropic/claude-opus-4", "Anthropic: Opus-4"),
                 ("anthropic/claude-sonnet-4", "Anthropic: Sonnet-4"),
-                ("anthropic/claude-3.7-sonnet", "Anthropic: Sonnet-3.7"),
-                ("anthropic/claude-3.5-haiku", "Anthropic: Haiku-3.5"),
                 ("moonshotai/kimi-k2:free", "Kimi-K2")
             };
 

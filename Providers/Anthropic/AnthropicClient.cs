@@ -110,7 +110,10 @@ namespace Saturn.Providers.Anthropic
                 }
                 
                 // Convert to common format
-                return MessageConverter.ConvertFromAnthropicResponse(anthropicResponse);
+                var result = MessageConverter.ConvertFromAnthropicResponse(anthropicResponse);
+                // Preserve the requested model name instead of what the API returns
+                result.Model = anthropicRequest.Model;
+                return result;
             }, maxRetries: 3, cancellationToken);
         }
         
@@ -227,7 +230,9 @@ namespace Saturn.Providers.Anthropic
                         if (streamEvent?.Type == "message_start")
                         {
                             finalResponse.Id = streamEvent.Message?.Id ?? string.Empty;
-                            finalResponse.Model = streamEvent.Message?.Model ?? string.Empty;
+                            // Preserve the requested model name instead of what the API returns
+                            // The API might return the underlying model (e.g., Claude 3.5 Sonnet for Opus 4.1)
+                            finalResponse.Model = anthropicRequest.Model;
                         }
                         else if (streamEvent?.Type == "content_block_start")
                         {
@@ -330,6 +335,16 @@ namespace Saturn.Providers.Anthropic
                     InputCost = 0, // Free with Claude Pro/Max
                     OutputCost = 0,
                     Description = "The latest Claude model with improved reasoning and coding capabilities"
+                },
+                new ModelInfo
+                {
+                    Id = "claude-opus-4-1-20250805",
+                    Name = "Claude Opus 4.1",
+                    Provider = "Anthropic",
+                    MaxTokens = 200000,
+                    InputCost = 0, // Free with Claude Pro/Max
+                    OutputCost = 0,
+                    Description = "Most capable model for complex analysis, research, and creative tasks"
                 }
             });
         }

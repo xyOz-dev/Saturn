@@ -24,14 +24,14 @@ namespace Saturn.Config
             caseInsensitive: true
         );
         
-        public string DefaultModel { get; set; } = "anthropic/claude-3.5-sonnet";
+        public string DefaultModel { get; set; } = "anthropic/claude-sonnet-4";
         public double DefaultTemperature { get; set; } = 0.3;
         public int DefaultMaxTokens { get; set; } = 4096;
         public double DefaultTopP { get; set; } = 0.95;
         public bool DefaultEnableTools { get; set; } = true;
         
         public bool EnableReviewStage { get; set; } = false;
-        public string ReviewerModel { get; set; } = "anthropic/claude-3.5-sonnet";
+        public string ReviewerModel { get; set; } = "anthropic/claude-sonnet-4";
         public int ReviewTimeoutSeconds { get; set; } = 300;
         public int MaxRevisionCycles { get; set; } = 2;
         

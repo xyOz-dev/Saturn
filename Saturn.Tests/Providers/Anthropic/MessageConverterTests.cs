@@ -196,7 +196,8 @@ namespace Saturn.Tests.Providers.Anthropic
             
             // Assert
             result.Temperature.Should().Be(0.7);
-            result.TopP.Should().Be(0.9);
+            // TopP is intentionally not set for Anthropic API (can't use both temperature and top_p)
+            result.TopP.Should().BeNull();
             result.MaxTokens.Should().Be(1000);
             result.Stream.Should().BeTrue();
         }

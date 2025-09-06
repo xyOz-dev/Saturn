@@ -82,7 +82,7 @@ namespace Saturn.Tests.Configuration
         }
         
         [Fact]
-        public async Task LoadConfiguration_WithMissingProviderName_ShouldDefaultToOpenRouter()
+        public async Task LoadConfiguration_WithMissingProviderName_ShouldNotDefault()
         {
             // Arrange
             var json = @"{
@@ -98,7 +98,8 @@ namespace Saturn.Tests.Configuration
             
             // Assert
             loadedConfig.Should().NotBeNull();
-            loadedConfig!.ProviderName.Should().Be("openrouter");
+            // ProviderName should be null when not specified (no longer defaults to openrouter)
+            loadedConfig!.ProviderName.Should().BeNull();
         }
         
         [Fact]

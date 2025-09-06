@@ -16,7 +16,8 @@ namespace Saturn.Providers.Anthropic.Utils
                 Model = ConvertModelName(request.Model),
                 MaxTokens = request.MaxTokens ?? 4096,
                 Temperature = request.Temperature,
-                TopP = request.TopP,
+                // TopP is not set - Anthropic API doesn't allow both temperature and top_p
+                // Using temperature only as recommended by Anthropic documentation
                 Stream = request.Stream,
                 Messages = new List<AnthropicMessage>(),
                 Tools = ConvertTools(request.Tools)
@@ -74,7 +75,8 @@ namespace Saturn.Providers.Anthropic.Utils
             {
                 ["claude-sonnet-4"] = "claude-sonnet-4-20250514",
                 ["anthropic/claude-sonnet-4"] = "claude-sonnet-4-20250514",
-                ["anthropic(claude-opus-4.1"] = "claude-opus-4-1-20250805"
+                ["anthropic/claude-opus-4.1"] = "claude-opus-4-1-20250805",
+                ["claude-opus-4.1"] = "claude-opus-4-1-20250805"
             };
             
             return modelMap.TryGetValue(model, out var mapped) ? mapped : model;

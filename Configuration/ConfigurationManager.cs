@@ -78,11 +78,12 @@ namespace Saturn.Configuration
                         config.EnableUserRules = true;
                     }
                     
-                    // Ensure ProviderName is set (default to openrouter for old configs)
-                    if (string.IsNullOrEmpty(config.ProviderName))
-                    {
-                        config.ProviderName = "openrouter";
-                    }
+                    // Don't override ProviderName - let the Program.cs handle provider selection
+                    // This was causing Anthropic to switch to OpenRouter on restart
+                    // if (string.IsNullOrEmpty(config.ProviderName))
+                    // {
+                    //     config.ProviderName = "openrouter";
+                    // }
                 }
                 
                 return config;
