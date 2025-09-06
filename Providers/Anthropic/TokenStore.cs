@@ -24,6 +24,18 @@ namespace Saturn.Providers.Anthropic
         public TokenStore()
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            
+            // Fallback for environments where ApplicationData is not set (like in tests on Linux)
+            if (string.IsNullOrEmpty(appData))
+            {
+                appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+                if (string.IsNullOrEmpty(appData) || !Directory.Exists(Path.GetDirectoryName(appData)))
+                {
+                    // Ultimate fallback for test environments
+                    appData = Path.GetTempPath();
+                }
+            }
+            
             var saturnDir = Path.Combine(appData, "Saturn", "auth");
             Directory.CreateDirectory(saturnDir);
             _tokenPath = Path.Combine(saturnDir, "anthropic.tokens");

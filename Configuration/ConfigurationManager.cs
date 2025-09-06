@@ -13,12 +13,32 @@ namespace Saturn.Configuration
     {
         private static readonly Regex providerNameRegex =
             new(@"^[a-zA-Z0-9\-_]+$", RegexOptions.Compiled);
-        private static readonly string AppDataPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Saturn"
-        );
         
-        private static readonly string ConfigFilePath = Path.Combine(AppDataPath, "agent-config.json");
+        // Support environment variable override for testing
+        private static string GetAppDataPath()
+        {
+            var testPath = Environment.GetEnvironmentVariable("SATURN_TEST_CONFIG_PATH");
+            if (!string.IsNullOrEmpty(testPath))
+                return testPath;
+                
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            
+            // Fallback for environments where ApplicationData is not set
+            if (string.IsNullOrEmpty(appData))
+            {
+                appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+                if (string.IsNullOrEmpty(appData) || !Directory.Exists(Path.GetDirectoryName(appData)))
+                {
+                    appData = Path.GetTempPath();
+                }
+            }
+            
+            return Path.Combine(appData, "Saturn");
+        }
+        
+        private static string AppDataPath => GetAppDataPath();
+        
+        private static string ConfigFilePath => Path.Combine(AppDataPath, "agent-config.json");
         
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
@@ -106,7 +126,10 @@ namespace Saturn.Configuration
         
         private static async Task WriteFileAtomicallyAsync(string filePath, string content)
         {
-            var tempPath = filePath + ".tmp";
+            // Use unique temp file name to avoid collisions
+            var dir = Path.GetDirectoryName(filePath) ?? Path.GetTempPath();
+            var fileName = Path.GetFileName(filePath);
+            var tempPath = Path.Combine(dir, $"{fileName}.tmp.{Guid.NewGuid():N}");
             
             try
             {

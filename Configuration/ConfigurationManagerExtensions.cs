@@ -7,11 +7,25 @@ namespace Saturn.Configuration
 {
     public static class ConfigurationManagerExtensions
     {
-        private static readonly string ProviderConfigPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Saturn",
-            "provider.config"
-        );
+        private static readonly string ProviderConfigPath = GetProviderConfigPath();
+        
+        private static string GetProviderConfigPath()
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            
+            // Fallback for environments where ApplicationData is not set (like in tests on Linux)
+            if (string.IsNullOrEmpty(appData))
+            {
+                appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+                if (string.IsNullOrEmpty(appData) || !Directory.Exists(Path.GetDirectoryName(appData)))
+                {
+                    // Ultimate fallback for test environments
+                    appData = Path.GetTempPath();
+                }
+            }
+            
+            return Path.Combine(appData, "Saturn", "provider.config");
+        }
         
         public static async Task<string> GetDefaultProviderAsync()
         {

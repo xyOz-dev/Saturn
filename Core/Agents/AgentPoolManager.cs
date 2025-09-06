@@ -111,7 +111,11 @@ namespace Saturn.Core.Agents
         
         private async Task<Agent> CreateNewAgent(AgentConfiguration configuration)
         {
-            configuration.Client = new OpenRouterClientWrapper(_client);
+            // Only use default client if none provided
+            if (configuration.Client == null)
+            {
+                configuration.Client = new OpenRouterClientWrapper(_client);
+            }
             
             if (configuration.EnableUserRules && _configuration.InheritUserRules)
             {
