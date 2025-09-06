@@ -23,20 +23,33 @@ namespace Saturn.Providers.Anthropic
         
         public TokenStore()
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            // Check for test environment override first
+            var testPath = Environment.GetEnvironmentVariable("SATURN_TEST_CONFIG_PATH");
+            string appData;
             
-            // Fallback for environments where ApplicationData is not set (like in tests on Linux)
-            if (string.IsNullOrEmpty(appData))
+            if (!string.IsNullOrEmpty(testPath))
             {
-                appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
-                if (string.IsNullOrEmpty(appData) || !Directory.Exists(Path.GetDirectoryName(appData)))
+                appData = testPath;
+            }
+            else
+            {
+                appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                
+                // Fallback for environments where ApplicationData is not set (like in tests on Linux)
+                if (string.IsNullOrEmpty(appData))
                 {
-                    // Ultimate fallback for test environments
-                    appData = Path.GetTempPath();
+                    appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+                    if (string.IsNullOrEmpty(appData) || !Directory.Exists(Path.GetDirectoryName(appData)))
+                    {
+                        // Ultimate fallback for test environments
+                        appData = Path.GetTempPath();
+                    }
                 }
+                
+                appData = Path.Combine(appData, "Saturn");
             }
             
-            var saturnDir = Path.Combine(appData, "Saturn", "auth");
+            var saturnDir = Path.Combine(appData, "auth");
             Directory.CreateDirectory(saturnDir);
             _tokenPath = Path.Combine(saturnDir, "anthropic.tokens");
             _keyPath = Path.Combine(saturnDir, ".keystore");
@@ -487,9 +500,29 @@ namespace Saturn.Providers.Anthropic
         
         private byte[] GetLegacyKey()
         {
-            var legacyKeyPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Saturn", "auth", ".key");
+            // Use same path logic as constructor for consistency
+            var testPath = Environment.GetEnvironmentVariable("SATURN_TEST_CONFIG_PATH");
+            string appData;
+            
+            if (!string.IsNullOrEmpty(testPath))
+            {
+                appData = testPath;
+            }
+            else
+            {
+                appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                if (string.IsNullOrEmpty(appData))
+                {
+                    appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+                    if (string.IsNullOrEmpty(appData) || !Directory.Exists(Path.GetDirectoryName(appData)))
+                    {
+                        appData = Path.GetTempPath();
+                    }
+                }
+                appData = Path.Combine(appData, "Saturn");
+            }
+            
+            var legacyKeyPath = Path.Combine(appData, "auth", ".key");
                 
             if (File.Exists(legacyKeyPath))
             {

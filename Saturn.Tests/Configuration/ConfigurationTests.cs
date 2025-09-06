@@ -11,6 +11,7 @@ using Saturn.Configuration.Objects;
 
 namespace Saturn.Tests.Configuration
 {
+
     public class ConfigurationTests : IDisposable
     {
         private readonly string _testConfigPath;
@@ -23,19 +24,26 @@ namespace Saturn.Tests.Configuration
             Directory.CreateDirectory(_testAppDataPath);
             _testConfigPath = Path.Combine(_testAppDataPath, "agent-config.json");
             
-            // Override the ConfigurationManager paths for testing
-            var configManagerType = typeof(ConfigurationManager);
-            var appDataField = configManagerType.GetField("AppDataPath", 
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-            appDataField?.SetValue(null, _testAppDataPath);
+            // Use environment variable to override the config path for testing
+            Environment.SetEnvironmentVariable("SATURN_TEST_CONFIG_PATH", _testAppDataPath);
         }
         
         public void Dispose()
         {
+            // Clean up environment variable
+            Environment.SetEnvironmentVariable("SATURN_TEST_CONFIG_PATH", null);
+            
             // Clean up test directory
-            if (Directory.Exists(_testAppDataPath))
+            try
             {
-                Directory.Delete(_testAppDataPath, true);
+                if (Directory.Exists(_testAppDataPath))
+                {
+                    Directory.Delete(_testAppDataPath, true);
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors (common on Windows due to file locks)
             }
         }
         
@@ -55,7 +63,8 @@ namespace Saturn.Tests.Configuration
             
             var json = JsonSerializer.Serialize(config, new JsonSerializerOptions 
             { 
-                WriteIndented = true 
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             });
             
             // Add Windows line endings (CRLF)
@@ -77,9 +86,9 @@ namespace Saturn.Tests.Configuration
         {
             // Arrange
             var json = @"{
-                ""Name"": ""TestAgent"",
-                ""Model"": ""test-model"",
-                ""Temperature"": 0.7
+                ""name"": ""TestAgent"",
+                ""model"": ""test-model"",
+                ""temperature"": 0.7
             }";
             
             await File.WriteAllTextAsync(_testConfigPath, json);
@@ -97,8 +106,8 @@ namespace Saturn.Tests.Configuration
         {
             // Arrange
             var json = @"{
-                ""Name"": ""TestAgent"",
-                ""Model"": ""test-model""
+                ""name"": ""TestAgent"",
+                ""model"": ""test-model""
             }";
             
             await File.WriteAllTextAsync(_testConfigPath, json);
@@ -157,6 +166,7 @@ namespace Saturn.Tests.Configuration
         }
     }
     
+    
     public class OpenRouterProviderConfigTests
     {
         [Fact]
@@ -185,8 +195,9 @@ namespace Saturn.Tests.Configuration
             decrypted.Should().NotContain("\r");
             
             // Should be valid JSON
-            var config = JsonSerializer.Deserialize<dynamic>(decrypted);
-            config.Should().NotBeNull();
+            var config = JsonSerializer.Deserialize<JsonElement>(decrypted);
+            config.ValueKind.Should().NotBe(JsonValueKind.Null);
+            config.ValueKind.Should().NotBe(JsonValueKind.Undefined);
         }
     }
 }

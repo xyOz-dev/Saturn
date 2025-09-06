@@ -24,11 +24,11 @@ namespace Saturn.Tests.Providers.Anthropic
             
             _testPath = Path.Combine(_testDir, "anthropic.tokens");
             
-            // Create TokenStore with custom path for testing
-            _tokenStore = new TokenStore();
+            // Set environment variable so TokenStore uses our test directory
+            Environment.SetEnvironmentVariable("SATURN_TEST_CONFIG_PATH", _testDir);
             
-            // We'll need to use reflection or create a testable version
-            // For now, we'll work with the default behavior and clean up
+            // Create TokenStore with test path
+            _tokenStore = new TokenStore();
         }
         
         [Fact]
@@ -453,8 +453,8 @@ namespace Saturn.Tests.Providers.Anthropic
         
         private string GetActualTokenPath()
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            return Path.Combine(appData, "Saturn", "auth", "anthropic.tokens");
+            // Use the test directory we set up via environment variable
+            return Path.Combine(_testDir, "auth", "anthropic.tokens");
         }
         
         private void CleanupTokenFile()
@@ -470,6 +470,9 @@ namespace Saturn.Tests.Providers.Anthropic
         {
             try
             {
+                // Clean up environment variable
+                Environment.SetEnvironmentVariable("SATURN_TEST_CONFIG_PATH", null);
+                
                 CleanupTokenFile();
                 
                 // Also cleanup test directory if we created one
