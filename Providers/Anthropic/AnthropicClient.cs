@@ -21,7 +21,7 @@ namespace Saturn.Providers.Anthropic
         private const string MESSAGES_ENDPOINT = "/v1/messages";
         private const string ANTHROPIC_VERSION = "2023-06-01";
         private const string ANTHROPIC_BETA = "oauth-2025-04-20";
-        
+
         private readonly HttpClient _httpClient;
         private readonly AnthropicAuthService _authService;
         
@@ -82,13 +82,8 @@ namespace Saturn.Providers.Anthropic
                 throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request.TopP));
             
             // Validate opus-4.1 specific constraints
-            if (request.Model != null && request.Model.Equals("opus-4.1", StringComparison.OrdinalIgnoreCase))
-            {
-                if (request.Temperature.HasValue && request.TopP.HasValue)
-                {
-                    throw new ArgumentException("When using opus-4.1 model, Temperature and TopP cannot both be specified", nameof(request.TopP));
-                }
-            }
+            // Note: MessageConverter will handle the preference (Temperature over TopP) for Opus 4.1
+            // We don't throw here to allow graceful handling of configurations that set both
             
             return await ErrorHandler.ExecuteWithRetryAsync(async () =>
             {
@@ -178,13 +173,8 @@ namespace Saturn.Providers.Anthropic
                 throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request.TopP));
             
             // Validate opus-4.1 specific constraints
-            if (request.Model != null && request.Model.Equals("opus-4.1", StringComparison.OrdinalIgnoreCase))
-            {
-                if (request.Temperature.HasValue && request.TopP.HasValue)
-                {
-                    throw new ArgumentException("When using opus-4.1 model, Temperature and TopP cannot both be specified", nameof(request.TopP));
-                }
-            }
+            // Note: MessageConverter will handle the preference (Temperature over TopP) for Opus 4.1
+            // We don't throw here to allow graceful handling of configurations that set both
             
             // Converting to Anthropic format
             
@@ -394,7 +384,7 @@ namespace Saturn.Providers.Anthropic
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
             httpRequest.Headers.Add("anthropic-version", ANTHROPIC_VERSION);
             httpRequest.Headers.Add("anthropic-beta", ANTHROPIC_BETA);
-            
+
             // Add Accept header for SSE if streaming
             if (request.Stream)
             {
