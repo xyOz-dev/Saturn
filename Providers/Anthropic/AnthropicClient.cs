@@ -72,14 +72,23 @@ namespace Saturn.Providers.Anthropic
             }
             
             // Validate optional parameters
-            if (request.Temperature.HasValue && (request.Temperature.Value < 0 || request.Temperature.Value > 2))
-                throw new ArgumentException("Temperature must be between 0 and 2", nameof(request));
+            if (request.Temperature.HasValue && (request.Temperature.Value < 0 || request.Temperature.Value > 1))
+                throw new ArgumentException("Temperature must be between 0 and 1 (inclusive)", nameof(request.Temperature));
             
             if (request.MaxTokens.HasValue && request.MaxTokens.Value <= 0)
-                throw new ArgumentException("MaxTokens must be greater than 0", nameof(request));
+                throw new ArgumentException("MaxTokens must be greater than 0", nameof(request.MaxTokens));
             
             if (request.TopP.HasValue && (request.TopP.Value < 0 || request.TopP.Value > 1))
-                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request));
+                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request.TopP));
+            
+            // Validate opus-4.1 specific constraints
+            if (request.Model != null && request.Model.Equals("opus-4.1", StringComparison.OrdinalIgnoreCase))
+            {
+                if (request.Temperature.HasValue && request.TopP.HasValue)
+                {
+                    throw new ArgumentException("When using opus-4.1 model, Temperature and TopP cannot both be specified", nameof(request.TopP));
+                }
+            }
             
             return await ErrorHandler.ExecuteWithRetryAsync(async () =>
             {
@@ -159,14 +168,23 @@ namespace Saturn.Providers.Anthropic
             }
             
             // Validate optional parameters
-            if (request.Temperature.HasValue && (request.Temperature.Value < 0 || request.Temperature.Value > 2))
-                throw new ArgumentException("Temperature must be between 0 and 2", nameof(request));
+            if (request.Temperature.HasValue && (request.Temperature.Value < 0 || request.Temperature.Value > 1))
+                throw new ArgumentException("Temperature must be between 0 and 1 (inclusive)", nameof(request.Temperature));
             
             if (request.MaxTokens.HasValue && request.MaxTokens.Value <= 0)
-                throw new ArgumentException("MaxTokens must be greater than 0", nameof(request));
+                throw new ArgumentException("MaxTokens must be greater than 0", nameof(request.MaxTokens));
             
             if (request.TopP.HasValue && (request.TopP.Value < 0 || request.TopP.Value > 1))
-                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request));
+                throw new ArgumentException("TopP must be between 0 and 1 (inclusive)", nameof(request.TopP));
+            
+            // Validate opus-4.1 specific constraints
+            if (request.Model != null && request.Model.Equals("opus-4.1", StringComparison.OrdinalIgnoreCase))
+            {
+                if (request.Temperature.HasValue && request.TopP.HasValue)
+                {
+                    throw new ArgumentException("When using opus-4.1 model, Temperature and TopP cannot both be specified", nameof(request.TopP));
+                }
+            }
             
             // Converting to Anthropic format
             

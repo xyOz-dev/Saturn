@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -352,7 +352,7 @@ namespace Saturn.Agents.Core
                     var assistantMessagePreview = new Message
                     {
                         Role = "assistant",
-                        Content = JsonDocument.Parse("null").RootElement,
+                        Content = JsonDocument.Parse("\"\"").RootElement,
                         ToolCalls = assistantToolCallsPreview
                     };
 
@@ -390,7 +390,7 @@ namespace Saturn.Agents.Core
                     var assistantMessage = new Message
                     {
                         Role = "assistant",
-                        Content = JsonDocument.Parse("null").RootElement,
+                        Content = JsonDocument.Parse("\"\"").RootElement,
                         ToolCalls = assistantToolCalls
                     };
 
