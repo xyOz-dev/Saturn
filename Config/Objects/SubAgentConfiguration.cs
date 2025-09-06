@@ -8,7 +8,7 @@ namespace Saturn.Config.Objects
 {
     public class SubAgentConfiguration
     {
-        public string Model { get; set; } = "anthropic/claude-sonnet-4";
+        public string Model { get; set; } = string.Empty;
         public double Temperature { get; set; } = 0.3;
         public int MaxTokens { get; set; } = 4096;
         public double TopP { get; set; } = 0.95;

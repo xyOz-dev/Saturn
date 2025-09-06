@@ -65,9 +65,6 @@ namespace Saturn.Tests.Providers.Anthropic
             
             // All models should have Anthropic as provider
             models.Should().OnlyContain(m => m.Provider == "Anthropic");
-            
-            // All models should have zero cost (OAuth users)
-            models.Should().OnlyContain(m => m.InputCost == 0 && m.OutputCost == 0);
         }
         
         [Fact]

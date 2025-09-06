@@ -324,6 +324,7 @@ namespace Saturn.Providers.Anthropic
         {
             // Anthropic doesn't have a models endpoint for OAuth users
             // Return hardcoded list of available models
+            // TODO: Externalize model catalog to JSON/config or remote source for easy updates of model IDs and pricing without code changes
             return Task.FromResult(new List<ModelInfo>
             {
                 new ModelInfo
@@ -332,8 +333,8 @@ namespace Saturn.Providers.Anthropic
                     Name = "Claude Sonnet 4",
                     Provider = "Anthropic",
                     MaxTokens = 200000,
-                    InputCost = 0, // Free with Claude Pro/Max
-                    OutputCost = 0,
+                    InputCost = 3, // $3 per 1M input tokens
+                    OutputCost = 15, // $15 per 1M output tokens
                     Description = "The latest Claude model with improved reasoning and coding capabilities"
                 },
                 new ModelInfo
@@ -342,8 +343,8 @@ namespace Saturn.Providers.Anthropic
                     Name = "Claude Opus 4.1",
                     Provider = "Anthropic",
                     MaxTokens = 200000,
-                    InputCost = 0, // Free with Claude Pro/Max
-                    OutputCost = 0,
+                    InputCost = 15, // $15 per 1M input tokens
+                    OutputCost = 75, // $75 per 1M output tokens
                     Description = "Most capable model for complex analysis, research, and creative tasks"
                 }
             });

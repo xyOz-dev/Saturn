@@ -66,7 +66,7 @@ namespace Saturn.Agents.MultiAgent
         public async Task<(bool success, string result, List<string>? runningTaskIds)> TryCreateSubAgent(
             string name, 
             string purpose, 
-            string model = "anthropic/claude-sonnet-4",
+            string model = "",
             bool enableTools = true,
             double? temperature = null,
             int? maxTokens = null,
@@ -91,12 +91,15 @@ Your purpose: {purpose}
 You work as part of a larger system and should focus on your specific task.
 Report your progress clearly and concisely.";
             
+            // Resolve the model ID based on the provider
+            var resolvedModel = ModelIds.Resolve(_client.ProviderName, model);
+            
             var config = new AgentConfiguration
             {
                 Name = name,
                 SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
                 Client = _client,
-                Model = model,
+                Model = resolvedModel,
                 Temperature = temperature ?? 0.3,
                 MaxTokens = maxTokens ?? 4096,
                 TopP = topP ?? 0.95,
@@ -413,12 +416,15 @@ DECISION REQUIRED:
 
 Your decision:";
 
+                // Resolve the reviewer model ID based on the provider
+                var resolvedReviewerModel = ModelIds.Resolve(_client.ProviderName, prefs.ReviewerModel);
+                
                 var reviewerConfig = new AgentConfiguration
                 {
                     Name = $"Reviewer for {subAgentContext.Name}",
                     SystemPrompt = await SystemPrompt.Create("You are a specialized quality assurance reviewer. Be thorough but fair in your assessments.", includeDirectories: true, includeUserRules: false),
                     Client = _client,
-                    Model = prefs.ReviewerModel,
+                    Model = resolvedReviewerModel,
                     Temperature = 0.2,
                     MaxTokens = 2048,
                     TopP = 0.95,
