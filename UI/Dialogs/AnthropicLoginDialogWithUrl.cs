@@ -157,11 +157,12 @@ namespace Saturn.UI.Dialogs
                 // Store the full code (including STATE if present)
                 AuthorizationCode = codeField.Text.ToString();
                 
-                // Store the PKCE verifier with the code for the exchange
+                // Store the PKCE verifier and state token with the code for the exchange
                 if (_currentPKCE != null)
                 {
-                    // Append PKCE verifier to the code (will be parsed by auth service)
-                    AuthorizationCode = $"{AuthorizationCode}|{_currentPKCE.Verifier}";
+                    // Append PKCE verifier and state token to the code (will be parsed by auth service)
+                    // Format: CODE#STATE|VERIFIER|GENERATED_STATE
+                    AuthorizationCode = $"{AuthorizationCode}|{_currentPKCE.Verifier}|{_currentStateToken}";
                 }
                 
                 UseClaudeMax = authMethodGroup.SelectedItem == 0;

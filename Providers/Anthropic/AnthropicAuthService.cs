@@ -90,13 +90,15 @@ namespace Saturn.Providers.Anthropic
                     return false;
                 }
                 
-                // Parse the code and PKCE verifier if present
+                // Parse the code, PKCE verifier, and state token if present
+                // Format: CODE#STATE|VERIFIER|GENERATED_STATE
                 var code = dialogResult.code;
                 string? verifier = null;
+                string? generatedState = null;
                 
                 if (code.Contains("|"))
                 {
-                    var parts = code.Split('|', 2);
+                    var parts = code.Split('|');
                     code = parts[0];
                     if (parts.Length > 1)
                     {
@@ -107,6 +109,12 @@ namespace Saturn.Providers.Anthropic
                             Verifier = verifier,
                             Challenge = "" // Challenge not needed for exchange
                         };
+                    }
+                    if (parts.Length > 2)
+                    {
+                        generatedState = parts[2];
+                        // Set the generated state token for comparison
+                        _currentStateToken = generatedState;
                     }
                 }
                 
