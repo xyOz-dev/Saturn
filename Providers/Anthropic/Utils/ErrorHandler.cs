@@ -31,7 +31,7 @@ namespace Saturn.Providers.Anthropic.Utils
                     if (attempt < maxRetries)
                     {
                         var delay = CalculateDelay(attempt);
-                        Console.WriteLine($"Request failed (attempt {attempt}/{maxRetries}), retrying in {delay.TotalSeconds}s: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Request failed (attempt {attempt}/{maxRetries}), retrying in {delay.TotalSeconds}s: {ex.Message}");
                         await Task.Delay(delay, cancellationToken);
                     }
                 }
@@ -43,7 +43,7 @@ namespace Saturn.Providers.Anthropic.Utils
                     if (attempt < maxRetries)
                     {
                         var delay = CalculateDelay(attempt);
-                        Console.WriteLine($"Request timeout (attempt {attempt}/{maxRetries}), retrying in {delay.TotalSeconds}s");
+                        System.Diagnostics.Debug.WriteLine($"Request timeout (attempt {attempt}/{maxRetries}), retrying in {delay.TotalSeconds}s");
                         await Task.Delay(delay, cancellationToken);
                     }
                 }

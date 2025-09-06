@@ -315,7 +315,7 @@ namespace Saturn.Providers.Anthropic
                 else
                 {
                     Console.WriteLine($"Token exchange failed: HTTP {response.StatusCode}");
-                    Console.WriteLine($"Response: {responseBody}");
+                    System.Diagnostics.Debug.WriteLine($"Token exchange error body (redacted in user output): {responseBody}");
                     return null;
                 }
             }

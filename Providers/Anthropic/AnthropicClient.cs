@@ -31,7 +31,7 @@ namespace Saturn.Providers.Anthropic
             _httpClient = new HttpClient
             {
                 BaseAddress = new Uri(API_BASE),
-                Timeout = TimeSpan.FromMinutes(5)
+                Timeout = Timeout.InfiniteTimeSpan
             };
         }
         
