@@ -8,6 +8,7 @@ using Saturn.Agents;
 using Saturn.Agents.Core;
 using Saturn.Core.Sessions;
 using Saturn.OpenRouter;
+using Saturn.Providers.OpenRouter;
 
 namespace Saturn.Core.Agents
 {
@@ -110,7 +111,11 @@ namespace Saturn.Core.Agents
         
         private async Task<Agent> CreateNewAgent(AgentConfiguration configuration)
         {
-            configuration.Client = _client;
+            // Only use default client if none provided
+            if (configuration.Client == null)
+            {
+                configuration.Client = new OpenRouterClientWrapper(_client);
+            }
             
             if (configuration.EnableUserRules && _configuration.InheritUserRules)
             {

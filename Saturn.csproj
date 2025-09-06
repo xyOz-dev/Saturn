@@ -34,6 +34,7 @@
     <PackageReference Include="HtmlAgilityPack" Version="1.11.57" />
     <PackageReference Include="ReverseMarkdown" Version="4.0.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <PackageReference Include="Discord.Net" Version="3.13.0" />
   </ItemGroup>
 
@@ -42,6 +43,13 @@
     <Compile Remove="Saturn.Tests\**" />
     <EmbeddedResource Remove="Saturn.Tests\**" />
     <None Remove="Saturn.Tests\**" />
+  </ItemGroup>
+
+  <!-- Copy model mappings JSON to output directory -->
+  <ItemGroup>
+    <None Update="Providers\model-mappings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

@@ -5,35 +5,36 @@ using System.Threading.Tasks;
 using Terminal.Gui;
 using Saturn.Config;
 using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
 {
     public class SubAgentConfigDialog : Dialog
     {
-        private ComboBox modelComboBox;
-        private Label modelInfoLabel;
-        private TextField temperatureField;
-        private TextField maxTokensField;
-        private TextField topPField;
-        private CheckBox enableToolsCheckBox;
-        private CheckBox enableReviewStageCheckBox;
-        private Label reviewerModelLabel;
-        private ComboBox reviewerModelComboBox;
-        private Label reviewerModelInfoLabel;
-        private Button saveButton;
-        private Button cancelButton;
+        private ComboBox modelComboBox = null!;
+        private Label modelInfoLabel = null!;
+        private TextField temperatureField = null!;
+        private TextField maxTokensField = null!;
+        private TextField topPField = null!;
+        private CheckBox enableToolsCheckBox = null!;
+        private CheckBox enableReviewStageCheckBox = null!;
+        private Label reviewerModelLabel = null!;
+        private ComboBox reviewerModelComboBox = null!;
+        private Label reviewerModelInfoLabel = null!;
+        private Button saveButton = null!;
+        private Button cancelButton = null!;
         
-        private List<Model> availableModels = new();
-        private OpenRouterClient? client;
+        private List<ModelInfo> availableModels = new();
+        private ILLMClient? client;
         private SubAgentPreferences preferences;
         
         public bool ConfigurationSaved { get; private set; }
         
-        public SubAgentConfigDialog(OpenRouterClient? openRouterClient = null)
+        public SubAgentConfigDialog(ILLMClient? llmClient = null)
             : base("Default Sub-Agent Configuration", 80, 22)
         {
-            client = openRouterClient;
+            client = llmClient;
             preferences = SubAgentPreferences.Instance;
             
             InitializeComponents();
@@ -227,10 +228,10 @@ namespace Saturn.UI.Dialogs
             
             try
             {
-                var response = await client.Models.ListAllAsync();
-                if (response?.Data != null)
+                var modelInfos = await client.GetModelsAsync();
+                if (modelInfos != null && modelInfos.Any())
                 {
-                    availableModels = response.Data
+                    availableModels = modelInfos
                         .OrderBy(m => m.Id)
                         .ToList();
                     
@@ -273,10 +274,10 @@ namespace Saturn.UI.Dialogs
             
             if (model != null)
             {
-                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
-                    ? $"{model.ContextLength.Value:N0} tokens" 
+                var contextLengthText = model.MaxTokens > 0 
+                    ? $"{model.MaxTokens:N0} tokens" 
                     : "Unknown";
-                var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
+                var pricing = model.InputCost > 0 || model.OutputCost > 0 ? $" | ${model.InputCost:F5}/{model.OutputCost:F5}" : "";
                 modelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
             }
         }
@@ -290,10 +291,10 @@ namespace Saturn.UI.Dialogs
             
             if (model != null)
             {
-                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
-                    ? $"{model.ContextLength.Value:N0} tokens" 
+                var contextLengthText = model.MaxTokens > 0 
+                    ? $"{model.MaxTokens:N0} tokens" 
                     : "Unknown";
-                var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
+                var pricing = model.InputCost > 0 || model.OutputCost > 0 ? $" | ${model.InputCost:F5}/{model.OutputCost:F5}" : "";
                 reviewerModelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
             }
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Saturn.OpenRouter;
+using Saturn.Providers;
 
 namespace Saturn.Agents.Core
 {
@@ -8,7 +9,7 @@ namespace Saturn.Agents.Core
     {
         public required string Name { get; set; }
         public required string SystemPrompt { get; set; }
-        public required OpenRouterClient Client { get; set; }
+        public required ILLMClient Client { get; set; }
         public string Model { get; set; } = "anthropic/claude-sonnet-4";
         public double? Temperature { get; set; }
         public int? MaxTokens { get; set; }
@@ -26,7 +27,7 @@ namespace Saturn.Agents.Core
         public bool EnableUserRules { get; set; } = true;
         public Guid? CurrentModeId { get; set; }
         
-        public static AgentConfiguration FromMode(Mode mode, OpenRouterClient client)
+        public static AgentConfiguration FromMode(Mode mode, ILLMClient client)
         {
             string systemPrompt;
             if (!string.IsNullOrWhiteSpace(mode.SystemPromptOverride))

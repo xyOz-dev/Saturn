@@ -10,8 +10,8 @@ using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent.Objects;
 using Saturn.Config;
 using Saturn.Data;
-using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Chat;
+using Saturn.Providers;
+using Saturn.Providers.Models;
 
 namespace Saturn.Agents.MultiAgent
 {
@@ -22,7 +22,7 @@ namespace Saturn.Agents.MultiAgent
         private readonly ConcurrentDictionary<string, AgentTaskResult> _completedTasks;
         private readonly ConcurrentDictionary<string, ReviewerContext> _reviewers;
         private readonly SemaphoreSlim _reviewerSemaphore = new SemaphoreSlim(25);
-        private OpenRouterClient _client = null!;
+        private ILLMClient _client = null!;
         private const int MaxConcurrentAgents = 25;
         private string? _parentSessionId;
         private bool _parentEnableUserRules = true;
@@ -40,7 +40,7 @@ namespace Saturn.Agents.MultiAgent
             _reviewers = new ConcurrentDictionary<string, ReviewerContext>();
         }
         
-        public void Initialize(OpenRouterClient client)
+        public void Initialize(ILLMClient client)
         {
             if (_instance != null)
             {
@@ -66,7 +66,7 @@ namespace Saturn.Agents.MultiAgent
         public async Task<(bool success, string result, List<string>? runningTaskIds)> TryCreateSubAgent(
             string name, 
             string purpose, 
-            string model = "anthropic/claude-3.5-sonnet",
+            string model = "",
             bool enableTools = true,
             double? temperature = null,
             int? maxTokens = null,
@@ -91,12 +91,14 @@ Your purpose: {purpose}
 You work as part of a larger system and should focus on your specific task.
 Report your progress clearly and concisely.";
             
+            // Resolve the model ID based on the provider
+            var resolvedModel = ModelIds.Resolve(_client.ProviderName, model);
+            
             var config = new AgentConfiguration
             {
                 Name = name,
                 SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
                 Client = _client,
-                Model = model,
                 Temperature = temperature ?? 0.3,
                 MaxTokens = maxTokens ?? 4096,
                 TopP = topP ?? 0.95,
@@ -104,6 +106,12 @@ Report your progress clearly and concisely.";
                 MaintainHistory = true,
                 MaxHistoryMessages = 20
             };
+            
+            // Only set the model if the resolved model is not empty
+            if (!string.IsNullOrEmpty(resolvedModel))
+            {
+                config.Model = resolvedModel;
+            }
             
             var agent = new Agent(config);
             
@@ -165,7 +173,7 @@ Report your progress clearly and concisely.";
                         }
                     }
                     
-                    var result = await agentContext.Agent.Execute<Message>(input);
+                    var result = await agentContext.Agent.Execute<ChatMessage>(input);
                     
                     if (SubAgentPreferences.Instance.EnableReviewStage)
                     {
@@ -188,9 +196,8 @@ Report your progress clearly and concisely.";
                             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Revising (Attempt {agentContext.RevisionCount})");
                             
                             var revisionInput = $"Please revise your previous work based on this feedback:\n{reviewDecision.Feedback}\n\nOriginal task: {task}";
-                            var revisedResult = await agentContext.Agent.Execute<Message>(revisionInput);
+                            var revisedResult = await agentContext.Agent.Execute<ChatMessage>(revisionInput);
                             currentResult = revisedResult.Content.ToString();
-                            
                             agentContext.Status = AgentStatus.BeingReviewed;
                             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Being Reviewed (Revision {agentContext.RevisionCount})");
                             
@@ -418,13 +425,22 @@ Your decision:";
                     Name = $"Reviewer for {subAgentContext.Name}",
                     SystemPrompt = await SystemPrompt.Create("You are a specialized quality assurance reviewer. Be thorough but fair in your assessments.", includeDirectories: true, includeUserRules: false),
                     Client = _client,
-                    Model = prefs.ReviewerModel,
                     Temperature = 0.2,
                     MaxTokens = 2048,
                     TopP = 0.95,
                     EnableTools = false,
                     MaintainHistory = false
                 };
+                
+                // Only resolve and set the reviewer model if it's not empty
+                if (!string.IsNullOrEmpty(prefs.ReviewerModel))
+                {
+                    var resolvedReviewerModel = ModelIds.Resolve(_client.ProviderName, prefs.ReviewerModel);
+                    if (!string.IsNullOrEmpty(resolvedReviewerModel))
+                    {
+                        reviewerConfig.Model = resolvedReviewerModel;
+                    }
+                }
                 
                 var reviewerAgent = new Agent(reviewerConfig);
                 
@@ -439,7 +455,7 @@ Your decision:";
                 
                 _reviewers[reviewerId] = reviewerContext;
                 
-                var reviewTask = reviewerAgent.Execute<Message>(reviewPrompt);
+                var reviewTask = reviewerAgent.Execute<ChatMessage>(reviewPrompt);
                 var timeoutTask = Task.Delay(prefs.ReviewTimeoutSeconds * 1000);
                 
                 var completedTask = await Task.WhenAny(reviewTask, timeoutTask);

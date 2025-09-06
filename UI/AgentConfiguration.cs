@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI
 {
@@ -22,7 +23,7 @@ namespace Saturn.UI
         public bool RequireCommandApproval { get; set; } = true;
         public bool EnableUserRules { get; set; } = true;
         
-        private static List<Model>? _cachedModels;
+        private static List<ModelInfo>? _cachedModels;
         private static DateTime _cacheTime;
         private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
 
@@ -73,7 +74,7 @@ Operating Principles
    - Be mindful of dependency sizes and build times.";
         }
 
-        public static async Task<List<Model>> GetAvailableModels(OpenRouterClient client)
+        public static async Task<List<ModelInfo>> GetAvailableModels(ILLMClient client)
         {
             if (_cachedModels != null && DateTime.UtcNow - _cacheTime < CacheDuration)
             {
@@ -82,10 +83,10 @@ Operating Principles
 
             try
             {
-                var response = await client.Models.ListAllAsync();
-                if (response?.Data != null)
+                var models = await client.GetModelsAsync();
+                if (models != null && models.Any())
                 {
-                    _cachedModels = response.Data
+                    _cachedModels = models
                         .Where(m => !string.IsNullOrEmpty(m.Id))
                         .OrderBy(m => m.Name ?? m.Id)
                         .ToList();
@@ -100,7 +101,44 @@ Operating Principles
             return GetDefaultModels();
         }
 
-        private static List<Model> GetDefaultModels()
+        public static async Task<List<ModelInfo>> GetAvailableModels(OpenRouterClient client)
+        {
+            if (_cachedModels != null && DateTime.UtcNow - _cacheTime < CacheDuration)
+            {
+                return _cachedModels;
+            }
+
+            try
+            {
+                var response = await client.Models.ListAllAsync();
+                if (response?.Data != null)
+                {
+                    _cachedModels = response.Data
+                        .Where(m => !string.IsNullOrEmpty(m.Id))
+                        .Select(m => new ModelInfo 
+                        {
+                            Id = m.Id ?? string.Empty,
+                            Name = m.Name ?? m.Id ?? string.Empty,
+                            Provider = "OpenRouter",
+                            MaxTokens = m.ContextLength ?? 0,
+                            InputCost = double.TryParse(m.Pricing?.Prompt, out var promptCost) ? promptCost : 0,
+                            OutputCost = double.TryParse(m.Pricing?.Completion, out var completionCost) ? completionCost : 0,
+                            Description = m.Description ?? string.Empty
+                        })
+                        .OrderBy(m => m.Name ?? m.Id)
+                        .ToList();
+                    _cacheTime = DateTime.UtcNow;
+                    return _cachedModels;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return GetDefaultModels();
+        }
+
+        private static List<ModelInfo> GetDefaultModels()
         {
             var defaults = new[]
             {
@@ -112,12 +150,19 @@ Operating Principles
                 ("anthropic/claude-opus-4.1", "Anthropic: Opus-4.1"),
                 ("anthropic/claude-opus-4", "Anthropic: Opus-4"),
                 ("anthropic/claude-sonnet-4", "Anthropic: Sonnet-4"),
-                ("anthropic/claude-3.7-sonnet", "Anthropic: Sonnet-3.7"),
-                ("anthropic/claude-3.5-haiku", "Anthropic: Haiku-3.5"),
                 ("moonshotai/kimi-k2:free", "Kimi-K2")
             };
 
-            return defaults.Select(d => new Model { Id = d.Item1, Name = d.Item2 }).ToList();
+            return defaults.Select(d => new ModelInfo 
+            { 
+                Id = d.Item1, 
+                Name = d.Item2, 
+                Provider = "Default",
+                MaxTokens = 32768,
+                InputCost = 0,
+                OutputCost = 0,
+                Description = "Default model configuration"
+            }).ToList();
         }
 
         public AgentConfiguration Clone()
