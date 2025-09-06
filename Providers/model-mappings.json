@@ -1,0 +1,35 @@
+{
+  "providers": {
+    "OpenRouter": {
+      "models": {
+        "default": "anthropic/claude-sonnet-4",
+        "sonnet": "anthropic/claude-sonnet-4",
+        "opus": "anthropic/claude-opus-4-1",
+        "haiku": "anthropic/claude-haiku-3.5"
+      
+      }
+    },
+    "Anthropic": {
+      "models": {
+        "default": "claude-sonnet-4-20250514",
+        "sonnet": "claude-sonnet-4-20250514",
+        "opus": "claude-opus-4-1-20250805",
+        "haiku": "claude-3-haiku-20240307"
+      },
+      "pricing": {
+        "claude-sonnet-4-20250514": {
+          "inputCost": 3,
+          "outputCost": 15
+        },
+        "claude-opus-4-1-20250805": {
+          "inputCost": 15,
+          "outputCost": 75
+        },
+        "claude-3-haiku-20240307": {
+          "inputCost": 0.25,
+          "outputCost": 1.25
+        }
+      }
+    }
+  }
+}

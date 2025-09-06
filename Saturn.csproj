@@ -45,4 +45,11 @@
     <None Remove="Saturn.Tests\**" />
   </ItemGroup>
 
+  <!-- Copy model mappings JSON to output directory -->
+  <ItemGroup>
+    <None Update="Providers\model-mappings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

@@ -27,4 +27,11 @@
     <ProjectReference Include="..\Saturn.csproj" />
   </ItemGroup>
 
+  <!-- Copy model mappings JSON to test output directory -->
+  <ItemGroup>
+    <None Include="..\Providers\model-mappings.json" Link="model-mappings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
