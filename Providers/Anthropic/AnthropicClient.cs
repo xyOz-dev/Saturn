@@ -91,7 +91,7 @@ namespace Saturn.Providers.Anthropic
                 var httpRequest = await PrepareRequestAsync(anthropicRequest);
                 
                 // Send request
-                var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+                using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
                 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -180,7 +180,7 @@ namespace Saturn.Providers.Anthropic
             // Request prepared for streaming
             
             // Send request
-            var response = await _httpClient.SendAsync(
+            using var response = await _httpClient.SendAsync(
                 httpRequest, 
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
@@ -376,6 +376,12 @@ namespace Saturn.Providers.Anthropic
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
             httpRequest.Headers.Add("anthropic-version", ANTHROPIC_VERSION);
             httpRequest.Headers.Add("anthropic-beta", ANTHROPIC_BETA);
+            
+            // Add Accept header for SSE if streaming
+            if (request.Stream)
+            {
+                httpRequest.Headers.Add("Accept", "text/event-stream");
+            }
             
             // Add User-Agent header for Claude Code compatibility
             httpRequest.Headers.UserAgent.ParseAdd("Claude-Code/1.0");

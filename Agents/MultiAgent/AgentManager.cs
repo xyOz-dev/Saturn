@@ -11,7 +11,7 @@ using Saturn.Agents.MultiAgent.Objects;
 using Saturn.Config;
 using Saturn.Data;
 using Saturn.Providers;
-using Saturn.OpenRouter.Models.Api.Chat;
+using Saturn.Providers.Models;
 
 namespace Saturn.Agents.MultiAgent
 {
@@ -99,7 +99,6 @@ Report your progress clearly and concisely.";
                 Name = name,
                 SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
                 Client = _client,
-                Model = resolvedModel,
                 Temperature = temperature ?? 0.3,
                 MaxTokens = maxTokens ?? 4096,
                 TopP = topP ?? 0.95,
@@ -107,6 +106,12 @@ Report your progress clearly and concisely.";
                 MaintainHistory = true,
                 MaxHistoryMessages = 20
             };
+            
+            // Only set the model if the resolved model is not empty
+            if (!string.IsNullOrEmpty(resolvedModel))
+            {
+                config.Model = resolvedModel;
+            }
             
             var agent = new Agent(config);
             
@@ -168,7 +173,7 @@ Report your progress clearly and concisely.";
                         }
                     }
                     
-                    var result = await agentContext.Agent.Execute<Message>(input);
+                    var result = await agentContext.Agent.Execute<ChatMessage>(input);
                     
                     if (SubAgentPreferences.Instance.EnableReviewStage)
                     {
@@ -191,9 +196,8 @@ Report your progress clearly and concisely.";
                             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Revising (Attempt {agentContext.RevisionCount})");
                             
                             var revisionInput = $"Please revise your previous work based on this feedback:\n{reviewDecision.Feedback}\n\nOriginal task: {task}";
-                            var revisedResult = await agentContext.Agent.Execute<Message>(revisionInput);
+                            var revisedResult = await agentContext.Agent.Execute<ChatMessage>(revisionInput);
                             currentResult = revisedResult.Content.ToString();
-                            
                             agentContext.Status = AgentStatus.BeingReviewed;
                             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Being Reviewed (Revision {agentContext.RevisionCount})");
                             
@@ -416,21 +420,27 @@ DECISION REQUIRED:
 
 Your decision:";
 
-                // Resolve the reviewer model ID based on the provider
-                var resolvedReviewerModel = ModelIds.Resolve(_client.ProviderName, prefs.ReviewerModel);
-                
                 var reviewerConfig = new AgentConfiguration
                 {
                     Name = $"Reviewer for {subAgentContext.Name}",
                     SystemPrompt = await SystemPrompt.Create("You are a specialized quality assurance reviewer. Be thorough but fair in your assessments.", includeDirectories: true, includeUserRules: false),
                     Client = _client,
-                    Model = resolvedReviewerModel,
                     Temperature = 0.2,
                     MaxTokens = 2048,
                     TopP = 0.95,
                     EnableTools = false,
                     MaintainHistory = false
                 };
+                
+                // Only resolve and set the reviewer model if it's not empty
+                if (!string.IsNullOrEmpty(prefs.ReviewerModel))
+                {
+                    var resolvedReviewerModel = ModelIds.Resolve(_client.ProviderName, prefs.ReviewerModel);
+                    if (!string.IsNullOrEmpty(resolvedReviewerModel))
+                    {
+                        reviewerConfig.Model = resolvedReviewerModel;
+                    }
+                }
                 
                 var reviewerAgent = new Agent(reviewerConfig);
                 
@@ -445,7 +455,7 @@ Your decision:";
                 
                 _reviewers[reviewerId] = reviewerContext;
                 
-                var reviewTask = reviewerAgent.Execute<Message>(reviewPrompt);
+                var reviewTask = reviewerAgent.Execute<ChatMessage>(reviewPrompt);
                 var timeoutTask = Task.Delay(prefs.ReviewTimeoutSeconds * 1000);
                 
                 var completedTask = await Task.WhenAny(reviewTask, timeoutTask);

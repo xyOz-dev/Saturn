@@ -1351,66 +1351,86 @@ namespace Saturn.Agents.Core
             {
                 // Convert to abstraction layer format
                 var abstractRequest = ConvertToAbstractRequest(request);
-                var streamChunks = new List<ChatCompletionChunk>();
                 
-                var finalResponse = await llmClient.StreamChatAsync(abstractRequest, async chunk =>
+                // Use a Channel to bridge the async callback to IAsyncEnumerable
+                var channel = System.Threading.Channels.Channel.CreateUnbounded<ChatCompletionChunk>();
+                ChatResponse finalResponse = null;
+                
+                // Start the streaming task
+                var streamingTask = Task.Run(async () =>
                 {
-                    var openRouterChunk = new ChatCompletionChunk
+                    try
                     {
-                        Id = chunk.Id,
-                        Model = abstractRequest.Model,
-                        Choices = new[]
+                        finalResponse = await llmClient.StreamChatAsync(abstractRequest, async chunk =>
                         {
-                            new StreamingChoice
+                            var openRouterChunk = new ChatCompletionChunk
                             {
-                                Delta = new Delta
+                                Id = chunk.Id,
+                                Model = abstractRequest.Model,
+                                Choices = new[]
                                 {
-                                    Content = chunk.Delta,
-                                    Role = "assistant"
-                                },
-                                FinishReason = chunk.IsComplete ? "stop" : null
-                            }
+                                    new StreamingChoice
+                                    {
+                                        Delta = new Delta
+                                        {
+                                            Content = chunk.Delta,
+                                            Role = "assistant"
+                                        },
+                                        FinishReason = chunk.IsComplete ? "stop" : null
+                                    }
+                                }
+                            };
+                            
+                            // Write chunk to channel immediately
+                            await channel.Writer.WriteAsync(openRouterChunk, cancellationToken);
+                        }, cancellationToken);
+                        
+                        // If the final response has tool calls, add them as a final chunk
+                        if (finalResponse?.Message?.ToolCalls != null && finalResponse.Message.ToolCalls.Count > 0)
+                        {
+                            var toolCallChunk = new ChatCompletionChunk
+                            {
+                                Id = finalResponse.Id,
+                                Model = abstractRequest.Model,
+                                Choices = new[]
+                                {
+                                    new StreamingChoice
+                                    {
+                                        Delta = new Delta
+                                        {
+                                            Role = "assistant",
+                                            ToolCalls = finalResponse.Message.ToolCalls.Select(tc => new Saturn.OpenRouter.Models.Api.Chat.ToolCall
+                                            {
+                                                Id = tc.Id,
+                                                Type = "function",
+                                                Function = new Saturn.OpenRouter.Models.Api.Chat.ToolCall.FunctionCall
+                                                {
+                                                    Name = tc.Name,
+                                                    Arguments = tc.Arguments
+                                                }
+                                            }).ToArray()
+                                        },
+                                        FinishReason = "stop"
+                                    }
+                                }
+                            };
+                            await channel.Writer.WriteAsync(toolCallChunk, cancellationToken);
                         }
-                    };
-                    streamChunks.Add(openRouterChunk);
+                    }
+                    finally
+                    {
+                        channel.Writer.Complete();
+                    }
                 }, cancellationToken);
                 
-                // If the final response has tool calls, add them as a final chunk
-                if (finalResponse?.Message?.ToolCalls != null && finalResponse.Message.ToolCalls.Count > 0)
-                {
-                    var toolCallChunk = new ChatCompletionChunk
-                    {
-                        Id = finalResponse.Id,
-                        Model = abstractRequest.Model,
-                        Choices = new[]
-                        {
-                            new StreamingChoice
-                            {
-                                Delta = new Delta
-                                {
-                                    Role = "assistant",
-                                    ToolCalls = finalResponse.Message.ToolCalls.Select(tc => new Saturn.OpenRouter.Models.Api.Chat.ToolCall
-                                    {
-                                        Id = tc.Id,
-                                        Type = "function",
-                                        Function = new Saturn.OpenRouter.Models.Api.Chat.ToolCall.FunctionCall
-                                        {
-                                            Name = tc.Name,
-                                            Arguments = tc.Arguments
-                                        }
-                                    }).ToArray()
-                                },
-                                FinishReason = "stop"
-                            }
-                        }
-                    };
-                    streamChunks.Add(toolCallChunk);
-                }
-                
-                foreach (var chunk in streamChunks)
+                // Yield chunks as they arrive
+                await foreach (var chunk in channel.Reader.ReadAllAsync(cancellationToken))
                 {
                     yield return chunk;
                 }
+                
+                // Ensure the streaming task completes
+                await streamingTask;
             }
             else
             {
