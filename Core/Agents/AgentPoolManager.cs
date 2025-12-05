@@ -273,11 +273,6 @@ namespace Saturn.Core.Agents
                 entry.Agent.Dispose();
             }
             
-            foreach (var semaphore in _sessionLocks.Values)
-            {
-                semaphore.Dispose();
-            }
-            
             _agentPool.Clear();
             _sessionAgentMapping.Clear();
             _sessionLocks.Dispose();
