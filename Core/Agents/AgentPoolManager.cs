@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AsyncKeyedLock;
 using Saturn.Agents;
 using Saturn.Agents.Core;
 using Saturn.Core.Sessions;
@@ -15,7 +16,7 @@ namespace Saturn.Core.Agents
     {
         private readonly ConcurrentDictionary<string, AgentPoolEntry> _agentPool = new();
         private readonly ConcurrentDictionary<string, string> _sessionAgentMapping = new();
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
+        private readonly AsyncKeyedLocker<string> _sessionLocks = new();
         private readonly OpenRouterClient _client;
         private readonly Timer _cleanupTimer;
         private readonly AgentPoolConfiguration _configuration;
@@ -42,70 +43,46 @@ namespace Saturn.Core.Agents
             AgentConfiguration configuration,
             bool reuseExisting = true)
         {
-            // Get or create a semaphore for this session
-            var sessionLock = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
-            
-            await sessionLock.WaitAsync();
-            try
+            using var _ = await _sessionLocks.LockAsync(sessionId);
+
+            // Re-check for existing agent inside the lock
+            if (reuseExisting && _sessionAgentMapping.TryGetValue(sessionId, out var existingAgentId))
             {
-                // Re-check for existing agent inside the lock
-                if (reuseExisting && _sessionAgentMapping.TryGetValue(sessionId, out var existingAgentId))
+                if (_agentPool.TryGetValue(existingAgentId, out var existingEntry))
                 {
-                    if (_agentPool.TryGetValue(existingAgentId, out var existingEntry))
-                    {
-                        existingEntry.LastAccessTime = DateTime.UtcNow;
-                        existingEntry.AccessCount++;
-                        return existingEntry.Agent;
-                    }
+                    existingEntry.LastAccessTime = DateTime.UtcNow;
+                    existingEntry.AccessCount++;
+                    return existingEntry.Agent;
                 }
+            }
                 
-                var recycledAgent = reuseExisting ? TryRecycleAgent(configuration) : null;
-                if (recycledAgent != null)
-                {
-                    AssignAgentToSession(recycledAgent.Id, sessionId);
-                    AgentRecycled?.Invoke(this, new AgentPoolEventArgs 
-                    { 
-                        Agent = recycledAgent, 
-                        SessionId = sessionId 
-                    });
-                    return recycledAgent;
-                }
-                
-                if (_agentPool.Count >= _configuration.MaxPoolSize)
-                {
-                    await EvictLeastRecentlyUsedAgent();
-                }
-                
-                var newAgent = await CreateNewAgent(configuration);
-                AssignAgentToSession(newAgent.Id, sessionId);
-                
-                AgentCreated?.Invoke(this, new AgentPoolEventArgs 
+            var recycledAgent = reuseExisting ? TryRecycleAgent(configuration) : null;
+            if (recycledAgent != null)
+            {
+                AssignAgentToSession(recycledAgent.Id, sessionId);
+                AgentRecycled?.Invoke(this, new AgentPoolEventArgs 
                 { 
-                    Agent = newAgent, 
+                    Agent = recycledAgent, 
                     SessionId = sessionId 
                 });
-                
-                return newAgent;
+                return recycledAgent;
             }
-            finally
+                
+            if (_agentPool.Count >= _configuration.MaxPoolSize)
             {
-                sessionLock.Release();
-                
-                // Clean up the semaphore if no one is waiting
-                if (sessionLock.CurrentCount == 1 && _sessionLocks.TryRemove(sessionId, out var removedLock))
-                {
-                    // Double-check that we removed the same semaphore we were using
-                    if (ReferenceEquals(removedLock, sessionLock))
-                    {
-                        removedLock.Dispose();
-                    }
-                    else
-                    {
-                        // Someone else created a new semaphore, put it back
-                        _sessionLocks.TryAdd(sessionId, removedLock);
-                    }
-                }
+                await EvictLeastRecentlyUsedAgent();
             }
+                
+            var newAgent = await CreateNewAgent(configuration);
+            AssignAgentToSession(newAgent.Id, sessionId);
+                
+            AgentCreated?.Invoke(this, new AgentPoolEventArgs 
+            { 
+                Agent = newAgent, 
+                SessionId = sessionId 
+            });
+                
+            return newAgent;
         }
         
         private async Task<Agent> CreateNewAgent(AgentConfiguration configuration)
@@ -303,7 +280,7 @@ namespace Saturn.Core.Agents
             
             _agentPool.Clear();
             _sessionAgentMapping.Clear();
-            _sessionLocks.Clear();
+            _sessionLocks.Dispose();
         }
         
         private class AgentPoolEntry
