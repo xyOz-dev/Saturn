@@ -26,6 +26,7 @@ namespace Saturn.Tools.MultiAgent
                 ["timeout_seconds"] = new Dictionary<string, object>
                 {
                     ["type"] = "number",
+                    ["default"] = 30,
                     ["description"] = "Maximum time to wait in seconds (default: 30)"
                 }
             };

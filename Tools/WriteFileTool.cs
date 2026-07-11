@@ -53,19 +53,23 @@ Safety features:
                 { "overwrite", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Overwrite if file exists (default: false)" }
+                        { "default", false },
+                        { "description", "Overwrite if file exists (default: false). Set to true when intentionally replacing an existing file" }
                     }
                 },
                 { "createDirectories", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", true },
                         { "description", "Create parent directories if they don't exist (default: true)" }
                     }
                 },
                 { "encoding", new Dictionary<string, object>
                     {
                         { "type", "string" },
-                        { "description", "File encoding: UTF8, ASCII, Unicode, UTF32 (default: UTF8)" }
+                        { "enum", new[] { "UTF8", "ASCII", "Unicode", "UTF32" } },
+                        { "default", "UTF8" },
+                        { "description", "File encoding (default: UTF8)" }
                     }
                 }
             };

@@ -32,7 +32,22 @@ namespace Saturn.Tools
 
         public override string Name => "execute_command";
 
-        public override string Description => "Executes system commands and returns their output";
+        public override string Description => @"Execute a system command and return its exit code, stdout, and stderr.
+
+How commands run:
+- On Windows the command is run with 'cmd.exe /c'; on Linux/macOS with '/bin/sh -c'. Use the syntax of the current platform.
+- Commands run non-interactively with no stdin. Do not run commands that wait for user input (e.g. editors, REPLs, prompts) - they will hang until the timeout.
+- Default timeout is 30 seconds; pass 'timeout' (in seconds) for longer-running commands like builds or test suites.
+- Output is captured up to 1 MB; anything beyond that is truncated.
+- The user may be asked to approve each command before it runs; a denied command returns an error.
+
+When to use:
+- Running builds, tests, linters, or type checkers
+- Git operations
+- Package manager commands
+- Inspecting system or environment state
+
+Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) over shell equivalents like cat, echo, or find.";
 
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -53,19 +68,22 @@ namespace Saturn.Tools
                 { "timeout", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "description", "Command timeout in seconds. Default is 30 seconds" }
+                        { "default", 30 },
+                        { "description", "Command timeout in seconds. Default is 30 seconds; increase for builds and test runs" }
                     }
                 },
                 { "captureOutput", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", true },
                         { "description", "Whether to capture command output. Default is true" }
                     }
                 },
                 { "runAsShell", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Whether to run command through shell. Default is true" }
+                        { "default", true },
+                        { "description", "Whether to run the command through the platform shell (cmd.exe or /bin/sh). Set to false to launch an executable directly. Default is true" }
                     }
                 }
             };

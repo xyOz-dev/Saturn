@@ -61,18 +61,21 @@ Note: Use this before grep when you need to find files first, then search within
                 { "includeDirectories", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Include directories in results (default: false)" }
                     }
                 },
                 { "caseSensitive", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Case-sensitive matching (default: false)" }
                     }
                 },
                 { "maxResults", new Dictionary<string, object>
                     {
                         { "type", "integer" },
+                        { "default", 1000 },
                         { "description", "Maximum number of results to return (default: 1000)" }
                     }
                 },

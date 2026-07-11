@@ -65,18 +65,21 @@ When to use:
                     {
                         { "type", "string" },
                         { "enum", new[] { "full", "article", "text", "markdown" } },
+                        { "default", "markdown" },
                         { "description", "Content extraction mode: full (entire page), article (main content), text (plain text), markdown (formatted). Default: markdown" }
                     }
                 },
                 { "maxLength", new Dictionary<string, object>
                     {
                         { "type", "integer" },
+                        { "default", 50000 },
                         { "description", "Maximum content length in characters. Default: 50000" }
                     }
                 },
                 { "includeMetadata", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", true },
                         { "description", "Include page metadata (title, description, og:tags). Default: true" }
                     }
                 },
