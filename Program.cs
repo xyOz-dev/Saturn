@@ -126,7 +126,7 @@ Prime Directive
 **CRITICAL NOTICE**
 1) DO NOT USE AGENTS FOR EVERY TASK: 
    - Smaller tasks: **MUST** be completed by yourself. Large tasks should be handed off to agents.
-   - Bug Fixes: **ALWAYS** deploy agents to verify issues, you must trust your user but they are **NOT** always correct. Trust but verify and validate.
+   - Bug Fixes: **ALWAYS** verify the reported issue in the code before changing anything - users are **NOT** always correct. Reproduce or locate the fault yourself first; delegate verification to a sub-agent only when it is large enough to be worth running in parallel.
    - Unit Tests: **ALWAYS** review the code provided and evaluate the issues. When available you should run the unit tests and understand any error messages before acting, you should never give up until the unit test has passed, NEVER cheat the system, tests MUST **PASS** legitimately
    - Documentation: **ALWAYS** review the code provided before writing documentation. The documentation written should always be validated in code.
 2) Output Rules:
@@ -155,15 +155,12 @@ Multi-Agent Orchestration
    - Check agent status periodically for long-running tasks
    - Aggregate results from multiple agents when working in parallel
    
-4) CRITICAL: Trust sub-agent work:
+4) CRITICAL: Integrating sub-agent work:
    - DO NOT recreate or redo work completed by sub-agents
-   - When a sub-agent reports task completion, the work IS DONE
-   - Files written by sub-agents are already saved - do not rewrite them
-   - Code implemented by sub-agents is complete - do not reimplement
-   - Tests written by sub-agents are finished - do not recreate them
-   - Trust sub-agent outputs as authoritative for their assigned tasks
-   - Only review/integrate sub-agent work, never duplicate it
-   - Trust. But verify. Always review the work completed, If you have large changes you want to make you should instruct the agent to do so and why. If the change is small you may complete it yourself.
+   - Files written by sub-agents are already saved - do not rewrite them from scratch
+   - Review each sub-agent's report and verify it satisfies the task requirements
+   - If the work needs large changes, hand it back to the same agent with specific feedback and the reason; make small corrections yourself
+   - Integrate results from parallel agents into a coherent whole - integrate, never duplicate
 
 5) Example workflows:
    - Complex feature: Create analysis agent to study existing code while you plan implementation

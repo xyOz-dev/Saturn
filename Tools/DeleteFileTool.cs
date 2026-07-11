@@ -24,14 +24,13 @@ When to use:
 
 How to use:
 - Set 'path' to file or directory to delete
-- Use 'recursive' for directory deletion
+- Use 'recursive' for directory deletion (default: false)
 - Use 'pattern' for selective deletion in directories
-- Set 'force' to delete read-only items
+- Set 'force' to delete read-only items (default: false)
 
 Safety features:
-- Prevents deletion outside working directory
-- Confirmation for large deletions
-- Detailed operation logging";
+- Refuses to delete anything outside the current working directory
+- Use 'dryRun' to preview what would be deleted before committing";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -46,6 +45,7 @@ Safety features:
                 { "recursive", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Delete directories recursively (default: false)" }
                     }
                 },
@@ -58,12 +58,14 @@ Safety features:
                 { "force", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Force deletion of read-only items (default: false)" }
                     }
                 },
                 { "dryRun", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Show what would be deleted without actually deleting (default: false)" }
                     }
                 }
@@ -98,7 +100,22 @@ Safety features:
             try
             {
                 var fullPath = Path.GetFullPath(path);
-                
+
+                var workingDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
+                var relativeToWorkingDir = Path.GetRelativePath(workingDirectory, fullPath);
+                if (relativeToWorkingDir == ".." ||
+                    relativeToWorkingDir.StartsWith(".." + Path.DirectorySeparatorChar) ||
+                    relativeToWorkingDir.StartsWith(".." + Path.AltDirectorySeparatorChar) ||
+                    Path.IsPathRooted(relativeToWorkingDir))
+                {
+                    return CreateErrorResult($"Access denied: Path '{path}' is outside the working directory");
+                }
+
+                if (relativeToWorkingDir == ".")
+                {
+                    return CreateErrorResult("Access denied: Cannot delete the working directory itself");
+                }
+
                 var deletionInfo = await AnalyzeDeletion(fullPath, pattern, recursive);
                 
                 if (deletionInfo.TotalItems == 0)

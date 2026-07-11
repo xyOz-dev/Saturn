@@ -22,7 +22,7 @@ When to use:
 - To read configuration files, documentation, or data files
 
 How to use:
-- Set 'filePath' to the file you want to read
+- Set 'path' to the file you want to read
 - Use 'startLine' and 'endLine' for reading specific sections of large files
 - Default reads entire file if no line range specified
 - Line numbers are shown with each line for easy reference
@@ -33,9 +33,9 @@ Important rules:
 - The tool shows line numbers which you'll need for apply_diff context
 
 Examples:
-- Read entire file: filePath='src/UserService.cs'
-- Read lines 50-100: filePath='src/UserService.cs', startLine=50, endLine=100
-- Read from line 200 onward: filePath='src/UserService.cs', startLine=200";
+- Read entire file: path='src/UserService.cs'
+- Read lines 50-100: path='src/UserService.cs', startLine=50, endLine=100
+- Read from line 200 onward: path='src/UserService.cs', startLine=200";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -62,18 +62,22 @@ Examples:
                 { "encoding", new Dictionary<string, object>
                     {
                         { "type", "string" },
-                        { "description", "Text encoding to use. Options: utf8, utf16, utf32, ascii, unicode. Default is utf8" }
+                        { "enum", new[] { "utf8", "utf16", "utf32", "ascii", "unicode" } },
+                        { "default", "utf8" },
+                        { "description", "Text encoding to use. Default is utf8" }
                     }
                 },
                 { "includeLineNumbers", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", true },
                         { "description", "Include line numbers in output. Default is true" }
                     }
                 },
                 { "includeMetadata", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", true },
                         { "description", "Include file metadata like size, dates, and encoding. Default is true" }
                     }
                 }

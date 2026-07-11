@@ -98,8 +98,14 @@ namespace Saturn.Agents.MultiAgent
 
             var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
 Your purpose: {purpose}
-You work as part of a larger system and should focus on your specific task.
-Report your progress clearly and concisely.";
+
+You work as part of a larger multi-agent system. Focus only on the task you are given; do not expand its scope.
+Use the provided tools to do the work - read files before editing them and never assume file contents.
+When the task is complete, report back concisely:
+- What you did and how you verified it
+- Files you created or changed, if any (list the paths)
+- Anything you could not complete, and why
+Your report is consumed by an orchestrator agent, so keep it factual and free of filler.";
             
             var config = new AgentConfiguration
             {

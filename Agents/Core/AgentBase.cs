@@ -468,18 +468,14 @@ namespace Saturn.Agents.Core
                         try
                         {
                             AgentContext.CurrentConfiguration = Configuration;
-                            Dictionary<string, object> parameters;
+                            var parameters = new Dictionary<string, object>();
+                            string? argumentError = null;
 
-                            if (string.IsNullOrEmpty(toolCall.Function.Arguments))
-                            {
-                                parameters = new Dictionary<string, object>();
-                            }
-                            else
+                            if (!string.IsNullOrEmpty(toolCall.Function.Arguments))
                             {
                                 try
                                 {
                                     var jsonElement = JsonSerializer.Deserialize<JsonElement>(toolCall.Function.Arguments);
-                                    parameters = new Dictionary<string, object>();
 
                                     if (jsonElement.ValueKind == JsonValueKind.Object)
                                     {
@@ -488,11 +484,40 @@ namespace Saturn.Agents.Core
                                             parameters[property.Name] = ConvertJsonElement(property.Value);
                                         }
                                     }
+                                    else
+                                    {
+                                        argumentError = $"Tool arguments must be a JSON object, but got {jsonElement.ValueKind}.";
+                                    }
                                 }
-                                catch (JsonException)
+                                catch (JsonException jsonEx)
                                 {
-                                    parameters = new Dictionary<string, object>();
+                                    argumentError = $"Tool arguments were not valid JSON: {jsonEx.Message}";
                                 }
+                            }
+
+                            argumentError ??= ValidateToolArguments(tool, parameters);
+
+                            if (argumentError != null)
+                            {
+                                stopwatch.Stop();
+                                var invalidArgsResult = new ToolResult
+                                {
+                                    Success = false,
+                                    Error = argumentError,
+                                    FormattedOutput = $"Error: {argumentError} Call the tool again with corrected arguments."
+                                };
+
+                                if (persistedToolCallId != null)
+                                {
+                                    await UpdateToolCallResultAsync(
+                                        persistedToolCallId,
+                                        null,
+                                        invalidArgsResult.Error,
+                                        (int)stopwatch.ElapsedMilliseconds);
+                                }
+
+                                results.Add((toolCall.Function.Name, toolCall.Id, invalidArgsResult));
+                                continue;
                             }
 
                             var toolResult = await tool.ExecuteAsync(parameters);
@@ -579,6 +604,55 @@ namespace Saturn.Agents.Core
             _currentAssistantMessageId = null;
             
             return results;
+        }
+
+        private static string? ValidateToolArguments(ITool tool, Dictionary<string, object> parameters)
+        {
+            Dictionary<string, object>? schema;
+            try
+            {
+                schema = tool.GetParameters();
+            }
+            catch
+            {
+                return null;
+            }
+
+            if (schema == null ||
+                !schema.TryGetValue("properties", out var propertiesObj) ||
+                propertiesObj is not Dictionary<string, object> properties)
+            {
+                return null;
+            }
+
+            var errors = new List<string>();
+
+            if (schema.TryGetValue("required", out var requiredObj))
+            {
+                var requiredNames = requiredObj switch
+                {
+                    string[] array => array,
+                    IEnumerable<string> sequence => sequence.ToArray(),
+                    _ => Array.Empty<string>()
+                };
+
+                var missing = requiredNames
+                    .Where(name => !string.IsNullOrEmpty(name) && !parameters.ContainsKey(name))
+                    .ToList();
+
+                if (missing.Count > 0)
+                {
+                    errors.Add($"Missing required parameter{(missing.Count > 1 ? "s" : "")}: {string.Join(", ", missing.Select(name => $"'{name}'"))}.");
+                }
+            }
+
+            var unknown = parameters.Keys.Where(key => !properties.ContainsKey(key)).ToList();
+            if (unknown.Count > 0)
+            {
+                errors.Add($"Unknown parameter{(unknown.Count > 1 ? "s" : "")}: {string.Join(", ", unknown.Select(name => $"'{name}'"))}. Valid parameters for {tool.Name}: {string.Join(", ", properties.Keys)}.");
+            }
+
+            return errors.Count > 0 ? string.Join(" ", errors) : null;
         }
 
         protected object ConvertJsonElement(JsonElement element)

@@ -34,7 +34,7 @@ Operating Principles
 1) Tool usage
    - Prefer tools over assumptions. Read before you write.
    - Choose the smallest-capability tool that can complete the step.
-   - On errors, analyze the message, adjust, and retry with exponential backoff up to the retry limit.
+   - On errors, read the error message, adjust the arguments or approach, and retry. If a tool keeps failing, switch to a different approach and say so.
    - Never fabricate tool results; if a tool is missing or insufficient, say so and propose alternatives.
 
 2) Planning
@@ -45,7 +45,7 @@ Operating Principles
 3) File system awareness
    - Treat the provided tree as a snapshot; verify paths with a read/list tool before modifying.
    - Use relative paths from the project root. Respect case sensitivity and OS path rules.
-   - Honor .gitignore and avoid build artifacts, vendor, and large binaries.
+   - Avoid build artifacts, vendored dependencies, and large binaries (e.g. bin/, obj/, node_modules/).
    - Preserve file formatting, headers, licenses, EOLs, and encoding.
 
 4) Coding standards

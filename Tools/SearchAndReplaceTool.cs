@@ -73,18 +73,21 @@ Safety features:
                 { "regex", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Use regex for search pattern (default: false)" }
                     }
                 },
                 { "caseSensitive", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", true },
                         { "description", "Case-sensitive search (default: true)" }
                     }
                 },
                 { "wholeWord", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Match whole words only (default: false)" }
                     }
                 },
@@ -98,12 +101,14 @@ Safety features:
                 { "dryRun", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Preview changes without applying (default: false)" }
                     }
                 },
                 { "maxFiles", new Dictionary<string, object>
                     {
                         { "type", "integer" },
+                        { "default", 1000 },
                         { "description", "Maximum files to process (default: 1000)" }
                     }
                 }

@@ -23,18 +23,17 @@ When to use:
 - Finding all usages of a particular method or variable
 
 How to use:
-- Set 'pattern' to your regex search term (supports full regex syntax)
-- Use 'path' to limit search to specific directory (optional)
+- Set 'pattern' to your regex search term (required, supports full regex syntax)
+- Set 'path' to the file or directory to search in (required, e.g. '.' for the current directory)
+- Set 'recursive' to true to search subdirectories - the default is false, so without it only the top level of 'path' is searched
 - Use 'filePattern' to search only certain file types (e.g., '*.cs')
-- Set 'caseSensitive' to false for case-insensitive search
-- Set 'recursive' to true to search subdirectories
-- Use 'maxResults' to limit output for broad searches
+- Set 'caseSensitive' to false for case-insensitive search (default is true)
+- Use 'maxResults' to limit output for broad searches (default 1000)
 
 Examples:
-- To find a class: pattern='class\\s+UserService'
-- To find TODOs: pattern='TODO|FIXME|HACK'
-- To find a method: pattern='GetUserById\\s*\\('
-- To find imports: pattern='using\\s+System\\.'";
+- Find a class anywhere in the project: pattern='class\s+UserService', path='.', recursive=true
+- Find TODOs in C# files: pattern='TODO|FIXME|HACK', path='.', recursive=true, filePattern='*.cs'
+- Find a method in one file: pattern='GetUserById\s*\(', path='src/UserService.cs'";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -49,31 +48,35 @@ Examples:
                 { "path", new Dictionary<string, object>
                     {
                         { "type", "string" },
-                        { "description", "File or directory path to search in" }
+                        { "description", "File or directory path to search in. Use '.' for the current directory" }
                     }
                 },
                 { "recursive", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Search recursively in subdirectories" }
+                        { "default", false },
+                        { "description", "Search subdirectories recursively. Default is false (only the top level of 'path' is searched)" }
                     }
                 },
                 { "filePattern", new Dictionary<string, object>
                     {
                         { "type", "string" },
+                        { "default", "*" },
                         { "description", "File name pattern to filter which files to search in. Default is * for all files" }
                     }
                 },
-                { "ignoreCase", new Dictionary<string, object>
+                { "caseSensitive", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
-                        { "description", "Perform case-insensitive search" }
+                        { "default", true },
+                        { "description", "Match case exactly. Set to false for case-insensitive search. Default is true" }
                     }
                 },
                 { "maxResults", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "description", "Maximum number of results to return" }
+                        { "default", 1000 },
+                        { "description", "Maximum number of results to return. Default is 1000" }
                     }
                 }
             };
@@ -99,7 +102,7 @@ Examples:
             var path = GetParameter<string>(parameters, "path");
             var recursive = GetParameter<bool>(parameters, "recursive", false);
             var filePattern = GetParameter<string>(parameters, "filePattern", "*");
-            var ignoreCase = GetParameter<bool>(parameters, "ignoreCase", false);
+            var caseSensitive = GetParameter<bool>(parameters, "caseSensitive", true);
             var maxResults = GetParameter<int>(parameters, "maxResults", 1000);
             
             if (string.IsNullOrEmpty(pattern))
@@ -113,8 +116,16 @@ Examples:
             }
             
             var results = new List<GrepResult>();
-            var regexOptions = ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None;
-            var regex = new Regex(pattern, regexOptions);
+            var regexOptions = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
+            Regex regex;
+            try
+            {
+                regex = new Regex(pattern, regexOptions, TimeSpan.FromSeconds(5));
+            }
+            catch (ArgumentException ex)
+            {
+                return CreateErrorResult($"Invalid regex pattern: {ex.Message}");
+            }
             
             if (!File.Exists(path) && !Directory.Exists(path))
             {

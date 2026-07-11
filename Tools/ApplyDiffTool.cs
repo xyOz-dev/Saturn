@@ -14,32 +14,25 @@ namespace Saturn.Tools
     {
         public override string Name => "apply_diff";
         
-        public override string Description => @"Use this tool to make changes to files - adding, updating, or deleting. This is your primary tool for modifying code and text files.
+        public override string Description => @"Use this tool to make changes to files that already exist. This is your primary tool for editing code and text files.
 
 When to use:
-- Making code changes, fixes, or improvements
-- Adding new files or features
-- Removing outdated or unnecessary files
+- Making code changes, fixes, or improvements to existing files
 - Updating configuration files
-- Applying any text modifications
+- Applying any text modifications to existing content
+
+When NOT to use:
+- Creating a brand-new file: prefer write_file
+- Deleting a whole file: prefer delete_file
 
 How to use:
-1. ALWAYS read the file first with read_file tool (for updates)
+1. ALWAYS read the file first with read_file - the patch must match the file's current content exactly
 2. Create a patch with clear context and changes
 3. Use unique context lines to identify where changes go
 
 Patch format examples:
 
-Adding a new file:
-*** Add File: src/NewFeature.cs
-+using System;
-+
-+public class NewFeature
-+{
-+    public void Method() { }
-+}
-
-Updating existing file:
+Updating an existing file:
 *** Update File: src/Existing.cs
 @@ public void ExistingMethod() @@
  {
@@ -48,10 +41,12 @@ Updating existing file:
 +    var newLine = GetValue();
  }
 
-Deleting a file:
-*** Delete File: src/OldFile.cs
+Rules:
+- The context line (@@ ... @@) must appear exactly once in the file
+- Lines starting with a space are unchanged context, '-' lines are removed, '+' lines are added
+- Context and '-' lines must match the file content exactly, including indentation
 
-Important: The context line (@@ ... @@) must be unique in the file!";
+The format also supports '*** Add File: path' (every content line prefixed with '+') and '*** Delete File: path' when you need them in a combined patch.";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -90,11 +85,14 @@ Important: The context line (@@ ... @@) must be unique in the file!";
             {
                 if (line.StartsWith("*** Add File:") || line.StartsWith("*** Update File:") || line.StartsWith("*** Delete File:"))
                 {
-                    var parts = line.Split(':');
-                    if (parts.Length > 1)
+                    var separatorIndex = line.IndexOf(':');
+                    if (separatorIndex >= 0 && separatorIndex < line.Length - 1)
                     {
-                        var filename = parts[1].Trim();
-                        files.Add(System.IO.Path.GetFileName(filename));
+                        var filename = line.Substring(separatorIndex + 1).Trim();
+                        if (filename.Length > 0)
+                        {
+                            files.Add(System.IO.Path.GetFileName(filename));
+                        }
                     }
                 }
                 else if (line.StartsWith("+") && !line.StartsWith("+++"))
