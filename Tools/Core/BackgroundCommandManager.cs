@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
 
@@ -18,7 +19,7 @@ namespace Saturn.Tools.Core
     /// A command launched in the background. Output is buffered as it arrives and can be
     /// drained incrementally via <see cref="ReadNew"/>, mirroring how a terminal is polled.
     /// </summary>
-    public class BackgroundCommand
+    public class BackgroundCommand : IDisposable
     {
         private const int MaxBufferLength = 1048576; // 1MB retained per stream
 
@@ -27,14 +28,48 @@ namespace Saturn.Tools.Core
         private int _stdoutCursor;
         private int _stderrCursor;
         private readonly object _lock = new();
+        private BackgroundCommandStatus _status = BackgroundCommandStatus.Running;
 
         public string Id { get; init; } = "";
         public string Command { get; init; } = "";
         public string WorkingDirectory { get; init; } = "";
         public Process Process { get; init; } = null!;
         public DateTime StartedAt { get; init; }
-        public BackgroundCommandStatus Status { get; set; } = BackgroundCommandStatus.Running;
-        public int? ExitCode { get; set; }
+        public int? ExitCode { get; private set; }
+
+        public BackgroundCommandStatus Status
+        {
+            get { lock (_lock) { return _status; } }
+        }
+
+        public bool IsTerminal
+        {
+            get { lock (_lock) { return _status != BackgroundCommandStatus.Running; } }
+        }
+
+        /// <summary>Records a natural exit. No-op if the command was already killed or exited.</summary>
+        public void MarkExited(int? exitCode)
+        {
+            lock (_lock)
+            {
+                if (_status != BackgroundCommandStatus.Running)
+                    return;
+                _status = BackgroundCommandStatus.Exited;
+                ExitCode = exitCode;
+            }
+        }
+
+        /// <summary>Records that the command was killed. Returns false if it had already finished.</summary>
+        public bool MarkKilled()
+        {
+            lock (_lock)
+            {
+                if (_status != BackgroundCommandStatus.Running)
+                    return false;
+                _status = BackgroundCommandStatus.Killed;
+                return true;
+            }
+        }
 
         public void AppendStdout(string line)
         {
@@ -72,6 +107,11 @@ namespace Saturn.Tools.Core
                 cursor = Math.Max(0, cursor - overflow);
             }
         }
+
+        public void Dispose()
+        {
+            try { Process?.Dispose(); } catch { }
+        }
     }
 
     /// <summary>
@@ -80,6 +120,10 @@ namespace Saturn.Tools.Core
     /// </summary>
     public class BackgroundCommandManager
     {
+        // Retain a bounded number of commands so finished processes don't leak handles or memory
+        // over a long session. Only terminal (exited/killed) commands are ever evicted.
+        private const int MaxRetainedCommands = 50;
+
         private static readonly Lazy<BackgroundCommandManager> _instance = new(() => new BackgroundCommandManager());
         public static BackgroundCommandManager Instance => _instance.Value;
 
@@ -100,6 +144,7 @@ namespace Saturn.Tools.Core
                 StartedAt = DateTime.UtcNow
             };
             _commands[id] = bg;
+            EvictTerminalOverflow();
             return bg;
         }
 
@@ -110,6 +155,32 @@ namespace Saturn.Tools.Core
 
         public IEnumerable<BackgroundCommand> GetAll() => _commands.Values;
 
-        public void Remove(string id) => _commands.TryRemove(id, out _);
+        public void Remove(string id)
+        {
+            if (id != null && _commands.TryRemove(id, out var cmd))
+            {
+                cmd.Dispose();
+            }
+        }
+
+        // Drop the oldest finished commands once we exceed the retention cap. Running commands are
+        // never evicted so their output stays pollable until they finish.
+        private void EvictTerminalOverflow()
+        {
+            var overflow = _commands.Count - MaxRetainedCommands;
+            if (overflow <= 0)
+                return;
+
+            var stale = _commands.Values
+                .Where(c => c.IsTerminal)
+                .OrderBy(c => c.StartedAt)
+                .Take(overflow)
+                .ToList();
+
+            foreach (var cmd in stale)
+            {
+                Remove(cmd.Id);
+            }
+        }
     }
 }

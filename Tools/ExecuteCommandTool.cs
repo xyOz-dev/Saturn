@@ -267,6 +267,10 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 try { await process.WaitForExitAsync(); } catch { }
             }
 
+            // A blocking WaitForExit with no timeout ensures the async output handlers have
+            // drained before we read the buffers, so the tail of the output isn't lost.
+            try { process.WaitForExit(); } catch { }
+
             stopwatch.Stop();
 
             int exitCode;
@@ -294,16 +298,24 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             process.ErrorDataReceived += (sender, e) => { if (e.Data != null) bg.AppendStderr(e.Data); };
             process.Exited += (sender, e) =>
             {
-                try { bg.ExitCode = process.ExitCode; } catch { }
-                if (bg.Status == BackgroundCommandStatus.Running)
-                {
-                    bg.Status = BackgroundCommandStatus.Exited;
-                }
+                int? exitCode = null;
+                try { exitCode = process.ExitCode; } catch { }
+                bg.MarkExited(exitCode);
             };
 
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            try
+            {
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+            }
+            catch
+            {
+                // The process never started, so drop the registration instead of leaving a
+                // phantom entry stuck in the 'running' state forever.
+                BackgroundCommandManager.Instance.Remove(bg.Id);
+                throw;
+            }
 
             var message =
                 $"Command started in background with id '{bg.Id}'.\n" +

@@ -51,17 +51,19 @@ Terminates the process and its child process tree. Use this to shut down dev ser
                 return Task.FromResult(CreateErrorResult($"No background command with id '{commandId}'"));
             }
 
-            if (bg.Status != BackgroundCommandStatus.Running)
+            // Claim the killed state before terminating: killing the process fires its own
+            // Exited event, which would otherwise race us and report 'exited' instead of 'killed'.
+            if (!bg.MarkKilled())
             {
+                var current = bg.Status.ToString().ToLowerInvariant();
                 return Task.FromResult(CreateSuccessResult(
-                    new Dictionary<string, object> { ["command_id"] = commandId, ["status"] = bg.Status.ToString().ToLowerInvariant() },
-                    $"Command '{commandId}' is already {bg.Status.ToString().ToLowerInvariant()}."));
+                    new Dictionary<string, object> { ["command_id"] = commandId, ["status"] = current },
+                    $"Command '{commandId}' is already {current}."));
             }
 
             try
             {
                 bg.Process.Kill(entireProcessTree: true);
-                bg.Status = BackgroundCommandStatus.Killed;
             }
             catch (Exception ex)
             {
