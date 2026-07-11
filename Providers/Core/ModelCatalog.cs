@@ -65,6 +65,10 @@ namespace Saturn.Providers
                     return models;
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch
             {
             }
@@ -120,6 +124,10 @@ namespace Saturn.Providers
                 }
 
                 return models.FirstOrDefault(m => m.IsLoaded == true)?.Id ?? models[0].Id;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch
             {

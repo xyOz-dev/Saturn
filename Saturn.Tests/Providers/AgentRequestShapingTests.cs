@@ -97,6 +97,37 @@ namespace Saturn.Tests.Providers
         }
 
         [Fact]
+        public async Task Execute_AfterProviderSwap_RoutesToTheNewClient()
+        {
+            var nameA = "shape-a-" + Guid.NewGuid().ToString("N");
+            var nameB = "shape-b-" + Guid.NewGuid().ToString("N");
+            var clientA = new FakeLlmClient();
+            var clientB = new FakeLlmClient();
+            ProviderRegistry.Register(new FakeProvider { Name = nameA, Factory = _ => clientA });
+            ProviderRegistry.Register(new FakeProvider { Name = nameB, Factory = _ => clientB });
+
+            var manager = new LlmClientManager();
+            (await manager.SwapAsync(nameA, new ProviderSettings())).Success.Should().BeTrue();
+
+            var agent = new TestAgent(new AgentConfiguration
+            {
+                Name = "Test",
+                SystemPrompt = "You are a test agent.",
+                ClientSource = manager,
+                Model = "test-model"
+            });
+
+            await agent.Execute<Message>("one");
+            clientA.LastRequest.Should().NotBeNull();
+            clientB.LastRequest.Should().BeNull();
+
+            (await manager.SwapAsync(nameB, new ProviderSettings())).Success.Should().BeTrue();
+
+            await agent.Execute<Message>("two");
+            clientB.LastRequest.Should().NotBeNull("the turn after a swap must resolve the new client");
+        }
+
+        [Fact]
         public async Task Execute_AfterSwapToNonCachingProvider_StripsCacheControlFromHistory()
         {
             // History accumulated under a caching provider (system message is a

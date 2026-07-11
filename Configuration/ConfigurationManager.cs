@@ -14,12 +14,27 @@ namespace Saturn.Configuration
 {
     public class ConfigurationManager
     {
-        private static readonly string AppDataPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Saturn"
-        );
+        /// <summary>
+        /// Config directory: SATURN_CONFIG_DIR when set (portable installs, tests),
+        /// otherwise %APPDATA%\Saturn. Resolved per access so the override can change.
+        /// </summary>
+        private static string AppDataPath
+        {
+            get
+            {
+                var overrideDir = Environment.GetEnvironmentVariable("SATURN_CONFIG_DIR");
+                if (!string.IsNullOrWhiteSpace(overrideDir))
+                {
+                    return overrideDir;
+                }
 
-        private static readonly string ConfigFilePath = Path.Combine(AppDataPath, "agent-config.json");
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Saturn");
+            }
+        }
+
+        private static string ConfigFilePath => Path.Combine(AppDataPath, "agent-config.json");
 
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
