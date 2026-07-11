@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Saturn.Agents.Core;
 using Saturn.Configuration.Objects;
@@ -26,6 +28,10 @@ namespace Saturn.Configuration
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             Converters = { new JsonStringEnumConverter() }
         };
+
+        // Saves are read-modify-write; serialize them so two in-flight saves cannot
+        // interleave and drop each other's provider fields.
+        private static readonly SemaphoreSlim SaveLock = new(1, 1);
 
         public static async Task<PersistedAgentConfiguration?> LoadConfigurationAsync()
         {
@@ -70,7 +76,12 @@ namespace Saturn.Configuration
         private static void MigrateLegacyProviderFields(PersistedAgentConfiguration config)
         {
             config.ActiveProvider ??= "openrouter";
-            config.Providers ??= new Dictionary<string, PersistedProviderConfiguration>(StringComparer.OrdinalIgnoreCase);
+
+            // System.Text.Json deserializes dictionaries with the default case-sensitive
+            // comparer; rebuild so "LMStudio" and "lmstudio" cannot become separate keys.
+            config.Providers = config.Providers == null
+                ? new Dictionary<string, PersistedProviderConfiguration>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, PersistedProviderConfiguration>(config.Providers, StringComparer.OrdinalIgnoreCase);
 
             if (!config.Providers.TryGetValue(config.ActiveProvider, out var providerConfig))
             {
@@ -83,6 +94,7 @@ namespace Saturn.Configuration
 
         public static async Task SaveConfigurationAsync(PersistedAgentConfiguration config)
         {
+            await SaveLock.WaitAsync();
             try
             {
                 // Most call sites build the persisted object from the live agent
@@ -112,12 +124,20 @@ namespace Saturn.Configuration
                     Directory.CreateDirectory(AppDataPath);
                 }
 
+                // Write-then-rename so a crash mid-write can never leave a truncated
+                // config that a later load would silently treat as "no config".
                 var json = JsonSerializer.Serialize(config, JsonOptions);
-                await File.WriteAllTextAsync(ConfigFilePath, json);
+                var tempPath = ConfigFilePath + ".tmp";
+                await File.WriteAllTextAsync(tempPath, json);
+                File.Move(tempPath, ConfigFilePath, overwrite: true);
             }
             catch (Exception ex)
             {
 
+            }
+            finally
+            {
+                SaveLock.Release();
             }
         }
 
@@ -138,7 +158,30 @@ namespace Saturn.Configuration
                 config.Providers[providerName] = providerConfig;
             }
 
-            providerConfig.Settings = new Dictionary<string, string?>(settings.Values, StringComparer.OrdinalIgnoreCase);
+            // Secret values that merely mirror the environment variable are not
+            // persisted: writing them would store the key in plaintext for no benefit
+            // and shadow the env var if it is later rotated.
+            var toPersist = new Dictionary<string, string?>(settings.Values, StringComparer.OrdinalIgnoreCase);
+            if (ProviderRegistry.TryGet(providerName, out var provider))
+            {
+                foreach (var descriptor in provider.SettingDescriptors)
+                {
+                    if (descriptor.Kind != ProviderSettingKind.Secret ||
+                        string.IsNullOrWhiteSpace(descriptor.EnvironmentVariable))
+                    {
+                        continue;
+                    }
+
+                    var envValue = Environment.GetEnvironmentVariable(descriptor.EnvironmentVariable);
+                    if (toPersist.TryGetValue(descriptor.Key, out var saved) &&
+                        !string.IsNullOrEmpty(saved) &&
+                        string.Equals(saved, envValue, StringComparison.Ordinal))
+                    {
+                        toPersist.Remove(descriptor.Key);
+                    }
+                }
+            }
+            providerConfig.Settings = toPersist;
             if (!string.IsNullOrWhiteSpace(model))
             {
                 providerConfig.Model = model;

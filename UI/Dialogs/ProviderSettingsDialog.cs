@@ -27,9 +27,24 @@ namespace Saturn.UI.Dialogs
         private Button applyButton = null!;
         private Button cancelButton = null!;
         private readonly List<(ProviderSettingDescriptor Descriptor, TextField Field)> settingFields = new();
+        private bool isBusy;
 
         public bool Applied { get; private set; }
         public ProviderSettings? AppliedSettings { get; private set; }
+
+        /// <summary>
+        /// While a test/apply is in flight the dialog must not close: dismissing it
+        /// mid-swap would leave the manager half-applied and the later RequestStop
+        /// would land on the main window instead.
+        /// </summary>
+        public override bool ProcessKey(KeyEvent keyEvent)
+        {
+            if (isBusy && keyEvent.Key == Key.Esc)
+            {
+                return true;
+            }
+            return base.ProcessKey(keyEvent);
+        }
 
         public ProviderSettingsDialog(LlmClientManager manager, PersistedAgentConfiguration? persistedConfig)
             : base("Provider Settings", 78, 24)
@@ -119,7 +134,12 @@ namespace Saturn.UI.Dialogs
 
         private void RebuildSettingFields()
         {
+            var oldViews = settingsArea.Subviews.ToList();
             settingsArea.RemoveAll();
+            foreach (var view in oldViews)
+            {
+                view.Dispose();
+            }
             settingFields.Clear();
 
             var provider = SelectedProvider;
@@ -160,8 +180,8 @@ namespace Saturn.UI.Dialogs
                 {
                     var envSet = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(descriptor.EnvironmentVariable));
                     hints.Add(envSet
-                        ? $"env {descriptor.EnvironmentVariable} is set and used when blank"
-                        : $"falls back to env {descriptor.EnvironmentVariable}");
+                        ? $"blank = env {descriptor.EnvironmentVariable}"
+                        : $"env: {descriptor.EnvironmentVariable}");
                 }
                 if (!string.IsNullOrWhiteSpace(descriptor.DefaultValue))
                 {
@@ -200,6 +220,7 @@ namespace Saturn.UI.Dialogs
 
         private void SetBusy(bool busy)
         {
+            isBusy = busy;
             testButton.Enabled = !busy;
             applyButton.Enabled = !busy;
             cancelButton.Enabled = !busy;
@@ -262,7 +283,16 @@ namespace Saturn.UI.Dialogs
                 {
                     Applied = true;
                     AppliedSettings = settings;
-                    Application.MainLoop.Invoke(() => Application.RequestStop());
+                    Application.MainLoop.Invoke(() =>
+                    {
+                        SetBusy(false);
+                        // Only stop this dialog; if it somehow already closed, stopping
+                        // the current toplevel would take down the main window.
+                        if (Application.Current == this)
+                        {
+                            Application.RequestStop();
+                        }
+                    });
                 }
                 else
                 {

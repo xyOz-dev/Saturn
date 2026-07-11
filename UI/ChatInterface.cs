@@ -905,12 +905,26 @@ namespace Saturn.UI
                 cancellationTokenSource?.Cancel();
                 AgentManager.Instance.TerminateAllAgents();
             }
+            else if (AgentManager.Instance.GetCurrentAgentCount() > 0)
+            {
+                // Sub-agents run detached from the main agent's processing flag and would
+                // otherwise keep executing against the retired client.
+                var choice = MessageBox.Query("Provider",
+                    $"{AgentManager.Instance.GetCurrentAgentCount()} sub-agent(s) are still running. Terminate them and switch providers?",
+                    "Yes", "No");
+                if (choice != 0) return;
+
+                AgentManager.Instance.TerminateAllAgents();
+            }
 
             var persisted = await ConfigurationManager.LoadConfigurationAsync();
             var dialog = new ProviderSettingsDialog(manager, persisted);
             Application.Run(dialog);
 
             if (!dialog.Applied) return;
+
+            // The new provider must never see the old provider's cached model list.
+            ModelCatalog.Invalidate();
 
             var providerName = manager.ActiveProviderName;
             var capabilities = manager.Current.Capabilities;
@@ -941,7 +955,16 @@ namespace Saturn.UI
             await ConfigurationManager.SaveProviderSelectionAsync(providerName, dialog.AppliedSettings ?? new ProviderSettings(), model);
             await UpdateConfiguration();
 
-            chatView.Text += $"\n[Provider switched to {capabilities.ProviderName} | Model: {model}]\n\n";
+            chatView.Text += $"\n[Provider switched to {capabilities.ProviderName} | Model: {model}]\n";
+
+            var envProvider = Environment.GetEnvironmentVariable("SATURN_PROVIDER");
+            if (!string.IsNullOrWhiteSpace(envProvider) &&
+                !string.Equals(envProvider.Trim(), providerName, StringComparison.OrdinalIgnoreCase))
+            {
+                chatView.Text += $"[Note: the SATURN_PROVIDER={envProvider} environment variable overrides this choice on the next launch]\n";
+            }
+            chatView.Text += "\n";
+
             ScrollChatToBottom();
             Application.Refresh();
         }
@@ -1301,6 +1324,7 @@ namespace Saturn.UI
                 try
                 {
                     ApplyModeToUIConfiguration(dialog.SelectedMode);
+                    await ResolveCurrentModelForProviderAsync();
                     await UpdateConfiguration();
                 }
                 catch (Exception ex)
@@ -1338,11 +1362,29 @@ namespace Saturn.UI
                 if (applyNow == 0)
                 {
                     ApplyModeToUIConfiguration(editorDialog.ResultMode);
+                    await ResolveCurrentModelForProviderAsync();
                     await UpdateConfiguration();
                 }
             }
         }
         
+        /// <summary>
+        /// Modes store model ids written for whichever provider was active when they were
+        /// created; substitute a model the current provider actually serves.
+        /// </summary>
+        private async Task ResolveCurrentModelForProviderAsync()
+        {
+            if (clientSource == null || !clientSource.IsConnected) return;
+
+            var resolved = await ModelCatalog.ResolveModelAsync(clientSource, currentConfig.Model, agent.Configuration.Model);
+            if (!string.Equals(resolved, currentConfig.Model, StringComparison.OrdinalIgnoreCase))
+            {
+                chatView.Text += $"\n[Model '{currentConfig.Model}' is not available on {GetProviderDisplayName()}; using '{resolved}']\n";
+                currentConfig.Model = resolved;
+                ScrollChatToBottom();
+            }
+        }
+
         private void ApplyModeToUIConfiguration(Mode mode)
         {
             currentConfig.Model = mode.Model;

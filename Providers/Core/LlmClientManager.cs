@@ -29,7 +29,9 @@ namespace Saturn.Providers
     /// </summary>
     public sealed class LlmClientManager : ILlmClientSource, IDisposable
     {
-        private static readonly TimeSpan RetiredClientGracePeriod = TimeSpan.FromMinutes(10);
+        // Long enough to outlive any realistic in-flight turn on the old client,
+        // including local-server requests that use LM Studio's 10-minute timeout.
+        private static readonly TimeSpan RetiredClientGracePeriod = TimeSpan.FromMinutes(30);
 
         private readonly object _swapLock = new();
         private ILlmClient? _current;
@@ -51,7 +53,15 @@ namespace Saturn.Providers
 
         public event EventHandler<ProviderChangedEventArgs>? ProviderChanged;
 
-        public async Task<SwapResult> SwapAsync(string providerName, ProviderSettings settings, CancellationToken cancellationToken = default)
+        public Task<SwapResult> SwapAsync(string providerName, ProviderSettings settings, CancellationToken cancellationToken = default)
+            => SwapAsync(providerName, settings, requireValidation: true, cancellationToken);
+
+        /// <summary>
+        /// Connects a provider. With <paramref name="requireValidation"/> false the client
+        /// is installed without a liveness probe — used at startup so a transient network
+        /// blip degrades to per-request errors instead of refusing to launch.
+        /// </summary>
+        public async Task<SwapResult> SwapAsync(string providerName, ProviderSettings settings, bool requireValidation, CancellationToken cancellationToken = default)
         {
             ILlmProvider provider;
             try
@@ -75,21 +85,24 @@ namespace Saturn.Providers
                 return SwapResult.Failed(ex.Message);
             }
 
-            bool reachable;
-            try
+            if (requireValidation)
             {
-                reachable = await candidate.ValidateConnectionAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                SafeDispose(candidate);
-                return SwapResult.Failed($"Could not connect to {provider.DisplayName}: {ex.Message}");
-            }
+                bool reachable;
+                try
+                {
+                    reachable = await candidate.ValidateConnectionAsync(cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    SafeDispose(candidate);
+                    return SwapResult.Failed($"Could not connect to {provider.DisplayName}: {ex.Message}");
+                }
 
-            if (!reachable)
-            {
-                SafeDispose(candidate);
-                return SwapResult.Failed($"Could not connect to {provider.DisplayName}. Check the provider settings and that the service is reachable.");
+                if (!reachable)
+                {
+                    SafeDispose(candidate);
+                    return SwapResult.Failed($"Could not connect to {provider.DisplayName}. Check the provider settings and that the service is reachable.");
+                }
             }
 
             ILlmClient? retired;

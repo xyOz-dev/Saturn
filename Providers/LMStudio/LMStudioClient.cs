@@ -43,15 +43,23 @@ namespace Saturn.Providers
                 HttpMessageHandler = handlerFactory?.Invoke()
             };
             _v1Http = new HttpClientAdapter(v1Options);
-            _chat = new ChatCompletionsService(_v1Http);
-            _chatStreaming = new ChatCompletionsStreamingService(_v1Http, v1Options);
-
-            _nativeHttp = new HttpClientAdapter(new OpenRouterOptions
+            try
             {
-                BaseUrl = root + "/api/v0",
-                Timeout = TimeSpan.FromSeconds(10),
-                HttpMessageHandler = handlerFactory?.Invoke()
-            });
+                _chat = new ChatCompletionsService(_v1Http);
+                _chatStreaming = new ChatCompletionsStreamingService(_v1Http, v1Options);
+
+                _nativeHttp = new HttpClientAdapter(new OpenRouterOptions
+                {
+                    BaseUrl = root + "/api/v0",
+                    Timeout = TimeSpan.FromSeconds(10),
+                    HttpMessageHandler = handlerFactory?.Invoke()
+                });
+            }
+            catch
+            {
+                _v1Http.Dispose();
+                throw;
+            }
         }
 
         public string BaseUrl => _baseUrl;
@@ -83,9 +91,13 @@ namespace Saturn.Providers
                 root = root.Substring(0, root.Length - "/v1".Length).TrimEnd('/');
             }
 
-            if (!Uri.TryCreate(root, UriKind.Absolute, out _))
+            // Require an explicit http(s) scheme: "localhost:1234" parses as a URI with
+            // scheme "localhost" and would only fail later with a generic connect error.
+            if (!Uri.TryCreate(root, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
-                throw new InvalidOperationException($"LM Studio base URL '{baseUrl}' is not a valid absolute URL.");
+                throw new InvalidOperationException(
+                    $"LM Studio base URL '{baseUrl}' is not a valid http(s) URL. Example: http://localhost:1234/v1");
             }
 
             return root;

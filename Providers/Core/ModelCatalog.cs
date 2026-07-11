@@ -29,8 +29,20 @@ namespace Saturn.Providers
                 return new List<ModelInfo>();
             }
 
-            var client = clientSource.Current;
-            var providerKey = clientSource.ActiveProviderName;
+            // The two reads on the source are not atomic across a concurrent swap; re-read
+            // the name until it brackets the client read consistently, so a list can never
+            // be cached under the wrong provider's key.
+            string providerKey;
+            ILlmClient client;
+            while (true)
+            {
+                providerKey = clientSource.ActiveProviderName;
+                client = clientSource.Current;
+                if (clientSource.ActiveProviderName == providerKey)
+                {
+                    break;
+                }
+            }
 
             lock (_lock)
             {
@@ -79,6 +91,19 @@ namespace Saturn.Providers
                 if (models.Any(m => string.Equals(m.Id, requestedModel, StringComparison.OrdinalIgnoreCase)))
                 {
                     return requestedModel;
+                }
+
+                // OpenRouter routing variants ("vendor/model:nitro", ":online", ":free")
+                // are valid request ids that never appear verbatim in the models listing;
+                // when the base model exists, trust the requested variant.
+                var variantSeparator = requestedModel.LastIndexOf(':');
+                if (variantSeparator > 0)
+                {
+                    var baseModel = requestedModel.Substring(0, variantSeparator);
+                    if (models.Any(m => string.Equals(m.Id, baseModel, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return requestedModel;
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(preferredFallback) &&

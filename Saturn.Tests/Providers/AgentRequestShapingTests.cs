@@ -95,5 +95,29 @@ namespace Saturn.Tests.Providers
             agent.ChatHistory[0].Role.Should().Be("system");
             agent.ChatHistory[0].Content.ValueKind.Should().Be(JsonValueKind.Array);
         }
+
+        [Fact]
+        public async Task Execute_AfterSwapToNonCachingProvider_StripsCacheControlFromHistory()
+        {
+            // History accumulated under a caching provider (system message is a
+            // cache_control content-part array)...
+            var cachingClient = new FakeLlmClient();
+            var agent = CreateAgent(new LlmClientCapabilities { SupportsCaching = true }, cachingClient);
+            agent.ChatHistory[0].Content.ValueKind.Should().Be(JsonValueKind.Array);
+
+            // ...must go over the wire as plain text once a non-caching provider is active.
+            var plainClient = new FakeLlmClient { Capabilities = new LlmClientCapabilities { SupportsCaching = false } };
+            agent.Configuration.ClientSource = new StaticClientSource(plainClient, "swapped");
+
+            await agent.Execute<Message>("hello");
+
+            plainClient.LastRequest.Should().NotBeNull();
+            var systemMessage = plainClient.LastRequest!.Messages![0];
+            systemMessage.Role.Should().Be("system");
+            systemMessage.Content.ValueKind.Should().Be(JsonValueKind.String);
+
+            // The stored history keeps its original shape for a potential swap back.
+            agent.ChatHistory[0].Content.ValueKind.Should().Be(JsonValueKind.Array);
+        }
     }
 }

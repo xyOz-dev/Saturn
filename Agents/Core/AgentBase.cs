@@ -915,10 +915,18 @@ namespace Saturn.Agents.Core
         {
             var capabilities = client.Capabilities;
 
+            // History written under a caching provider carries cache_control content
+            // parts; after a provider swap those must not reach a backend that never
+            // declared support for them. Sanitized copies only — the history itself is
+            // left intact for a potential swap back.
+            var messages = capabilities.SupportsCaching
+                ? currentMessages.ToArray()
+                : currentMessages.Select(StripCacheControl).ToArray();
+
             var request = new ChatCompletionRequest
             {
                 Model = Configuration.Model,
-                Messages = currentMessages.ToArray(),
+                Messages = messages,
                 Temperature = Configuration.Temperature,
                 MaxTokens = Configuration.MaxTokens,
                 TopP = Configuration.TopP,
@@ -944,6 +952,44 @@ namespace Saturn.Agents.Core
             }
 
             return request;
+        }
+
+        private static Message StripCacheControl(Message message)
+        {
+            if (message.Content.ValueKind != JsonValueKind.Array)
+            {
+                return message;
+            }
+
+            var hasCacheControl = false;
+            var texts = new List<string>();
+            foreach (var part in message.Content.EnumerateArray())
+            {
+                if (part.ValueKind != JsonValueKind.Object || !part.TryGetProperty("text", out var textProp))
+                {
+                    // Not a pure text-part array (e.g. images); leave it untouched.
+                    return message;
+                }
+                if (part.TryGetProperty("cache_control", out _))
+                {
+                    hasCacheControl = true;
+                }
+                texts.Add(textProp.GetString() ?? string.Empty);
+            }
+
+            if (!hasCacheControl)
+            {
+                return message;
+            }
+
+            return new Message
+            {
+                Role = message.Role,
+                Content = JString(string.Join("", texts)),
+                Name = message.Name,
+                ToolCallId = message.ToolCallId,
+                ToolCalls = message.ToolCalls
+            };
         }
 
         protected static JsonElement JString(string value)

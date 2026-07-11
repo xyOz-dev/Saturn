@@ -54,6 +54,24 @@ namespace Saturn.Tests.Providers
         }
 
         [Fact]
+        public async Task ResolveModelAsync_VariantSlugWithKnownBaseModel_IsKept()
+        {
+            var client = new FakeLlmClient
+            {
+                Models = new List<ModelInfo>
+                {
+                    new() { Id = "anthropic/claude-sonnet-4" },
+                    new() { Id = "other/model" }
+                }
+            };
+
+            // Routing variants never appear in the listing but are valid request ids.
+            var resolved = await ModelCatalog.ResolveModelAsync(Source(client), "anthropic/claude-sonnet-4:nitro");
+
+            resolved.Should().Be("anthropic/claude-sonnet-4:nitro");
+        }
+
+        [Fact]
         public async Task ResolveModelAsync_EmptyListing_ReturnsRequestedUnchanged()
         {
             var client = new FakeLlmClient { Models = new List<ModelInfo>() };

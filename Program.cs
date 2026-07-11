@@ -71,9 +71,17 @@ namespace Saturn
                 providerName = OpenRouterProvider.ProviderName;
             }
 
+            // Canonicalize the name (env vars arrive in any casing) so it is a stable
+            // config key; unknown names fail here with the list of registered providers.
+            providerName = ProviderRegistry.Get(providerName.Trim()).Name;
+
             var manager = LlmClientManager.Instance;
             var providerSettings = ConfigurationManager.GetProviderSettings(persistedConfig, providerName);
-            var swap = await manager.SwapAsync(providerName, providerSettings);
+
+            // Install the client without a liveness probe: a transient network blip or a
+            // provider outage should degrade to per-request errors, not refuse to launch.
+            // Client construction still fails hard on unusable settings (e.g. missing key).
+            var swap = await manager.SwapAsync(providerName, providerSettings, requireValidation: false);
             if (!swap.Success)
             {
                 throw new InvalidOperationException(swap.Error);
@@ -83,6 +91,14 @@ namespace Saturn
             Saturn.Core.Agents.AgentPoolManager.Initialize(manager);
 
             var capabilities = manager.Current.Capabilities;
+
+            if (!await manager.Current.ValidateConnectionAsync())
+            {
+                Console.WriteLine($"Warning: could not verify the connection to {capabilities.ProviderName}. " +
+                    "Starting anyway; requests will fail until it is reachable. " +
+                    "You can switch providers from Agent -> Provider... in the UI.");
+            }
+
             var model = await ResolveStartupModelAsync(manager, persistedConfig, providerName);
 
             var temperature = 0.15;
@@ -265,7 +281,20 @@ Operating Principles
 
             if (string.IsNullOrWhiteSpace(model))
             {
-                var models = await manager.Current.ListModelsAsync();
+                List<ModelInfo> models;
+                try
+                {
+                    models = await manager.Current.ListModelsAsync();
+                }
+                catch
+                {
+                    // Provider unreachable at startup; leave the model unset and let the
+                    // user pick one from the UI once it comes back.
+                    Console.WriteLine($"Warning: could not list models from {capabilities.ProviderName}. " +
+                        "Select a model via Agent -> Select Model... once the provider is reachable.");
+                    return string.Empty;
+                }
+
                 model = models.FirstOrDefault(m => m.IsLoaded == true)?.Id ?? models.FirstOrDefault()?.Id;
                 if (string.IsNullOrWhiteSpace(model))
                 {

@@ -87,7 +87,7 @@ export SATURN_PROVIDER=lmstudio
 
 Saturn connects to `http://localhost:1234/v1` by default; set `LMSTUDIO_BASE_URL` if your server runs elsewhere. If no model is configured, Saturn picks the first loaded model automatically.
 
-You can also switch providers later from inside Saturn via **Agent → Provider...** — the choice is remembered between runs, and each provider remembers its own model.
+You can also switch providers later from inside Saturn via **Agent → Provider...** — the choice is remembered between runs, and each provider remembers its own model. Note that the `SATURN_PROVIDER` environment variable, when set, always wins at launch — so if you set it permanently (e.g. with `setx`) it will override the in-app choice on the next start. Clear it (`setx SATURN_PROVIDER ""` or unset it in your shell profile) if you prefer to control the provider from the UI.
 
 > **Note on local models:** Saturn drives everything through tool calls, so use a model with solid tool-calling support (e.g. Qwen 2.5 Coder, Llama 3.1+, Mistral). Small models may produce malformed tool calls or loop. Sub-agent parallelism is also limited by the fact that a local server generates for one request at a time.
 
