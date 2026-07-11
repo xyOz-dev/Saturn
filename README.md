@@ -11,36 +11,46 @@
 </div>
 
 ---
-## Warning: Some hotkeys may not work on Unix systems, we are looking into a fix (This issue is caused by the ui framework terminal.gui)
 
+> **Warning:** Some hotkeys may not work on Unix systems, we are looking into a fix. This issue is caused by the UI framework (Terminal.Gui).
 
-<details>
-<summary><b>📋 Prerequisites</b></summary>
+## What is Saturn?
+
+Saturn is an AI coding agent that runs entirely in your terminal. You describe what you want done in plain English, and Saturn reads your code, makes edits, runs commands, and reports back, all inside the Git repository you point it at.
+
+Under the hood it connects to [OpenRouter](https://openrouter.ai/), so you can use models from Anthropic, OpenAI, Google and others with a single API key. It is built on .NET 8 and Terminal.Gui, and installs as a standard .NET global tool.
+
+## Features
+
+- **Terminal chat interface** with streaming responses and markdown rendering
+- **A full tool suite** the agent uses on your behalf: read, write and diff files, grep and glob searches, shell command execution, and web fetch
+- **Command approval**, so the agent asks before running shell commands
+- **Multi-agent orchestration**: the main agent can spawn sub-agents, hand tasks off to them, check their status and collect results, letting it work on several parts of a task in parallel
+- **Modes and user rules** to customize the agent's behavior per task or globally
+- **Persistent chat history** stored locally in SQLite, so you can reload previous sessions
+- **Git-aware**: Saturn requires a Git repository, so every change it makes can be reviewed and reverted with normal Git workflow
+
+## Prerequisites
 
 - **.NET 8.0 SDK** or later
-- **Git** (Saturn requires a Git repository)
-- **OpenRouter API Key** ([Get one here](https://openrouter.ai/))
+- **Git**. Saturn only operates inside a Git repository. If you start it elsewhere it will offer to initialize one.
+- **OpenRouter API key** ([get one here](https://openrouter.ai/))
 
-</details>
+## Installation
 
-
-## 📦 Installation
-
-### **Install as .NET Global Tool** *(Recommended)*
+Install as a .NET global tool (recommended):
 
 ```bash
 # Install from NuGet
 dotnet tool install --global SaturnAgent
 
-# Or install from local package
+# Or install from a local package
 dotnet tool install --global --add-source ./nupkg SaturnAgent
 ```
 
----
+## Quick Start
 
-## 🚀 Quick Start
-
-### 1️⃣ **Set up your API key**
+### 1. Set up your API key
 
 ```bash
 # Windows (Command Prompt)
@@ -53,19 +63,30 @@ $env:OPENROUTER_API_KEY = "your-api-key-here"
 export OPENROUTER_API_KEY="your-api-key-here"
 ```
 
-### 2️⃣ **Launch Saturn**
+### 2. Launch Saturn
+
+From inside the Git repository you want to work on:
 
 ```bash
-# If installed as global tool
+# If installed as a global tool
 saturn
 
 # If running from source
 dotnet run --project Saturn
 ```
 
----
-<details>
-<summary><b>🏗️ Build Instructions</b></summary>
+### What to expect
+
+On first launch Saturn checks that you are in a Git repository (and offers to create one if not), then opens the chat interface. From there the workflow is simple:
+
+1. Type a request, for example: *"Find where user sessions are validated and add a unit test covering expired sessions."*
+2. Saturn streams its reasoning and starts using tools: searching the codebase, reading files, writing changes.
+3. If it needs to run a shell command (build, test, etc.) it asks for your approval first.
+4. When it finishes, review the changes with `git diff` like any other work in your repo.
+
+Your conversation is saved automatically and can be reloaded from the chat menu in a later session. Model selection, temperature and other settings are configurable from within the UI and persist between runs.
+
+## Building from Source
 
 ```bash
 # Clone repository
@@ -81,10 +102,6 @@ dotnet build -c Release
 # Create NuGet package
 dotnet pack -c Release
 
-# Run tests (if available)
+# Run tests
 dotnet test
 ```
-
-</details>
-
-</div>
