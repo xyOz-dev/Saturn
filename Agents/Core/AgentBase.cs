@@ -13,6 +13,7 @@ using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Common;
 using Saturn.OpenRouter.Services;
+using Saturn.Providers;
 using Saturn.Tools.Core;
 
 namespace Saturn.Agents.Core
@@ -283,6 +284,10 @@ namespace Saturn.Agents.Core
 
         protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages)
         {
+            // Resolve once per turn so a provider swap mid-stream never splits a single
+            // tool-calling loop across two backends.
+            var client = Configuration.ClientSource.Current;
+
             AssistantMessageResponse responseMessage = null;
             var currentMessages = initialMessages;
             bool continueProcessing = true;
@@ -291,33 +296,13 @@ namespace Saturn.Agents.Core
             {
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
-                    
+
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
-                
-                var request = new ChatCompletionRequest
-                {
-                    Model = Configuration.Model,
-                    Messages = currentMessages.ToArray(),
-                    Temperature = Configuration.Temperature,
-                    MaxTokens = Configuration.MaxTokens,
-                    TopP = Configuration.TopP,
-                    FrequencyPenalty = Configuration.FrequencyPenalty,
-                    PresencePenalty = Configuration.PresencePenalty,
-                    Stop = Configuration.StopSequences,
-                    Transforms = new string[] { "middle-out" },
-                    ToolChoice = ToolChoice.Auto(),
-                    Usage = new UsageOption { Include = true }
-                };
 
-                if (Configuration.EnableTools)
-                {
-                    request.Tools = (Configuration.ToolNames != null && Configuration.ToolNames.Count > 0)
-                        ? ToolRegistry.Instance.GetOpenRouterToolDefinitions(Configuration.ToolNames.ToArray()).ToArray()
-                        : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
-                }
+                var request = BuildRequest(client, currentMessages);
 
-                var response = await Configuration.Client.Chat.CreateAsync(request);
+                var response = await client.ChatAsync(request);
                 responseMessage = response?.Choices?.FirstOrDefault()?.Message;
 
                 if (responseMessage?.ToolCalls != null && responseMessage.ToolCalls.Length > 0)
@@ -331,7 +316,12 @@ namespace Saturn.Agents.Core
                         continueProcessing = false;
                         continue;
                     }
-                    
+
+                    foreach (var toolCall in validToolCalls)
+                    {
+                        toolCall.Function!.Arguments = EnsureValidJsonArguments(toolCall.Function.Arguments);
+                    }
+
                     string? assistantMessageId = null;
                     var assistantToolCallsPreview = validToolCalls
                         .Select(tc => new ToolCallRequest
@@ -635,6 +625,8 @@ namespace Saturn.Agents.Core
             Func<StreamChunk, Task> onChunk,
             CancellationToken cancellationToken)
         {
+            var client = Configuration.ClientSource.Current;
+
             AssistantMessageResponse finalResponse = null;
             var currentMessages = initialMessages;
             bool continueProcessing = true;
@@ -648,34 +640,14 @@ namespace Saturn.Agents.Core
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
 
-                var request = new ChatCompletionRequest
-                {
-                    Model = Configuration.Model,
-                    Messages = currentMessages.ToArray(),
-                    Temperature = Configuration.Temperature,
-                    MaxTokens = Configuration.MaxTokens,
-                    TopP = Configuration.TopP,
-                    FrequencyPenalty = Configuration.FrequencyPenalty,
-                    PresencePenalty = Configuration.PresencePenalty,
-                    Stop = Configuration.StopSequences,
-                    Transforms = new string[] { "middle-out" },
-                    ToolChoice = ToolChoice.Auto(),
-                    Stream = true,
-                    Usage = new UsageOption { Include = true }
-                };
-
-                if (Configuration.EnableTools)
-                {
-                    request.Tools = (Configuration.ToolNames != null && Configuration.ToolNames.Count > 0)
-                        ? ToolRegistry.Instance.GetOpenRouterToolDefinitions(Configuration.ToolNames.ToArray()).ToArray()
-                        : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
-                }
+                var request = BuildRequest(client, currentMessages);
+                request.Stream = true;
 
                 try
                 {
                     var tokenIndex = 0;
 
-                    await foreach (var chunk in Configuration.Client.ChatStreaming.StreamAsync(request, cancellationToken))
+                    await foreach (var chunk in client.StreamChatAsync(request, cancellationToken))
                     {
                         if (cancellationToken.IsCancellationRequested)
                             break;
@@ -765,6 +737,17 @@ namespace Saturn.Agents.Core
 
                         if (!string.IsNullOrEmpty(choice?.FinishReason))
                         {
+                            if (string.Equals(choice.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Deliberately not added to contentBuffer: it is UI
+                                // feedback, not part of the assistant's message.
+                                await onChunk(new StreamChunk
+                                {
+                                    Content = "\n[Response truncated: max token limit reached. Consider raising Max Tokens, especially for reasoning models.]\n",
+                                    Role = "assistant"
+                                });
+                            }
+
                             finalResponse = new AssistantMessageResponse
                             {
                                 Role = "assistant",
@@ -939,6 +922,118 @@ namespace Saturn.Agents.Core
             return finalResponse;
         }
 
+        /// <summary>
+        /// Builds a chat request shaped to what the active provider understands.
+        /// Extension fields (transforms, usage accounting) stay off the wire for
+        /// providers that don't declare support for them.
+        /// </summary>
+        private ChatCompletionRequest BuildRequest(ILlmClient client, List<Message> currentMessages)
+        {
+            var capabilities = client.Capabilities;
+
+            // History written under a caching provider carries cache_control content
+            // parts; after a provider swap those must not reach a backend that never
+            // declared support for them. Sanitized copies only — the history itself is
+            // left intact for a potential swap back.
+            var messages = capabilities.SupportsCaching
+                ? currentMessages.ToArray()
+                : currentMessages.Select(StripCacheControl).ToArray();
+
+            var request = new ChatCompletionRequest
+            {
+                Model = Configuration.Model,
+                Messages = messages,
+                Temperature = Configuration.Temperature,
+                MaxTokens = Configuration.MaxTokens,
+                TopP = Configuration.TopP,
+                FrequencyPenalty = Configuration.FrequencyPenalty,
+                PresencePenalty = Configuration.PresencePenalty,
+                Stop = Configuration.StopSequences,
+                Transforms = capabilities.SupportsTransforms ? new string[] { "middle-out" } : null,
+                Usage = capabilities.SupportsUsageInclude ? new UsageOption { Include = true } : null
+            };
+
+            if (Configuration.EnableTools)
+            {
+                request.Tools = (Configuration.ToolNames != null && Configuration.ToolNames.Count > 0)
+                    ? ToolRegistry.Instance.GetOpenRouterToolDefinitions(Configuration.ToolNames.ToArray()).ToArray()
+                    : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
+
+                // tool_choice without a tools array is rejected by some OpenAI-compatible
+                // backends, so it is only sent when tools are attached.
+                if (capabilities.SupportsToolChoice)
+                {
+                    request.ToolChoice = ToolChoice.Auto();
+                }
+            }
+
+            return request;
+        }
+
+        /// <summary>
+        /// Tool-call arguments are echoed back to the provider in the conversation on
+        /// every later request. Arguments that aren't valid JSON — empty or truncated
+        /// when generation hits the token limit — can crash strict chat templates
+        /// server-side and poison the whole session, so they are replaced with an empty
+        /// object; the tool then fails with a normal validation error the model can
+        /// react to.
+        /// </summary>
+        private static string EnsureValidJsonArguments(string? arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+            {
+                return "{}";
+            }
+
+            try
+            {
+                using var _ = JsonDocument.Parse(arguments);
+                return arguments;
+            }
+            catch (JsonException)
+            {
+                return "{}";
+            }
+        }
+
+        private static Message StripCacheControl(Message message)
+        {
+            if (message.Content.ValueKind != JsonValueKind.Array)
+            {
+                return message;
+            }
+
+            var hasCacheControl = false;
+            var texts = new List<string>();
+            foreach (var part in message.Content.EnumerateArray())
+            {
+                if (part.ValueKind != JsonValueKind.Object || !part.TryGetProperty("text", out var textProp))
+                {
+                    // Not a pure text-part array (e.g. images); leave it untouched.
+                    return message;
+                }
+                if (part.TryGetProperty("cache_control", out _))
+                {
+                    hasCacheControl = true;
+                }
+                texts.Add(textProp.GetString() ?? string.Empty);
+            }
+
+            if (!hasCacheControl)
+            {
+                return message;
+            }
+
+            return new Message
+            {
+                Role = message.Role,
+                Content = JString(string.Join("", texts)),
+                Name = message.Name,
+                ToolCallId = message.ToolCallId,
+                ToolCalls = message.ToolCalls
+            };
+        }
+
         protected static JsonElement JString(string value)
         {
             return JsonDocument.Parse(JsonSerializer.Serialize(value ?? string.Empty)).RootElement;
@@ -967,12 +1062,9 @@ namespace Saturn.Agents.Core
                 {
                     continue;
                 }
-                
-                if (toolCall.Function.Arguments == null)
-                {
-                    toolCall.Function.Arguments = "{}";
-                }
-                
+
+                toolCall.Function.Arguments = EnsureValidJsonArguments(toolCall.Function.Arguments);
+
                 validatedCalls.Add(toolCall);
             }
             
@@ -1173,6 +1265,11 @@ namespace Saturn.Agents.Core
 
         private JsonElement CreateCachedContent(string text)
         {
+            if (!ProviderSupportsCaching())
+            {
+                return JString(text);
+            }
+
             var contentParts = new[]
             {
                 new TextContentPart
@@ -1185,6 +1282,19 @@ namespace Saturn.Agents.Core
 
             var json = JsonSerializer.Serialize(contentParts);
             return JsonDocument.Parse(json).RootElement;
+        }
+
+        private bool ProviderSupportsCaching()
+        {
+            try
+            {
+                return Configuration.ClientSource.Current.Capabilities.SupportsCaching;
+            }
+            catch (InvalidOperationException)
+            {
+                // No provider connected yet; emit plain string content.
+                return false;
+            }
         }
 
         public void Dispose()

@@ -13,9 +13,8 @@ using Saturn.Agents.MultiAgent;
 using Saturn.Configuration;
 using Saturn.Data;
 using Saturn.Data.Models;
-using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers;
 using Saturn.UI.Dialogs;
 
 namespace Saturn.UI
@@ -34,7 +33,7 @@ namespace Saturn.UI
         private bool isProcessing;
         private CancellationTokenSource? cancellationTokenSource;
         private AgentConfiguration currentConfig;
-        private OpenRouterClient? openRouterClient;
+        private ILlmClientSource? clientSource;
         private MarkdownRenderer markdownRenderer;
         
         // Rules file monitoring
@@ -42,10 +41,10 @@ namespace Saturn.UI
         private DateTime? lastRulesModifiedTime;
         private string? cachedSystemPromptWithRules;
 
-        public ChatInterface(Agent aiAgent, OpenRouterClient? client = null)
+        public ChatInterface(Agent aiAgent, ILlmClientSource? client = null)
         {
             agent = aiAgent ?? throw new ArgumentNullException(nameof(aiAgent));
-            openRouterClient = client ?? agent.Configuration.Client as OpenRouterClient;
+            clientSource = client ?? agent.Configuration.ClientSource;
             isProcessing = false;
             
             agent.OnToolCall += (toolName, args) => UpdateToolCall(toolName, args);
@@ -69,7 +68,8 @@ namespace Saturn.UI
         
         private void InitializeAgentManager()
         {
-            AgentManager.Instance.Initialize(openRouterClient!);
+            AgentManager.Instance.Initialize(clientSource!);
+            AgentManager.Instance.SetParentModel(agent.Configuration.Model);
             
             AgentManager.Instance.OnAgentCreated += (agentId, name) =>
             {
@@ -199,6 +199,7 @@ namespace Saturn.UI
                 {
                     new MenuItem("_Modes...", "", async () => await ShowModeSelectionDialogAsync()),
                     null,
+                    new MenuItem("_Provider...", "", async () => await ShowProviderDialogAsync()),
                     new MenuItem("_Select Model...", "", async () => await ShowModelSelectionDialog()),
                     new MenuItem("_Temperature...", "", () => ShowTemperatureDialog()),
                     new MenuItem("_Max Tokens...", "", () => ShowMaxTokensDialog()),
@@ -570,6 +571,7 @@ namespace Saturn.UI
             var message = "Welcome to Saturn\nDont forget to join our discord to stay updated.\n\"https://discord.gg/VSjW36MfYZ\"";
             message += "\n================================\n";
             message += $"Agent: {agent.Name}\n";
+            message += $"Provider: {GetProviderDisplayName()}\n";
             message += $"Model: {agent.Configuration.Model}\n";
             message += $"Streaming: {(agent.Configuration.EnableStreaming ? "Enabled" : "Disabled")}\n";
             message += $"Tools: {(agent.Configuration.EnableTools ? "Enabled" : "Disabled")}\n";
@@ -603,13 +605,15 @@ namespace Saturn.UI
                 if (agent.CurrentSessionId == null)
                 {
                     await agent.InitializeSessionAsync("main");
-                    
+
                     if (agent.CurrentSessionId != null)
                     {
                         AgentManager.Instance.SetParentSessionId(agent.CurrentSessionId);
                         AgentManager.Instance.SetParentEnableUserRules(agent.Configuration.EnableUserRules);
                     }
                 }
+
+                AgentManager.Instance.SetParentModel(agent.Configuration.Model);
                 
                 chatView.Text += $"You: {message}\n";
                 inputField.Text = "";
@@ -774,10 +778,20 @@ namespace Saturn.UI
 
         private async Task ShowModelSelectionDialog()
         {
-            if (openRouterClient == null) return;
-            var models = await AgentConfiguration.GetAvailableModels(openRouterClient);
-            var modelNames = models.Select(m => m.Name ?? m.Id).ToArray();
-            var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == currentConfig.Model);
+            if (clientSource == null || !clientSource.IsConnected)
+            {
+                MessageBox.ErrorQuery("Select Model", "No LLM provider connected.", "OK");
+                return;
+            }
+            var models = await AgentConfiguration.GetAvailableModels(clientSource);
+            if (models.Count == 0)
+            {
+                MessageBox.ErrorQuery("Select Model",
+                    $"No models available from {GetProviderDisplayName()}. If you are using a local provider, make sure a model is downloaded.", "OK");
+                return;
+            }
+            var modelNames = models.Select(m => m.Display).ToArray();
+            var currentIndex = models.FindIndex(m => string.Equals(m.Id, currentConfig.Model, StringComparison.OrdinalIgnoreCase));
             if (currentIndex < 0) currentIndex = 0;
 
             var dialog = new Dialog("Select Model", 60, 20);
@@ -816,13 +830,9 @@ namespace Saturn.UI
 
             listView.SelectedItemChanged += (args) =>
             {
-                var selectedModel = models[args.Item];
-                var info = $"ID: {selectedModel.Id}";
-                if (selectedModel.ContextLength.HasValue)
-                    info += $" | Context: {selectedModel.ContextLength:N0} tokens";
-                infoLabel.Text = info;
+                infoLabel.Text = DescribeModel(models[args.Item]);
             };
-            
+
             listView.OpenSelectedItem += (args) =>
             {
                 selectModel();
@@ -848,15 +858,119 @@ namespace Saturn.UI
             
             if (models.Count > 0 && currentIndex >= 0)
             {
-                var initialModel = models[currentIndex];
-                var info = $"ID: {initialModel.Id}";
-                if (initialModel.ContextLength.HasValue)
-                    info += $" | Context: {initialModel.ContextLength:N0} tokens";
-                infoLabel.Text = info;
+                infoLabel.Text = DescribeModel(models[currentIndex]);
             }
-            
+
             listView.SetFocus();
             Application.Run(dialog);
+        }
+
+        private static string DescribeModel(ModelInfo model)
+        {
+            var info = $"ID: {model.Id}";
+            if (model.ContextLength.HasValue)
+                info += $" | Context: {model.ContextLength:N0} tokens";
+            if (model.IsLoaded == true)
+                info += " | loaded";
+            return info;
+        }
+
+        private string GetProviderDisplayName()
+        {
+            try
+            {
+                if (clientSource != null && clientSource.IsConnected)
+                {
+                    return clientSource.Current.Capabilities.ProviderName;
+                }
+            }
+            catch
+            {
+            }
+            return "Not connected";
+        }
+
+        private async Task ShowProviderDialogAsync()
+        {
+            if (clientSource is not LlmClientManager manager)
+            {
+                MessageBox.ErrorQuery("Provider", "Provider switching is not available in this session.", "OK");
+                return;
+            }
+
+            if (isProcessing)
+            {
+                // Mixing providers inside one running task is a debugging nightmare;
+                // require an explicit cancel first.
+                var choice = MessageBox.Query("Provider",
+                    "A task is currently running. Cancel it and switch providers?", "Yes", "No");
+                if (choice != 0) return;
+
+                cancellationTokenSource?.Cancel();
+                AgentManager.Instance.TerminateAllAgents();
+            }
+            else if (AgentManager.Instance.GetCurrentAgentCount() > 0)
+            {
+                // Sub-agents run detached from the main agent's processing flag and would
+                // otherwise keep executing against the retired client.
+                var choice = MessageBox.Query("Provider",
+                    $"{AgentManager.Instance.GetCurrentAgentCount()} sub-agent(s) are still running. Terminate them and switch providers?",
+                    "Yes", "No");
+                if (choice != 0) return;
+
+                AgentManager.Instance.TerminateAllAgents();
+            }
+
+            var persisted = await ConfigurationManager.LoadConfigurationAsync();
+            var dialog = new ProviderSettingsDialog(manager, persisted);
+            Application.Run(dialog);
+
+            if (!dialog.Applied) return;
+
+            // The new provider must never see the old provider's cached model list.
+            ModelCatalog.Invalidate();
+
+            var providerName = manager.ActiveProviderName;
+            var capabilities = manager.Current.Capabilities;
+
+            // Restore the model remembered for this provider, or pick one it serves.
+            var model = ConfigurationManager.GetProviderModel(persisted, providerName);
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                model = capabilities.DefaultModel;
+            }
+
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                var models = await AgentConfiguration.GetAvailableModels(clientSource);
+                model = models.FirstOrDefault(m => m.IsLoaded == true)?.Id
+                    ?? models.FirstOrDefault()?.Id
+                    ?? currentConfig.Model;
+            }
+            else
+            {
+                model = await ModelCatalog.ResolveModelAsync(clientSource, model);
+            }
+
+            currentConfig.Model = model;
+            agent.Configuration.Model = model;
+            AgentManager.Instance.SetParentModel(model);
+
+            await ConfigurationManager.SaveProviderSelectionAsync(providerName, dialog.AppliedSettings ?? new ProviderSettings(), model);
+            await UpdateConfiguration();
+
+            chatView.Text += $"\n[Provider switched to {capabilities.ProviderName} | Model: {model}]\n";
+
+            var envProvider = Environment.GetEnvironmentVariable("SATURN_PROVIDER");
+            if (!string.IsNullOrWhiteSpace(envProvider) &&
+                !string.Equals(envProvider.Trim(), providerName, StringComparison.OrdinalIgnoreCase))
+            {
+                chatView.Text += $"[Note: the SATURN_PROVIDER={envProvider} environment variable overrides this choice on the next launch]\n";
+            }
+            chatView.Text += "\n";
+
+            ScrollChatToBottom();
+            Application.Refresh();
         }
 
         private void ShowTemperatureDialog()
@@ -920,7 +1034,7 @@ namespace Saturn.UI
 
         private void ShowSubAgentDefaultsDialog()
         {
-            var dialog = new SubAgentConfigDialog(openRouterClient);
+            var dialog = new SubAgentConfigDialog(clientSource);
             Application.Run(dialog);
             
             if (dialog.ConfigurationSaved)
@@ -1214,6 +1328,7 @@ namespace Saturn.UI
                 try
                 {
                     ApplyModeToUIConfiguration(dialog.SelectedMode);
+                    await ResolveCurrentModelForProviderAsync();
                     await UpdateConfiguration();
                 }
                 catch (Exception ex)
@@ -1233,7 +1348,7 @@ namespace Saturn.UI
         
         private async Task ShowModeEditorDialogAsync(Mode modeToEdit)
         {
-            var editorDialog = new ModeEditorDialog(modeToEdit, openRouterClient);
+            var editorDialog = new ModeEditorDialog(modeToEdit, clientSource);
             Application.Run(editorDialog);
             
             if (editorDialog.ResultMode != null)
@@ -1251,11 +1366,29 @@ namespace Saturn.UI
                 if (applyNow == 0)
                 {
                     ApplyModeToUIConfiguration(editorDialog.ResultMode);
+                    await ResolveCurrentModelForProviderAsync();
                     await UpdateConfiguration();
                 }
             }
         }
         
+        /// <summary>
+        /// Modes store model ids written for whichever provider was active when they were
+        /// created; substitute a model the current provider actually serves.
+        /// </summary>
+        private async Task ResolveCurrentModelForProviderAsync()
+        {
+            if (clientSource == null || !clientSource.IsConnected) return;
+
+            var resolved = await ModelCatalog.ResolveModelAsync(clientSource, currentConfig.Model, agent.Configuration.Model);
+            if (!string.Equals(resolved, currentConfig.Model, StringComparison.OrdinalIgnoreCase))
+            {
+                chatView.Text += $"\n[Model '{currentConfig.Model}' is not available on {GetProviderDisplayName()}; using '{resolved}']\n";
+                currentConfig.Model = resolved;
+                ScrollChatToBottom();
+            }
+        }
+
         private void ApplyModeToUIConfiguration(Mode mode)
         {
             currentConfig.Model = mode.Model;
@@ -1486,6 +1619,7 @@ namespace Saturn.UI
                     {
                         updatedLines.Add(line);
                         updatedLines.Add($"Agent: {agent.Name}");
+                        updatedLines.Add($"Provider: {GetProviderDisplayName()}");
                         updatedLines.Add($"Model: {agent.Configuration.Model}");
                         updatedLines.Add($"Streaming: {(agent.Configuration.EnableStreaming ? "Enabled" : "Disabled")}");
                         updatedLines.Add($"Tools: {(agent.Configuration.EnableTools ? "Enabled" : "Disabled")}");
@@ -1502,9 +1636,9 @@ namespace Saturn.UI
                         skipConfigLines = false;
                     }
                 }
-                else if (skipConfigLines && 
-                    (line.StartsWith("Agent:") || line.StartsWith("Model:") || 
-                     line.StartsWith("Streaming:") || line.StartsWith("Tools:") || 
+                else if (skipConfigLines &&
+                    (line.StartsWith("Agent:") || line.StartsWith("Provider:") || line.StartsWith("Model:") ||
+                     line.StartsWith("Streaming:") || line.StartsWith("Tools:") ||
                      line.StartsWith("Available Tools:")))
                 {
                     continue;

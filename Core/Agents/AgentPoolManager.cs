@@ -8,7 +8,7 @@ using AsyncKeyedLock;
 using Saturn.Agents;
 using Saturn.Agents.Core;
 using Saturn.Core.Sessions;
-using Saturn.OpenRouter;
+using Saturn.Providers;
 
 namespace Saturn.Core.Agents
 {
@@ -17,24 +17,34 @@ namespace Saturn.Core.Agents
         private readonly ConcurrentDictionary<string, AgentPoolEntry> _agentPool = new();
         private readonly ConcurrentDictionary<string, string> _sessionAgentMapping = new();
         private readonly AsyncKeyedLocker<string> _sessionLocks = new();
-        private readonly OpenRouterClient _client;
+        private readonly ILlmClientSource _clientSource;
         private readonly Timer _cleanupTimer;
         private readonly AgentPoolConfiguration _configuration;
-        
-        private static readonly Lazy<AgentPoolManager> _instance = new(() => 
-            new AgentPoolManager(new OpenRouterClient(new OpenRouterOptions())));
-        
-        public static AgentPoolManager Instance => _instance.Value;
-        
+
+        private static AgentPoolManager? _instance;
+
+        /// <summary>
+        /// The shared pool. Must be initialized with a client source at startup; a pool
+        /// that silently constructed its own client would bypass provider selection.
+        /// </summary>
+        public static AgentPoolManager Instance =>
+            _instance ?? throw new InvalidOperationException(
+                "AgentPoolManager is not initialized. Call AgentPoolManager.Initialize at startup.");
+
+        public static void Initialize(ILlmClientSource clientSource, AgentPoolConfiguration? configuration = null)
+        {
+            _instance ??= new AgentPoolManager(clientSource, configuration);
+        }
+
         public event EventHandler<AgentPoolEventArgs>? AgentCreated;
         public event EventHandler<AgentPoolEventArgs>? AgentRecycled;
         public event EventHandler<AgentPoolEventArgs>? AgentDestroyed;
-        
-        public AgentPoolManager(OpenRouterClient client, AgentPoolConfiguration? configuration = null)
+
+        public AgentPoolManager(ILlmClientSource clientSource, AgentPoolConfiguration? configuration = null)
         {
-            _client = client;
+            _clientSource = clientSource;
             _configuration = configuration ?? new AgentPoolConfiguration();
-            _cleanupTimer = new Timer(CleanupIdleAgents, null, 
+            _cleanupTimer = new Timer(CleanupIdleAgents, null,
                 _configuration.CleanupInterval, _configuration.CleanupInterval);
         }
         
@@ -87,7 +97,7 @@ namespace Saturn.Core.Agents
         
         private async Task<Agent> CreateNewAgent(AgentConfiguration configuration)
         {
-            configuration.Client = _client;
+            configuration.ClientSource = _clientSource;
             
             if (configuration.EnableUserRules && _configuration.InheritUserRules)
             {

@@ -2,8 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI
 {
@@ -22,9 +21,6 @@ namespace Saturn.UI
         public bool RequireCommandApproval { get; set; } = true;
         public bool EnableUserRules { get; set; } = true;
         
-        private static List<Model>? _cachedModels;
-        private static DateTime _cacheTime;
-        private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(30);
 
         public AgentConfiguration()
         {
@@ -73,51 +69,9 @@ Operating Principles
    - Be mindful of dependency sizes and build times.";
         }
 
-        public static async Task<List<Model>> GetAvailableModels(OpenRouterClient client)
+        public static Task<List<ModelInfo>> GetAvailableModels(ILlmClientSource clientSource)
         {
-            if (_cachedModels != null && DateTime.UtcNow - _cacheTime < CacheDuration)
-            {
-                return _cachedModels;
-            }
-
-            try
-            {
-                var response = await client.Models.ListAllAsync();
-                if (response?.Data != null)
-                {
-                    _cachedModels = response.Data
-                        .Where(m => !string.IsNullOrEmpty(m.Id))
-                        .OrderBy(m => m.Name ?? m.Id)
-                        .ToList();
-                    _cacheTime = DateTime.UtcNow;
-                    return _cachedModels;
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            return GetDefaultModels();
-        }
-
-        private static List<Model> GetDefaultModels()
-        {
-            var defaults = new[]
-            {
-                ("openai/gpt-5", "OpenAI: GPT-5"),
-                ("openai/gpt-5-mini", "OpenAI: GPT-5-Mini"),
-                ("openai/gpt-5-nano", "OpenAI: GPT-5-Nano"),
-                ("openai/gpt-oss-120b", "OpenAI: GPT-OSS-120B"),
-                ("openai/gpt-oss-20b", "OpenAI: GPT-OSS-20B"),
-                ("anthropic/claude-opus-4.1", "Anthropic: Opus-4.1"),
-                ("anthropic/claude-opus-4", "Anthropic: Opus-4"),
-                ("anthropic/claude-sonnet-4", "Anthropic: Sonnet-4"),
-                ("anthropic/claude-3.7-sonnet", "Anthropic: Sonnet-3.7"),
-                ("anthropic/claude-3.5-haiku", "Anthropic: Haiku-3.5"),
-                ("moonshotai/kimi-k2:free", "Kimi-K2")
-            };
-
-            return defaults.Select(d => new Model { Id = d.Item1, Name = d.Item2 }).ToList();
+            return ModelCatalog.GetAsync(clientSource);
         }
 
         public AgentConfiguration Clone()
