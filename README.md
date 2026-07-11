@@ -5,7 +5,8 @@
 ### *Your personal swarm of employees, without the salary.*
 
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
-[![OpenRouter](https://img.shields.io/badge/OpenRouter-Powered-00A8E1?style=for-the-badge)](https://openrouter.ai/)
+[![OpenRouter](https://img.shields.io/badge/OpenRouter-Supported-00A8E1?style=for-the-badge)](https://openrouter.ai/)
+[![LM Studio](https://img.shields.io/badge/LM_Studio-Supported-4E1F9D?style=for-the-badge)](https://lmstudio.ai/)
 [![GitHub Stars](https://img.shields.io/github/stars/xyOz-dev/Saturn?style=for-the-badge&color=yellow)](https://github.com/xyOz-dev/Saturn/stargazers)
 
 </div>
@@ -18,7 +19,7 @@
 
 Saturn is an AI coding agent that runs entirely in your terminal. You describe what you want done in plain English, and Saturn reads your code, makes edits, runs commands, and reports back, all inside the Git repository you point it at.
 
-Under the hood it connects to [OpenRouter](https://openrouter.ai/), so you can use models from Anthropic, OpenAI, Google and others with a single API key. It is built on .NET 8 and Terminal.Gui, and installs as a standard .NET global tool.
+Under the hood it connects to [OpenRouter](https://openrouter.ai/), so you can use models from Anthropic, OpenAI, Google and others with a single API key — or to a local [LM Studio](https://lmstudio.ai/) server, so you can run entirely offline on your own hardware. Providers can be switched at any time from the Agent menu without restarting. It is built on .NET 8 and Terminal.Gui, and installs as a standard .NET global tool.
 
 ## Features
 
@@ -26,6 +27,7 @@ Under the hood it connects to [OpenRouter](https://openrouter.ai/), so you can u
 - **A full tool suite** the agent uses on your behalf: read, write and diff files, grep and glob searches, shell command execution, and web fetch
 - **Command approval**, so the agent asks before running shell commands
 - **Multi-agent orchestration**: the main agent can spawn sub-agents, hand tasks off to them, check their status and collect results, letting it work on several parts of a task in parallel
+- **Multiple providers**: OpenRouter for cloud models, LM Studio for local ones, hot-swappable from within the UI
 - **Modes and user rules** to customize the agent's behavior per task or globally
 - **Persistent chat history** stored locally in SQLite, so you can reload previous sessions
 - **Git-aware**: Saturn requires a Git repository, so every change it makes can be reviewed and reverted with normal Git workflow
@@ -34,7 +36,9 @@ Under the hood it connects to [OpenRouter](https://openrouter.ai/), so you can u
 
 - **.NET 8.0 SDK** or later
 - **Git**. Saturn only operates inside a Git repository. If you start it elsewhere it will offer to initialize one.
-- **OpenRouter API key** ([get one here](https://openrouter.ai/))
+- **One LLM provider:**
+  - An **OpenRouter API key** ([get one here](https://openrouter.ai/)), or
+  - **LM Studio** ([download](https://lmstudio.ai/)) with its local server running and a model downloaded
 
 ## Installation
 
@@ -50,7 +54,9 @@ dotnet tool install --global --add-source ./nupkg SaturnAgent
 
 ## Quick Start
 
-### 1. Set up your API key
+### 1. Set up a provider
+
+**Option A — OpenRouter (cloud models):**
 
 ```bash
 # Windows (Command Prompt)
@@ -62,6 +68,28 @@ $env:OPENROUTER_API_KEY = "your-api-key-here"
 # macOS/Linux
 export OPENROUTER_API_KEY="your-api-key-here"
 ```
+
+**Option B — LM Studio (local models):**
+
+1. In LM Studio, download a model and start the local server (Developer tab → Start Server).
+2. Tell Saturn to use it:
+
+```bash
+# Windows (Command Prompt)
+setx SATURN_PROVIDER lmstudio
+
+# Windows (PowerShell)
+$env:SATURN_PROVIDER = "lmstudio"
+
+# macOS/Linux
+export SATURN_PROVIDER=lmstudio
+```
+
+Saturn connects to `http://localhost:1234/v1` by default; set `LMSTUDIO_BASE_URL` if your server runs elsewhere. If no model is configured, Saturn picks the first loaded model automatically.
+
+You can also switch providers later from inside Saturn via **Agent → Provider...** — the choice is remembered between runs, and each provider remembers its own model.
+
+> **Note on local models:** Saturn drives everything through tool calls, so use a model with solid tool-calling support (e.g. Qwen 2.5 Coder, Llama 3.1+, Mistral). Small models may produce malformed tool calls or loop. Sub-agent parallelism is also limited by the fact that a local server generates for one request at a time.
 
 ### 2. Launch Saturn
 
