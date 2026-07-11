@@ -13,6 +13,7 @@ using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Common;
 using Saturn.OpenRouter.Services;
+using Saturn.Providers;
 using Saturn.Tools.Core;
 
 namespace Saturn.Agents.Core
@@ -283,6 +284,10 @@ namespace Saturn.Agents.Core
 
         protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages)
         {
+            // Resolve once per turn so a provider swap mid-stream never splits a single
+            // tool-calling loop across two backends.
+            var client = Configuration.ClientSource.Current;
+
             AssistantMessageResponse responseMessage = null;
             var currentMessages = initialMessages;
             bool continueProcessing = true;
@@ -291,33 +296,13 @@ namespace Saturn.Agents.Core
             {
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
-                    
+
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
-                
-                var request = new ChatCompletionRequest
-                {
-                    Model = Configuration.Model,
-                    Messages = currentMessages.ToArray(),
-                    Temperature = Configuration.Temperature,
-                    MaxTokens = Configuration.MaxTokens,
-                    TopP = Configuration.TopP,
-                    FrequencyPenalty = Configuration.FrequencyPenalty,
-                    PresencePenalty = Configuration.PresencePenalty,
-                    Stop = Configuration.StopSequences,
-                    Transforms = new string[] { "middle-out" },
-                    ToolChoice = ToolChoice.Auto(),
-                    Usage = new UsageOption { Include = true }
-                };
 
-                if (Configuration.EnableTools)
-                {
-                    request.Tools = (Configuration.ToolNames != null && Configuration.ToolNames.Count > 0)
-                        ? ToolRegistry.Instance.GetOpenRouterToolDefinitions(Configuration.ToolNames.ToArray()).ToArray()
-                        : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
-                }
+                var request = BuildRequest(client, currentMessages);
 
-                var response = await Configuration.Client.Chat.CreateAsync(request);
+                var response = await client.ChatAsync(request);
                 responseMessage = response?.Choices?.FirstOrDefault()?.Message;
 
                 if (responseMessage?.ToolCalls != null && responseMessage.ToolCalls.Length > 0)
@@ -635,6 +620,8 @@ namespace Saturn.Agents.Core
             Func<StreamChunk, Task> onChunk,
             CancellationToken cancellationToken)
         {
+            var client = Configuration.ClientSource.Current;
+
             AssistantMessageResponse finalResponse = null;
             var currentMessages = initialMessages;
             bool continueProcessing = true;
@@ -648,34 +635,14 @@ namespace Saturn.Agents.Core
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
                 }
 
-                var request = new ChatCompletionRequest
-                {
-                    Model = Configuration.Model,
-                    Messages = currentMessages.ToArray(),
-                    Temperature = Configuration.Temperature,
-                    MaxTokens = Configuration.MaxTokens,
-                    TopP = Configuration.TopP,
-                    FrequencyPenalty = Configuration.FrequencyPenalty,
-                    PresencePenalty = Configuration.PresencePenalty,
-                    Stop = Configuration.StopSequences,
-                    Transforms = new string[] { "middle-out" },
-                    ToolChoice = ToolChoice.Auto(),
-                    Stream = true,
-                    Usage = new UsageOption { Include = true }
-                };
-
-                if (Configuration.EnableTools)
-                {
-                    request.Tools = (Configuration.ToolNames != null && Configuration.ToolNames.Count > 0)
-                        ? ToolRegistry.Instance.GetOpenRouterToolDefinitions(Configuration.ToolNames.ToArray()).ToArray()
-                        : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
-                }
+                var request = BuildRequest(client, currentMessages);
+                request.Stream = true;
 
                 try
                 {
                     var tokenIndex = 0;
 
-                    await foreach (var chunk in Configuration.Client.ChatStreaming.StreamAsync(request, cancellationToken))
+                    await foreach (var chunk in client.StreamChatAsync(request, cancellationToken))
                     {
                         if (cancellationToken.IsCancellationRequested)
                             break;
@@ -939,6 +906,46 @@ namespace Saturn.Agents.Core
             return finalResponse;
         }
 
+        /// <summary>
+        /// Builds a chat request shaped to what the active provider understands.
+        /// Extension fields (transforms, usage accounting) stay off the wire for
+        /// providers that don't declare support for them.
+        /// </summary>
+        private ChatCompletionRequest BuildRequest(ILlmClient client, List<Message> currentMessages)
+        {
+            var capabilities = client.Capabilities;
+
+            var request = new ChatCompletionRequest
+            {
+                Model = Configuration.Model,
+                Messages = currentMessages.ToArray(),
+                Temperature = Configuration.Temperature,
+                MaxTokens = Configuration.MaxTokens,
+                TopP = Configuration.TopP,
+                FrequencyPenalty = Configuration.FrequencyPenalty,
+                PresencePenalty = Configuration.PresencePenalty,
+                Stop = Configuration.StopSequences,
+                Transforms = capabilities.SupportsTransforms ? new string[] { "middle-out" } : null,
+                Usage = capabilities.SupportsUsageInclude ? new UsageOption { Include = true } : null
+            };
+
+            if (Configuration.EnableTools)
+            {
+                request.Tools = (Configuration.ToolNames != null && Configuration.ToolNames.Count > 0)
+                    ? ToolRegistry.Instance.GetOpenRouterToolDefinitions(Configuration.ToolNames.ToArray()).ToArray()
+                    : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
+
+                // tool_choice without a tools array is rejected by some OpenAI-compatible
+                // backends, so it is only sent when tools are attached.
+                if (capabilities.SupportsToolChoice)
+                {
+                    request.ToolChoice = ToolChoice.Auto();
+                }
+            }
+
+            return request;
+        }
+
         protected static JsonElement JString(string value)
         {
             return JsonDocument.Parse(JsonSerializer.Serialize(value ?? string.Empty)).RootElement;
@@ -1173,6 +1180,11 @@ namespace Saturn.Agents.Core
 
         private JsonElement CreateCachedContent(string text)
         {
+            if (!ProviderSupportsCaching())
+            {
+                return JString(text);
+            }
+
             var contentParts = new[]
             {
                 new TextContentPart
@@ -1185,6 +1197,19 @@ namespace Saturn.Agents.Core
 
             var json = JsonSerializer.Serialize(contentParts);
             return JsonDocument.Parse(json).RootElement;
+        }
+
+        private bool ProviderSupportsCaching()
+        {
+            try
+            {
+                return Configuration.ClientSource.Current.Capabilities.SupportsCaching;
+            }
+            catch (InvalidOperationException)
+            {
+                // No provider connected yet; emit plain string content.
+                return false;
+            }
         }
 
         public void Dispose()

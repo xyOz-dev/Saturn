@@ -5,14 +5,13 @@ using System.Threading.Tasks;
 using Terminal.Gui;
 using Saturn.Agents.Core;
 using Saturn.Tools.Core;
-using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
 {
     public class ModeEditorDialog : Dialog
     {
-        private OpenRouterClient? openRouterClient;
+        private ILlmClientSource? clientSource;
         private TextField nameField = null!;
         private TextField agentNameField = null!;
         private TextField descriptionField = null!;
@@ -36,11 +35,11 @@ namespace Saturn.UI.Dialogs
         
         public Mode? ResultMode { get; private set; }
         
-        public ModeEditorDialog(Mode? existingMode = null, OpenRouterClient? client = null)
+        public ModeEditorDialog(Mode? existingMode = null, ILlmClientSource? client = null)
             : base(existingMode != null ? $"Edit Mode: {existingMode.Name}" : "Create New Mode", 90, 26)
         {
             ColorScheme = Colors.Dialog;
-            openRouterClient = client;
+            clientSource = client;
             
             isEditMode = existingMode != null;
             mode = existingMode ?? new Mode();
@@ -252,14 +251,19 @@ namespace Saturn.UI.Dialogs
         
         private async void OnSelectModelClicked()
         {
-            if (openRouterClient == null)
+            if (clientSource == null || !clientSource.IsConnected)
             {
-                MessageBox.ErrorQuery("Error", "OpenRouter client not available", "OK");
+                MessageBox.ErrorQuery("Error", "No LLM provider connected", "OK");
                 return;
             }
-            
-            var models = await UI.AgentConfiguration.GetAvailableModels(openRouterClient);
-            var modelNames = models.Select(m => m.Name ?? m.Id).ToArray();
+
+            var models = await UI.AgentConfiguration.GetAvailableModels(clientSource);
+            if (models.Count == 0)
+            {
+                MessageBox.ErrorQuery("Error", "No models available from the current provider", "OK");
+                return;
+            }
+            var modelNames = models.Select(m => m.Display).ToArray();
             var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == mode.Model);
             if (currentIndex < 0) currentIndex = 0;
 

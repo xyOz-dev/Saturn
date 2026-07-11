@@ -4,8 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Terminal.Gui;
 using Saturn.Config;
-using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Models;
+using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
 {
@@ -24,16 +23,16 @@ namespace Saturn.UI.Dialogs
         private Button saveButton;
         private Button cancelButton;
         
-        private List<Model> availableModels = new();
-        private OpenRouterClient? client;
+        private List<ModelInfo> availableModels = new();
+        private ILlmClientSource? clientSource;
         private SubAgentPreferences preferences;
-        
+
         public bool ConfigurationSaved { get; private set; }
-        
-        public SubAgentConfigDialog(OpenRouterClient? openRouterClient = null)
+
+        public SubAgentConfigDialog(ILlmClientSource? clientSource = null)
             : base("Default Sub-Agent Configuration", 80, 22)
         {
-            client = openRouterClient;
+            this.clientSource = clientSource;
             preferences = SubAgentPreferences.Instance;
             
             InitializeComponents();
@@ -223,17 +222,17 @@ namespace Saturn.UI.Dialogs
         
         private async Task LoadModelsAsync()
         {
-            if (client == null) return;
-            
+            if (clientSource == null || !clientSource.IsConnected) return;
+
             try
             {
-                var response = await client.Models.ListAllAsync();
-                if (response?.Data != null)
+                var models = await AgentConfiguration.GetAvailableModels(clientSource);
+                if (models.Count > 0)
                 {
-                    availableModels = response.Data
+                    availableModels = models
                         .OrderBy(m => m.Id)
                         .ToList();
-                    
+
                     var modelNames = availableModels.Select(m => m.Id).ToArray();
                     
                     Application.MainLoop.Invoke(() =>
@@ -273,14 +272,10 @@ namespace Saturn.UI.Dialogs
             
             if (model != null)
             {
-                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
-                    ? $"{model.ContextLength.Value:N0} tokens" 
-                    : "Unknown";
-                var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
-                modelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
+                modelInfoLabel.Text = DescribeModel(model);
             }
         }
-        
+
         private void OnReviewerModelChanged(ListViewItemEventArgs args)
         {
             if (args.Value == null) return;
@@ -290,12 +285,20 @@ namespace Saturn.UI.Dialogs
             
             if (model != null)
             {
-                var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0 
-                    ? $"{model.ContextLength.Value:N0} tokens" 
-                    : "Unknown";
-                var pricing = model.Pricing != null ? $" | ${model.Pricing.Prompt:F5}/{model.Pricing.Completion:F5}" : "";
-                reviewerModelInfoLabel.Text = $"Context: {contextLengthText}{pricing}";
+                reviewerModelInfoLabel.Text = DescribeModel(model);
             }
+        }
+
+        private static string DescribeModel(ModelInfo model)
+        {
+            var contextLengthText = model.ContextLength.HasValue && model.ContextLength.Value > 0
+                ? $"{model.ContextLength.Value:N0} tokens"
+                : "Unknown";
+            var pricing = !string.IsNullOrEmpty(model.PromptPrice)
+                ? $" | ${model.PromptPrice}/{model.CompletionPrice}"
+                : "";
+            var loaded = model.IsLoaded == true ? " | loaded" : "";
+            return $"Context: {contextLengthText}{pricing}{loaded}";
         }
         
         private void OnSaveClicked()

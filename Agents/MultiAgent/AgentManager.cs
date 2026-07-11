@@ -10,8 +10,8 @@ using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent.Objects;
 using Saturn.Config;
 using Saturn.Data;
-using Saturn.OpenRouter;
 using Saturn.OpenRouter.Models.Api.Chat;
+using Saturn.Providers;
 
 namespace Saturn.Agents.MultiAgent
 {
@@ -22,9 +22,10 @@ namespace Saturn.Agents.MultiAgent
         private readonly ConcurrentDictionary<string, AgentTaskResult> _completedTasks;
         private readonly ConcurrentDictionary<string, ReviewerContext> _reviewers;
         private readonly SemaphoreSlim _reviewerSemaphore = new SemaphoreSlim(25);
-        private OpenRouterClient _client = null!;
+        private ILlmClientSource _clientSource = null!;
         private const int MaxConcurrentAgents = 25;
         private string? _parentSessionId;
+        private string? _parentModel;
         private bool _parentEnableUserRules = true;
         
         public static AgentManager Instance => _instance ??= new AgentManager();
@@ -40,17 +41,22 @@ namespace Saturn.Agents.MultiAgent
             _reviewers = new ConcurrentDictionary<string, ReviewerContext>();
         }
         
-        public void Initialize(OpenRouterClient client)
+        public void Initialize(ILlmClientSource clientSource)
         {
             if (_instance != null)
             {
-                _instance._client = client;
+                _instance._clientSource = clientSource;
             }
         }
         
         public void SetParentSessionId(string? sessionId)
         {
             _parentSessionId = sessionId;
+        }
+
+        public void SetParentModel(string? model)
+        {
+            _parentModel = model;
         }
         
         public void SetParentEnableUserRules(bool enableUserRules)
@@ -85,7 +91,11 @@ namespace Saturn.Agents.MultiAgent
             }
             
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
-            
+
+            // Requested model ids are often written for one provider (e.g. OpenRouter
+            // slugs); substitute something the active provider actually serves.
+            model = await ModelCatalog.ResolveModelAsync(_clientSource, model, _parentModel);
+
             var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
 Your purpose: {purpose}
 You work as part of a larger system and should focus on your specific task.
@@ -95,7 +105,7 @@ Report your progress clearly and concisely.";
             {
                 Name = name,
                 SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
-                Client = _client,
+                ClientSource = _clientSource,
                 Model = model,
                 Temperature = temperature ?? 0.3,
                 MaxTokens = maxTokens ?? 4096,
@@ -413,12 +423,14 @@ DECISION REQUIRED:
 
 Your decision:";
 
+                var reviewerModel = await ModelCatalog.ResolveModelAsync(_clientSource, prefs.ReviewerModel, _parentModel);
+
                 var reviewerConfig = new AgentConfiguration
                 {
                     Name = $"Reviewer for {subAgentContext.Name}",
                     SystemPrompt = await SystemPrompt.Create("You are a specialized quality assurance reviewer. Be thorough but fair in your assessments.", includeDirectories: true, includeUserRules: false),
-                    Client = _client,
-                    Model = prefs.ReviewerModel,
+                    ClientSource = _clientSource,
+                    Model = reviewerModel,
                     Temperature = 0.2,
                     MaxTokens = 2048,
                     TopP = 0.95,

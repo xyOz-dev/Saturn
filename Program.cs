@@ -3,8 +3,7 @@ using Saturn.Agents.Core;
 using Saturn.Agents.MultiAgent;
 using Saturn.Configuration;
 using Saturn.Core;
-using Saturn.OpenRouter;
-using Saturn.OpenRouter.Models.Api.Chat;
+using Saturn.Providers;
 using Saturn.UI;
 using System;
 using System.Collections.Generic;
@@ -54,34 +53,44 @@ namespace Saturn
         }
         
 
-        static async Task<(Agent, OpenRouterClient)> CreateAgent()
+        static async Task<(Agent, ILlmClientSource)> CreateAgent()
         {
-            var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                throw new InvalidOperationException("OPENROUTER_API_KEY environment variable is not set. Please set it before running the application.");
-            }
-            
-            OpenRouterOptions options = new OpenRouterOptions()
-            {
-                ApiKey = apiKey,
-                Referer = "https://github.com/xyOz-dev/Saturn",
-                Title = "Saturn"
-            };
-
-            var client = new OpenRouterClient(options);
-            
-            AgentManager.Instance.Initialize(client);
+            ProviderRegistry.Register(new OpenRouterProvider());
+            ProviderRegistry.Register(new LMStudioProvider());
 
             var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
-            
-            var model = "anthropic/claude-sonnet-4";
+
+            // Provider resolution: environment beats saved config beats the historical default.
+            var providerName = Environment.GetEnvironmentVariable("SATURN_PROVIDER");
+            if (string.IsNullOrWhiteSpace(providerName))
+            {
+                providerName = persistedConfig?.ActiveProvider;
+            }
+            if (string.IsNullOrWhiteSpace(providerName))
+            {
+                providerName = OpenRouterProvider.ProviderName;
+            }
+
+            var manager = LlmClientManager.Instance;
+            var providerSettings = ConfigurationManager.GetProviderSettings(persistedConfig, providerName);
+            var swap = await manager.SwapAsync(providerName, providerSettings);
+            if (!swap.Success)
+            {
+                throw new InvalidOperationException(swap.Error);
+            }
+
+            AgentManager.Instance.Initialize(manager);
+            Saturn.Core.Agents.AgentPoolManager.Initialize(manager);
+
+            var capabilities = manager.Current.Capabilities;
+            var model = await ResolveStartupModelAsync(manager, persistedConfig, providerName);
+
             var temperature = 0.15;
             if (model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
             {
                 temperature = 1.0;
             }
-            
+
             // Determine EnableUserRules from persisted config or default to true
             bool enableUserRules = persistedConfig?.EnableUserRules ?? true;
             
@@ -192,7 +201,7 @@ Operating Principles
    - Monitor agent status to avoid resource exhaustion.
    - Avoid redundant work - if a sub-agent did it, it's done.
    - Efficiency means trusting delegation, not redoing completed tasks.", includeDirectories: true, includeUserRules: enableUserRules),
-                Client = client,
+                ClientSource = manager,
                 Model = model,
                 Temperature = temperature,
                 MaxTokens = 4096,
@@ -215,19 +224,68 @@ Operating Principles
             if (persistedConfig != null)
             {
                 ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
+
+                // The flat persisted model may belong to a different provider; the
+                // per-provider resolution above is authoritative.
+                agentConfig.Model = model;
             }
             else
             {
                 await ConfigurationManager.SaveConfigurationAsync(
                     ConfigurationManager.FromAgentConfiguration(agentConfig));
             }
-            
+
+            await ConfigurationManager.SaveProviderSelectionAsync(providerName, providerSettings, model);
+
             if (agentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
             {
                 agentConfig.Temperature = 1.0;
             }
 
-            return (new Agent(agentConfig), client);
+            return (new Agent(agentConfig), manager);
+        }
+
+        /// <summary>
+        /// Picks the model for the connected provider: the model remembered for it,
+        /// else the provider default, else the first available model (preferring ones
+        /// already loaded on local servers).
+        /// </summary>
+        static async Task<string> ResolveStartupModelAsync(
+            ILlmClientSource manager,
+            Saturn.Configuration.Objects.PersistedAgentConfiguration? persistedConfig,
+            string providerName)
+        {
+            var capabilities = manager.Current.Capabilities;
+
+            var model = ConfigurationManager.GetProviderModel(persistedConfig, providerName);
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                model = capabilities.DefaultModel;
+            }
+
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                var models = await manager.Current.ListModelsAsync();
+                model = models.FirstOrDefault(m => m.IsLoaded == true)?.Id ?? models.FirstOrDefault()?.Id;
+                if (string.IsNullOrWhiteSpace(model))
+                {
+                    throw new InvalidOperationException(
+                        $"{capabilities.ProviderName} reports no available models. Load a model and try again.");
+                }
+                Console.WriteLine($"No model configured for {capabilities.ProviderName}; using '{model}'.");
+            }
+            else if (string.IsNullOrWhiteSpace(capabilities.DefaultModel))
+            {
+                // Local providers: the remembered model may have been deleted since last run.
+                var resolved = await ModelCatalog.ResolveModelAsync(manager, model);
+                if (!string.Equals(resolved, model, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"Model '{model}' is not available on {capabilities.ProviderName}; using '{resolved}'.");
+                    model = resolved;
+                }
+            }
+
+            return model;
         }
     }
 }
