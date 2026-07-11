@@ -89,18 +89,21 @@ Note: Use this before grep when you need to find files first, then search within
                 { "compactOutput", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Show only file paths without size/date info (default: false)" }
                     }
                 },
                 { "maxDepth", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "description", "Maximum directory depth for recursive search (default: unlimited)" }
+                        { "default", -1 },
+                        { "description", "Maximum directory depth for recursive search. -1 means unlimited (default: -1)" }
                     }
                 },
                 { "followSymlinks", new Dictionary<string, object>
                     {
                         { "type", "boolean" },
+                        { "default", false },
                         { "description", "Follow symbolic links (default: false)" }
                     }
                 }

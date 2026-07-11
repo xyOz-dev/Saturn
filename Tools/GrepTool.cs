@@ -117,7 +117,15 @@ Examples:
             
             var results = new List<GrepResult>();
             var regexOptions = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-            var regex = new Regex(pattern, regexOptions);
+            Regex regex;
+            try
+            {
+                regex = new Regex(pattern, regexOptions, TimeSpan.FromSeconds(5));
+            }
+            catch (ArgumentException ex)
+            {
+                return CreateErrorResult($"Invalid regex pattern: {ex.Message}");
+            }
             
             if (!File.Exists(path) && !Directory.Exists(path))
             {
