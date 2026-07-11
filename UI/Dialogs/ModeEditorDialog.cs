@@ -264,7 +264,7 @@ namespace Saturn.UI.Dialogs
                 return;
             }
             var modelNames = models.Select(m => m.Display).ToArray();
-            var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == mode.Model);
+            var currentIndex = models.FindIndex(m => string.Equals(m.Id, mode.Model, StringComparison.OrdinalIgnoreCase));
             if (currentIndex < 0) currentIndex = 0;
 
             var dialog = new Dialog("Select Model", 60, 20);

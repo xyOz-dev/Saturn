@@ -94,9 +94,20 @@ namespace Saturn.Configuration
 
             // System.Text.Json deserializes dictionaries with the default case-sensitive
             // comparer; rebuild so "LMStudio" and "lmstudio" cannot become separate keys.
-            config.Providers = config.Providers == null
-                ? new Dictionary<string, PersistedProviderConfiguration>(StringComparer.OrdinalIgnoreCase)
-                : new Dictionary<string, PersistedProviderConfiguration>(config.Providers, StringComparer.OrdinalIgnoreCase);
+            // Collisions collapse (first entry wins) instead of throwing — a hand-edited
+            // file must not abort the whole config load.
+            var rebuilt = new Dictionary<string, PersistedProviderConfiguration>(StringComparer.OrdinalIgnoreCase);
+            if (config.Providers != null)
+            {
+                foreach (var kvp in config.Providers)
+                {
+                    if (!rebuilt.ContainsKey(kvp.Key))
+                    {
+                        rebuilt[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+            config.Providers = rebuilt;
 
             if (!config.Providers.TryGetValue(config.ActiveProvider, out var providerConfig))
             {
@@ -110,6 +121,19 @@ namespace Saturn.Configuration
         public static async Task SaveConfigurationAsync(PersistedAgentConfiguration config)
         {
             await SaveLock.WaitAsync();
+            try
+            {
+                await SaveConfigurationLockedAsync(config);
+            }
+            finally
+            {
+                SaveLock.Release();
+            }
+        }
+
+        /// <summary>Performs the actual save. Callers must hold <see cref="SaveLock"/>.</summary>
+        private static async Task SaveConfigurationLockedAsync(PersistedAgentConfiguration config)
+        {
             try
             {
                 // Most call sites build the persisted object from the live agent
@@ -148,11 +172,7 @@ namespace Saturn.Configuration
             }
             catch (Exception ex)
             {
-
-            }
-            finally
-            {
-                SaveLock.Release();
+                Console.Error.WriteLine($"Failed to save configuration: {ex.Message}");
             }
         }
 
@@ -161,6 +181,21 @@ namespace Saturn.Configuration
         /// connected with and, when known, the model to use on that provider.
         /// </summary>
         public static async Task SaveProviderSelectionAsync(string providerName, ProviderSettings settings, string? model = null)
+        {
+            // Load-mutate-write must all happen under the lock, or a concurrent save
+            // could interleave and clobber the provider changes.
+            await SaveLock.WaitAsync();
+            try
+            {
+                await SaveProviderSelectionLockedAsync(providerName, settings, model);
+            }
+            finally
+            {
+                SaveLock.Release();
+            }
+        }
+
+        private static async Task SaveProviderSelectionLockedAsync(string providerName, ProviderSettings settings, string? model)
         {
             var config = await LoadConfigurationAsync() ?? new PersistedAgentConfiguration();
 
@@ -203,7 +238,7 @@ namespace Saturn.Configuration
                 config.Model = model;
             }
 
-            await SaveConfigurationAsync(config);
+            await SaveConfigurationLockedAsync(config);
         }
 
         public static ProviderSettings GetProviderSettings(PersistedAgentConfiguration? config, string providerName)

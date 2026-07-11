@@ -106,6 +106,22 @@ namespace Saturn.Tests.Providers
         }
 
         [Fact]
+        public async Task Load_CaseCollidingProviderKeys_CollapsesInsteadOfDroppingConfig()
+        {
+            // A hand-edited (or pre-fix) file can contain keys differing only by case;
+            // rebuilding with a case-insensitive comparer must not throw and take the
+            // whole config load down with it.
+            await File.WriteAllTextAsync(ConfigFile,
+                """{"activeProvider":"lmstudio","model":"first-model","providers":{"lmstudio":{"model":"first-model"},"LMStudio":{"model":"second-model"}}}""");
+
+            var config = await ConfigurationManager.LoadConfigurationAsync();
+
+            config.Should().NotBeNull();
+            config!.Providers.Should().HaveCount(1);
+            ConfigurationManager.GetProviderModel(config, "lmstudio").Should().Be("first-model");
+        }
+
+        [Fact]
         public async Task SaveProviderSelection_SecretMatchingEnvironment_IsNotPersisted()
         {
             var providerName = "secretprov-" + Guid.NewGuid().ToString("N");

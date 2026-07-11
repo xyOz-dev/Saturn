@@ -778,7 +778,11 @@ namespace Saturn.UI
 
         private async Task ShowModelSelectionDialog()
         {
-            if (clientSource == null || !clientSource.IsConnected) return;
+            if (clientSource == null || !clientSource.IsConnected)
+            {
+                MessageBox.ErrorQuery("Select Model", "No LLM provider connected.", "OK");
+                return;
+            }
             var models = await AgentConfiguration.GetAvailableModels(clientSource);
             if (models.Count == 0)
             {
@@ -787,7 +791,7 @@ namespace Saturn.UI
                 return;
             }
             var modelNames = models.Select(m => m.Display).ToArray();
-            var currentIndex = Array.FindIndex(modelNames, m => models[Array.IndexOf(modelNames, m)].Id == currentConfig.Model);
+            var currentIndex = models.FindIndex(m => string.Equals(m.Id, currentConfig.Model, StringComparison.OrdinalIgnoreCase));
             if (currentIndex < 0) currentIndex = 0;
 
             var dialog = new Dialog("Select Model", 60, 20);

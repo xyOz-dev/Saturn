@@ -258,8 +258,14 @@ namespace Saturn.Providers
 
         public void Dispose()
         {
-            _v1Http.Dispose();
-            _nativeHttp.Dispose();
+            try
+            {
+                _v1Http.Dispose();
+            }
+            finally
+            {
+                _nativeHttp.Dispose();
+            }
         }
     }
 }
