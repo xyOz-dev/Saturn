@@ -316,7 +316,12 @@ namespace Saturn.Agents.Core
                         continueProcessing = false;
                         continue;
                     }
-                    
+
+                    foreach (var toolCall in validToolCalls)
+                    {
+                        toolCall.Function!.Arguments = EnsureValidJsonArguments(toolCall.Function.Arguments);
+                    }
+
                     string? assistantMessageId = null;
                     var assistantToolCallsPreview = validToolCalls
                         .Select(tc => new ToolCallRequest
@@ -732,6 +737,17 @@ namespace Saturn.Agents.Core
 
                         if (!string.IsNullOrEmpty(choice?.FinishReason))
                         {
+                            if (string.Equals(choice.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Deliberately not added to contentBuffer: it is UI
+                                // feedback, not part of the assistant's message.
+                                await onChunk(new StreamChunk
+                                {
+                                    Content = "\n[Response truncated: max token limit reached. Consider raising Max Tokens, especially for reasoning models.]\n",
+                                    Role = "assistant"
+                                });
+                            }
+
                             finalResponse = new AssistantMessageResponse
                             {
                                 Role = "assistant",
@@ -954,6 +970,32 @@ namespace Saturn.Agents.Core
             return request;
         }
 
+        /// <summary>
+        /// Tool-call arguments are echoed back to the provider in the conversation on
+        /// every later request. Arguments that aren't valid JSON — empty or truncated
+        /// when generation hits the token limit — can crash strict chat templates
+        /// server-side and poison the whole session, so they are replaced with an empty
+        /// object; the tool then fails with a normal validation error the model can
+        /// react to.
+        /// </summary>
+        private static string EnsureValidJsonArguments(string? arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+            {
+                return "{}";
+            }
+
+            try
+            {
+                using var _ = JsonDocument.Parse(arguments);
+                return arguments;
+            }
+            catch (JsonException)
+            {
+                return "{}";
+            }
+        }
+
         private static Message StripCacheControl(Message message)
         {
             if (message.Content.ValueKind != JsonValueKind.Array)
@@ -1020,12 +1062,9 @@ namespace Saturn.Agents.Core
                 {
                     continue;
                 }
-                
-                if (toolCall.Function.Arguments == null)
-                {
-                    toolCall.Function.Arguments = "{}";
-                }
-                
+
+                toolCall.Function.Arguments = EnsureValidJsonArguments(toolCall.Function.Arguments);
+
                 validatedCalls.Add(toolCall);
             }
             

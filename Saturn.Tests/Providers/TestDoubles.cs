@@ -19,11 +19,22 @@ namespace Saturn.Tests.Providers
         public bool ValidateResult { get; set; } = true;
         public bool Disposed { get; private set; }
         public ChatCompletionRequest? LastRequest { get; private set; }
+        public List<ChatCompletionRequest> Requests { get; } = new();
         public string ResponseContent { get; set; } = "ok";
+
+        /// <summary>Scripted responses returned in order; when empty, a plain text reply is returned.</summary>
+        public Queue<ChatCompletionResponse> ResponseQueue { get; } = new();
 
         public Task<ChatCompletionResponse?> ChatAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default)
         {
             LastRequest = request;
+            Requests.Add(request);
+
+            if (ResponseQueue.Count > 0)
+            {
+                return Task.FromResult<ChatCompletionResponse?>(ResponseQueue.Dequeue());
+            }
+
             return Task.FromResult<ChatCompletionResponse?>(new ChatCompletionResponse
             {
                 Choices = new[]

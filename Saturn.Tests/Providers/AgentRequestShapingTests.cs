@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -76,6 +78,51 @@ namespace Saturn.Tests.Providers
 
             client.LastRequest!.Tools.Should().NotBeNullOrEmpty();
             client.LastRequest.ToolChoice.Should().NotBeNull();
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("{\"patchText\": \"truncated mid-str")]
+        public async Task Execute_ToolCallWithUnparseableArguments_IsSanitizedBeforeItPoisonsHistory(string brokenArguments)
+        {
+            // A generation cut off by the token limit can emit a tool call whose
+            // arguments are empty or truncated JSON. Echoed back verbatim, that crashes
+            // strict chat templates server-side on every subsequent request.
+            var client = new FakeLlmClient();
+            client.ResponseQueue.Enqueue(new ChatCompletionResponse
+            {
+                Choices = new[]
+                {
+                    new Choice
+                    {
+                        Message = new AssistantMessageResponse
+                        {
+                            Role = "assistant",
+                            ToolCalls = new[]
+                            {
+                                new ToolCall
+                                {
+                                    Id = "call_1",
+                                    Type = "function",
+                                    Function = new ToolCall.FunctionCall { Name = "read_file", Arguments = brokenArguments }
+                                }
+                            }
+                        },
+                        FinishReason = "length"
+                    }
+                }
+            });
+            // Second (default) response is a plain reply, ending the tool loop.
+
+            var agent = CreateAgent(new LlmClientCapabilities { SupportsToolChoice = true }, client,
+                enableTools: true, toolNames: new List<string> { "read_file" });
+
+            await agent.Execute<Message>("hello");
+
+            client.Requests.Should().HaveCountGreaterThan(1);
+            var followUp = client.Requests[^1];
+            var assistantToolMessage = followUp.Messages!.First(m => m.Role == "assistant" && m.ToolCalls != null);
+            assistantToolMessage.ToolCalls![0].Function!.Arguments.Should().Be("{}");
         }
 
         [Fact]
