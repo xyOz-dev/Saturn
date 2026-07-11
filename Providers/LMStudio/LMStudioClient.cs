@@ -28,7 +28,7 @@ namespace Saturn.Providers
         private readonly ChatCompletionsStreamingService _chatStreaming;
         private readonly string _baseUrl;
 
-        public LMStudioClient(string baseUrl, TimeSpan timeout)
+        public LMStudioClient(string baseUrl, TimeSpan timeout, Func<HttpMessageHandler>? handlerFactory = null)
         {
             var root = NormalizeRootUrl(baseUrl);
             _baseUrl = root + "/v1";
@@ -39,7 +39,8 @@ namespace Saturn.Providers
             var v1Options = new OpenRouterOptions
             {
                 BaseUrl = _baseUrl,
-                Timeout = timeout
+                Timeout = timeout,
+                HttpMessageHandler = handlerFactory?.Invoke()
             };
             _v1Http = new HttpClientAdapter(v1Options);
             _chat = new ChatCompletionsService(_v1Http);
@@ -48,7 +49,8 @@ namespace Saturn.Providers
             _nativeHttp = new HttpClientAdapter(new OpenRouterOptions
             {
                 BaseUrl = root + "/api/v0",
-                Timeout = TimeSpan.FromSeconds(10)
+                Timeout = TimeSpan.FromSeconds(10),
+                HttpMessageHandler = handlerFactory?.Invoke()
             });
         }
 
