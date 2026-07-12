@@ -122,7 +122,8 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
             };
             
             var agent = new Agent(config);
-            
+            agent.ManagerAgentId = agentId;
+
             if (_parentSessionId != null)
             {
                 await agent.InitializeSessionAsync("agent", _parentSessionId);

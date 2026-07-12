@@ -24,6 +24,8 @@ namespace Saturn.Agents.Core
         public AgentConfiguration Configuration { get; protected set; }
         public List<Message> ChatHistory { get; protected set; }
         public string? CurrentSessionId { get; set; }
+        public string? ManagerAgentId { get; set; }
+        public bool IsOrchestrator { get; set; }
         protected ChatHistoryRepository? Repository { get; set; }
         private readonly List<Message> _pendingMessages = new List<Message>();
         
@@ -75,6 +77,24 @@ namespace Saturn.Agents.Core
                     Console.Error.WriteLine($"Failed to create chat session: {ex.Message}");
                 }
             }
+        }
+
+        public void RehydrateHistory(IReadOnlyList<(string Role, string Content)> messages)
+        {
+            if (!Configuration.MaintainHistory)
+            {
+                return;
+            }
+
+            foreach (var (role, content) in messages)
+            {
+                if (role != "user" && role != "assistant")
+                {
+                    continue;
+                }
+                ChatHistory.Add(new Message { Role = role, Content = JString(content) });
+            }
+            TrimHistory();
         }
 
         public virtual async Task<T> Execute<T>(object input)
@@ -465,7 +485,14 @@ namespace Saturn.Agents.Core
                     {
                         try
                         {
-                            AgentContext.CurrentConfiguration = Configuration;
+                            AgentContext.Current = new AgentExecutionContext
+                            {
+                                Configuration = Configuration,
+                                AgentInstanceId = Id,
+                                ManagerAgentId = ManagerAgentId,
+                                AgentName = Name,
+                                IsOrchestrator = IsOrchestrator
+                            };
                             var parameters = new Dictionary<string, object>();
                             string? argumentError = null;
 

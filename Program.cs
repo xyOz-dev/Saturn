@@ -38,6 +38,7 @@ namespace Saturn
 
                 if (TryParseWebOptions(args, out var port))
                 {
+                    agent.IsOrchestrator = true;
                     var server = new Saturn.Web.WebServer(agent, client, port);
                     Console.WriteLine($"Saturn web UI running at {server.Url}");
                     Console.WriteLine("Press Ctrl+C to stop.");
