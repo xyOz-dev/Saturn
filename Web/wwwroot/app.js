@@ -603,6 +603,9 @@ function renderTranscript() {
   for (const e of state.transcript) {
     const div = document.createElement("div");
     div.className = `chat-msg ${e.role}${e.optimistic ? " pending" : ""}`;
+    if (e.role === "user" && e.source === "scheduler") {
+      div.classList.add("scheduler");
+    }
     if (e.role === "assistant") {
       div.classList.add("md");
       renderMarkdown(div, e.content);

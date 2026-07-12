@@ -34,6 +34,9 @@ namespace Saturn.Web
         private readonly OrchestratorService _orchestrator;
         private readonly WebCommandApprovalService _approvals;
         private readonly ChatHistoryRepository _history = new();
+        private readonly Saturn.Config.TaskSystemSettings _taskSettings = Saturn.Config.TaskSystemSettings.Load();
+        private readonly TaskCoordinator _coordinator;
+        private readonly TaskSchedulerService _scheduler;
 
         public WebServer(Agent rootAgent, ILlmClientSource clientSource, int port)
         {
@@ -42,6 +45,8 @@ namespace Saturn.Web
             _port = port;
             _orchestrator = new OrchestratorService(rootAgent, _hub);
             _approvals = new WebCommandApprovalService(_hub);
+            _coordinator = new TaskCoordinator(_tasks, _orchestrator, _hub, _taskSettings);
+            _scheduler = new TaskSchedulerService(_coordinator, _taskSettings);
         }
 
         public string Url => $"http://localhost:{_port}";
@@ -50,8 +55,15 @@ namespace Saturn.Web
         {
             CommandApprovalService.GlobalOverride = _approvals;
             TaskSystem.Store = _tasks;
+            TaskSystem.Coordinator = _coordinator;
             _tasks.OnTaskChanged += (change, task) =>
+            {
                 _hub.Publish("tasks.changed", new { taskId = task.Id, scope = task.Scope, board = task.Board, change });
+                if (change == "completed" && TaskStatuses.IsTerminal(task.Status))
+                {
+                    _ = _coordinator.HandleSaturnTaskCompletedAsync(task);
+                }
+            };
             var imported = await _tasks.ImportLegacyTodosAsync();
             if (imported > 0)
             {
@@ -59,6 +71,8 @@ namespace Saturn.Web
             }
             WireAgentManagerEvents();
             await _orchestrator.RestoreTranscriptAsync(_history);
+            await _coordinator.StartAsync();
+            _scheduler.Start();
 
             var builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders();
@@ -433,6 +447,15 @@ namespace Saturn.Web
                 model = _orchestrator.Model,
                 entries = _orchestrator.GetTranscript()
             }));
+
+            api.MapGet("/wake", async () => Results.Ok(await _tasks.Project.GetPendingWakesAsync()));
+
+            api.MapDelete("/wake/{id}", async (string id) =>
+            {
+                return await _tasks.Project.DeleteWakeAsync(id)
+                    ? Results.Ok()
+                    : Results.NotFound(new { error = $"Wake {id} not found" });
+            });
 
             api.MapGet("/approvals", () => Results.Ok(_approvals.GetPending()));
 

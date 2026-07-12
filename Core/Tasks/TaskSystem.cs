@@ -8,5 +8,6 @@ namespace Saturn.Core.Tasks
     public static class TaskSystem
     {
         public static TaskStore? Store { get; set; }
+        public static TaskCoordinator? Coordinator { get; set; }
     }
 }

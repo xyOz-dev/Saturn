@@ -14,6 +14,7 @@ namespace Saturn.Web
     {
         public string Role { get; init; } = "";
         public string Content { get; init; } = "";
+        public string Source { get; init; } = "user";
         public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     }
 
@@ -25,6 +26,9 @@ namespace Saturn.Web
         private readonly object _transcriptLock = new();
         private CancellationTokenSource? _cts;
         private int _busy;
+        private bool _parentWired;
+
+        public event Action? OnIdle;
 
         public OrchestratorService(Agent agent, EventHub hub)
         {
@@ -77,6 +81,11 @@ namespace Saturn.Web
                         _transcript.AddRange(restored);
                     }
                 }
+
+                // Continue the previous session and give the model its memory back,
+                // so long-horizon work survives process restarts.
+                _agent.CurrentSessionId = sessions[0].Id;
+                _agent.RehydrateHistory(restored.Select(e => (e.Role, e.Content)).ToList());
             }
             catch (Exception)
             {
@@ -84,14 +93,14 @@ namespace Saturn.Web
             }
         }
 
-        public bool TrySend(string message)
+        public bool TrySend(string message, string source = "user")
         {
             if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
             {
                 return false;
             }
 
-            AddEntry("user", message);
+            AddEntry("user", message, source);
             _hub.Publish("orchestrator.state", new { busy = true });
 
             var cts = new CancellationTokenSource();
@@ -133,6 +142,14 @@ namespace Saturn.Web
                     }
                     Volatile.Write(ref _busy, 0);
                     _hub.Publish("orchestrator.state", new { busy = false });
+                    try
+                    {
+                        OnIdle?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"OnIdle handler error: {ex.Message}");
+                    }
                 }
             });
 
@@ -155,15 +172,20 @@ namespace Saturn.Web
             if (_agent.CurrentSessionId == null)
             {
                 await _agent.InitializeSessionAsync("main");
+            }
+
+            if (!_parentWired)
+            {
                 AgentManager.Instance.SetParentSessionId(_agent.CurrentSessionId);
                 AgentManager.Instance.SetParentModel(_agent.Configuration.Model);
                 AgentManager.Instance.SetParentEnableUserRules(_agent.Configuration.EnableUserRules);
+                _parentWired = true;
             }
         }
 
-        private void AddEntry(string role, string content)
+        private void AddEntry(string role, string content, string source = "user")
         {
-            var entry = new TranscriptEntry { Role = role, Content = content };
+            var entry = new TranscriptEntry { Role = role, Content = content, Source = source };
             lock (_transcriptLock)
             {
                 _transcript.Add(entry);
