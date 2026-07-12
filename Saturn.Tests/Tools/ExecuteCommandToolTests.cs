@@ -76,6 +76,7 @@ namespace Saturn.Tests.Tools
         {
             var tool = NewTool();
             var kill = new KillCommandTool();
+            var getOutput = new GetCommandOutputTool();
 
             var start = await tool.ExecuteAsync(new Dictionary<string, object>
             {
@@ -83,6 +84,7 @@ namespace Saturn.Tests.Tools
                 ["run_in_background"] = true
             });
 
+            start.Success.Should().BeTrue();
             var commandId = (string)((Dictionary<string, object>)start.RawData!)["command_id"];
 
             var killResult = await kill.ExecuteAsync(new Dictionary<string, object> { ["command_id"] = commandId });
@@ -90,6 +92,11 @@ namespace Saturn.Tests.Tools
             killResult.Success.Should().BeTrue();
             var killData = (Dictionary<string, object>)killResult.RawData!;
             ((string)killData["status"]).Should().Be("killed");
+
+            // The killed state must survive the race with the process exit handler.
+            var poll = await getOutput.ExecuteAsync(new Dictionary<string, object> { ["command_id"] = commandId });
+            var pollData = (Dictionary<string, object>)poll.RawData!;
+            ((string)pollData["status"]).Should().Be("killed");
         }
 
         [Fact]
