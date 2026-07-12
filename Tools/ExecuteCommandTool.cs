@@ -311,8 +311,9 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             }
             catch
             {
-                // The process never started, so drop the registration instead of leaving a
-                // phantom entry stuck in the 'running' state forever.
+                // Start() may have succeeded before BeginOutputReadLine threw; disposing the wrapper
+                // would not stop the OS process, so terminate it first, then drop the registration.
+                try { process.Kill(entireProcessTree: true); } catch { }
                 BackgroundCommandManager.Instance.Remove(bg.Id);
                 throw;
             }

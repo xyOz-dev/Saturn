@@ -60,21 +60,28 @@ Returns only the output generated since the last call for that command_id, along
                 return Task.FromResult(CreateErrorResult($"No background command with id '{commandId}'"));
             }
 
-            var (stdout, stderr) = bg.ReadNew();
-
+            // Compile the filter before draining output: ReadNew advances the cursor, so a bad
+            // regex must fail before we consume (and lose) this poll's output.
+            Regex? filterRegex = null;
             var filter = GetParameter<string>(parameters, "filter", "");
             if (!string.IsNullOrEmpty(filter))
             {
                 try
                 {
-                    var regex = new Regex(filter, RegexOptions.None, TimeSpan.FromSeconds(2));
-                    stdout = FilterLines(stdout, regex);
-                    stderr = FilterLines(stderr, regex);
+                    filterRegex = new Regex(filter, RegexOptions.None, TimeSpan.FromSeconds(2));
                 }
                 catch (ArgumentException ex)
                 {
                     return Task.FromResult(CreateErrorResult($"Invalid filter regular expression: {ex.Message}"));
                 }
+            }
+
+            var (stdout, stderr) = bg.ReadNew();
+
+            if (filterRegex != null)
+            {
+                stdout = FilterLines(stdout, filterRegex);
+                stderr = FilterLines(stderr, filterRegex);
             }
 
             var status = bg.Status.ToString().ToLowerInvariant();

@@ -67,6 +67,9 @@ Terminates the process and its child process tree. Use this to shut down dev ser
             }
             catch (Exception ex)
             {
+                // Termination failed, so don't leave the command falsely marked as killed:
+                // reconcile with the process's real state (exited or still running).
+                bg.RevertKill();
                 return Task.FromResult(CreateErrorResult($"Failed to kill command '{commandId}': {ex.Message}"));
             }
 

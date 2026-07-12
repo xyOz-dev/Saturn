@@ -71,6 +71,32 @@ namespace Saturn.Tools.Core
             }
         }
 
+        /// <summary>
+        /// Undoes a <see cref="MarkKilled"/> claim when termination could not be carried out,
+        /// reconciling with the process's actual state so the command is not stuck as 'killed'.
+        /// </summary>
+        public void RevertKill()
+        {
+            lock (_lock)
+            {
+                if (_status != BackgroundCommandStatus.Killed)
+                    return;
+
+                bool exited;
+                try { exited = Process != null && Process.HasExited; } catch { exited = false; }
+
+                if (exited)
+                {
+                    _status = BackgroundCommandStatus.Exited;
+                    try { ExitCode = Process!.ExitCode; } catch { }
+                }
+                else
+                {
+                    _status = BackgroundCommandStatus.Running;
+                }
+            }
+        }
+
         public void AppendStdout(string line)
         {
             lock (_lock) Append(_stdout, ref _stdoutCursor, line);
@@ -130,7 +156,30 @@ namespace Saturn.Tools.Core
         private readonly ConcurrentDictionary<string, BackgroundCommand> _commands = new();
         private int _counter;
 
-        private BackgroundCommandManager() { }
+        private BackgroundCommandManager()
+        {
+            // Ensure background children don't outlive the host process.
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => Shutdown();
+        }
+
+        /// <summary>Terminates and disposes every tracked command, including running ones.</summary>
+        public void Shutdown()
+        {
+            foreach (var cmd in _commands.Values)
+            {
+                try
+                {
+                    if (cmd.MarkKilled())
+                        cmd.Process.Kill(entireProcessTree: true);
+                }
+                catch { }
+            }
+
+            foreach (var id in _commands.Keys.ToList())
+            {
+                Remove(id);
+            }
+        }
 
         public BackgroundCommand Register(string command, string workingDirectory, Process process)
         {
