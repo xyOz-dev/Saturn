@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Saturn — Agent Manager</title>
+  <link rel="stylesheet" href="vendor/katex.min.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -154,7 +155,7 @@
               <span id="working-label">assistant is working</span>
               <span class="tool-chips" id="tool-chips"></span>
             </div>
-            <pre id="chat-stream-text"></pre>
+            <div class="md stream-md" id="chat-stream-text"></div>
           </div>
           <form class="chat-input" id="chat-form">
             <textarea id="chat-text" rows="2" placeholder="Instruct the orchestrator… (Enter to send, Shift+Enter for newline)"></textarea>
@@ -249,6 +250,9 @@
 
   <div class="toasts" id="toasts"></div>
 
+  <script src="vendor/marked.min.js"></script>
+  <script src="vendor/purify.min.js"></script>
+  <script src="vendor/katex.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -54,6 +54,83 @@ function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+/* ---------- markdown + math ---------- */
+
+marked.use({ gfm: true, breaks: true });
+
+// Math is pulled out before markdown parsing (so `_`, `\` and `*` inside
+// formulas are not treated as emphasis), skipping code spans/fences, then
+// rendered by KaTeX into private-use-area placeholders after sanitization.
+function protectMath(segment, store) {
+  const pattern = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\((.+?)\\\)|\$([^$\n]+?)\$/g;
+  return segment.replace(pattern, (match, dollars, brackets, parens, inline) => {
+    const body = dollars ?? brackets ?? parens ?? inline;
+    const display = dollars !== undefined || brackets !== undefined;
+    if (inline !== undefined) {
+      // Guard against currency and loose dollar signs: "$5 and $10".
+      if (/^\s|\s$/.test(inline) || /^[\d.,]+$/.test(inline.trim())) return match;
+    }
+    store.push({ body, display });
+    return `\uE000${store.length - 1}\uE001`;
+  });
+}
+
+function extractMath(src, store) {
+  const codePattern = /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/g;
+  return src
+    .split(codePattern)
+    .map((seg, i) => (i % 2 === 1 ? seg : protectMath(seg, store)))
+    .join("");
+}
+
+function renderMarkdown(target, text) {
+  const math = [];
+  const src = extractMath(text ?? "", math);
+  let html = DOMPurify.sanitize(marked.parse(src));
+
+  html = html.replace(/\uE000(\d+)\uE001/g, (m, i) => {
+    const item = math[Number(i)];
+    if (!item) return "";
+    try {
+      return katex.renderToString(item.body, { displayMode: item.display, throwOnError: false });
+    } catch {
+      return esc(item.body);
+    }
+  });
+
+  target.innerHTML = html;
+
+  target.querySelectorAll("a").forEach((a) => {
+    a.target = "_blank";
+    a.rel = "noopener";
+  });
+
+  target.querySelectorAll("pre").forEach((pre) => {
+    const code = pre.querySelector("code");
+    const lang = [...(code?.classList || [])].find((c) => c.startsWith("language-"))?.slice(9) || "code";
+    const wrap = document.createElement("div");
+    wrap.className = "codeblock";
+    pre.replaceWith(wrap);
+    const head = document.createElement("div");
+    head.className = "codeblock-head";
+    const label = document.createElement("span");
+    label.textContent = lang;
+    const copy = document.createElement("button");
+    copy.className = "codeblock-copy";
+    copy.textContent = "copy";
+    copy.addEventListener("click", () => {
+      navigator.clipboard.writeText(code?.textContent || "").then(() => {
+        copy.textContent = "copied";
+        setTimeout(() => (copy.textContent = "copy"), 1200);
+      });
+    });
+    head.append(label, copy);
+    wrap.append(head, pre);
+  });
+
+  return target;
+}
+
 function toast(html, ms = 3500) {
   const el = document.createElement("div");
   el.className = "toast";
@@ -480,8 +557,9 @@ function renderTasks() {
         <div class="kv"><span>Agent</span><span>${esc(t.agentName)} (${esc(t.agentId)})</span></div>
         <div class="kv"><span>Duration</span><span>${fmtDuration(t.durationSeconds)}</span></div>
         <div class="kv"><span>Finished</span><span>${new Date(t.completedAt).toLocaleString()}</span></div>
-        <pre class="result-pre" style="margin-top:14px">${esc(t.result)}</pre>`
+        <div class="result-pre md" id="task-result-md" style="margin-top:14px"></div>`
       );
+      renderMarkdown($("#task-result-md"), t.result);
     })
   );
 }
@@ -495,6 +573,20 @@ $("#btn-clear-tasks").addEventListener("click", async () => {
 /* ---------- orchestrator ---------- */
 
 let streamBuffer = "";
+let streamRenderPending = false;
+
+// Re-parsing the whole buffer per chunk is wasteful at high token rates;
+// coalesce renders to at most one every 80ms.
+function scheduleStreamRender() {
+  if (streamRenderPending) return;
+  streamRenderPending = true;
+  setTimeout(() => {
+    streamRenderPending = false;
+    const el = $("#chat-stream-text");
+    renderMarkdown(el, streamBuffer);
+    el.scrollTop = el.scrollHeight;
+  }, 80);
+}
 
 async function loadTranscript() {
   const t = await api.get("/orchestrator/transcript");
@@ -504,10 +596,20 @@ async function loadTranscript() {
 }
 
 function renderTranscript() {
-  $("#chat-log").innerHTML = state.transcript
-    .map((e) => `<div class="chat-msg ${esc(e.role)}${e.optimistic ? " pending" : ""}">${esc(e.content)}</div>`)
-    .join("");
-  $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
+  const log = $("#chat-log");
+  log.innerHTML = "";
+  for (const e of state.transcript) {
+    const div = document.createElement("div");
+    div.className = `chat-msg ${e.role}${e.optimistic ? " pending" : ""}`;
+    if (e.role === "assistant") {
+      div.classList.add("md");
+      renderMarkdown(div, e.content);
+    } else {
+      div.textContent = e.content;
+    }
+    log.appendChild(div);
+  }
+  log.scrollTop = log.scrollHeight;
 }
 
 let workingSince = null;
@@ -533,7 +635,7 @@ function setOrchestratorBusy(busy) {
     clearInterval(workingTimer);
     workingTimer = null;
     $("#chat-stream").hidden = true;
-    $("#chat-stream-text").textContent = "";
+    $("#chat-stream-text").innerHTML = "";
     $("#tool-chips").innerHTML = "";
     streamBuffer = "";
   }
@@ -714,14 +816,22 @@ function renderSessions() {
           "Session transcript",
           `<div class="msg-view">${messages
             .map(
-              (m) => `
+              (m, i) => `
               <div class="msg-row">
                 <div class="msg-role">${esc(m.role)}${m.agentName ? ` · ${esc(m.agentName)}` : ""}</div>
-                <div class="msg-content">${esc(m.content)}</div>
+                <div class="msg-content${m.role === "assistant" ? " md" : ""}" data-msg-index="${i}"></div>
               </div>`
             )
             .join("") || '<div class="hint">No messages in this session.</div>'}</div>`
         );
+        $$("#modal-body [data-msg-index]").forEach((el) => {
+          const m = messages[Number(el.dataset.msgIndex)];
+          if (m.role === "assistant" && m.content !== "null") {
+            renderMarkdown(el, m.content);
+          } else {
+            el.textContent = m.content;
+          }
+        });
       } catch (err) {
         toast(`<b>Error:</b> ${esc(err.message)}`);
       }
@@ -874,8 +984,7 @@ function connectEvents() {
     const d = JSON.parse(e.data);
     streamBuffer += d.content;
     $("#chat-stream").hidden = false;
-    $("#chat-stream-text").textContent = streamBuffer;
-    $("#chat-stream-text").scrollTop = $("#chat-stream-text").scrollHeight;
+    scheduleStreamRender();
   });
 
   es.addEventListener("orchestrator.toolcall", (e) => {

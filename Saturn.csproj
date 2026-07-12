@@ -33,7 +33,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Web\wwwroot\**" />
+    <EmbeddedResource Include="Web\wwwroot\**">
+      <LogicalName>wwwroot/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

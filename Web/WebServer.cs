@@ -428,19 +428,16 @@ namespace Saturn.Web
         private static void MapStaticAssets(WebApplication app)
         {
             var assembly = Assembly.GetExecutingAssembly();
-            const string prefix = "Saturn.Web.wwwroot.";
+            const string prefix = "wwwroot/";
 
+            // Resource names come from the csproj LogicalName; RecursiveDir uses the
+            // build host's separator, so normalize to forward slashes.
             var assets = assembly.GetManifestResourceNames()
-                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal))
-                .ToDictionary(n => n[prefix.Length..], n => n);
+                .Where(n => n.Replace('\\', '/').StartsWith(prefix, StringComparison.Ordinal))
+                .ToDictionary(n => n.Replace('\\', '/')[prefix.Length..], n => n);
 
             app.MapGet("/", () => ServeAsset(assembly, assets, "index.html"));
-
-            foreach (var asset in assets.Keys.Where(k => k != "index.html"))
-            {
-                var name = asset;
-                app.MapGet($"/{name}", () => ServeAsset(assembly, assets, name));
-            }
+            app.MapGet("/{**path}", (string path) => ServeAsset(assembly, assets, path));
         }
 
         private static IResult ServeAsset(Assembly assembly, Dictionary<string, string> assets, string name)
@@ -451,9 +448,36 @@ namespace Saturn.Web
             }
 
             var stream = assembly.GetManifestResourceStream(resourceName);
-            return stream == null
-                ? Results.NotFound()
-                : Results.Stream(stream, GetContentType(name));
+            if (stream == null)
+            {
+                return Results.NotFound();
+            }
+
+            // Vendored libraries and fonts are versioned by filename; cache them hard.
+            // App assets change between builds, so let the browser revalidate.
+            var cacheControl = name.StartsWith("vendor/", StringComparison.Ordinal)
+                ? "public, max-age=604800, immutable"
+                : "no-cache";
+
+            return new CacheHeaderResult(Results.Stream(stream, GetContentType(name)), cacheControl);
+        }
+
+        private sealed class CacheHeaderResult : IResult
+        {
+            private readonly IResult _inner;
+            private readonly string _cacheControl;
+
+            public CacheHeaderResult(IResult inner, string cacheControl)
+            {
+                _inner = inner;
+                _cacheControl = cacheControl;
+            }
+
+            public Task ExecuteAsync(HttpContext httpContext)
+            {
+                httpContext.Response.Headers.CacheControl = _cacheControl;
+                return _inner.ExecuteAsync(httpContext);
+            }
         }
 
         private static string GetContentType(string fileName)
@@ -466,6 +490,9 @@ namespace Saturn.Web
                 ".svg" => "image/svg+xml",
                 ".png" => "image/png",
                 ".ico" => "image/x-icon",
+                ".woff2" => "font/woff2",
+                ".woff" => "font/woff",
+                ".ttf" => "font/ttf",
                 _ => "application/octet-stream"
             };
         }
