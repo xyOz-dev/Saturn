@@ -188,6 +188,16 @@ textarea.input { resize: vertical; font-family: inherit; }
   margin-bottom: 18px;
 }
 .panel.narrow { max-width: 520px; }
+
+/* Settings lays out as a responsive card grid instead of one long strip */
+#view-settings.active {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 18px;
+  align-items: start;
+  align-content: start;
+}
+#view-settings .panel { margin-bottom: 0; max-width: none; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .panel-head h2 { font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 

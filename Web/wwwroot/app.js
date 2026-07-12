@@ -1101,8 +1101,11 @@ function openTaskModal(taskId) {
     try {
       if (t) {
         await api.patch(`/todos/${t.id}`, payload);
+        toast("Task <b>updated</b>");
       } else {
-        await api.post("/todos", payload);
+        const created = await api.post("/todos", payload);
+        revealScope(created.scope);
+        toast(`Task <b>${esc(created.title)}</b> added`);
       }
       closeModal();
       await Promise.all([loadTodos(), loadOverview()]);
@@ -1178,17 +1181,33 @@ async function openDispatchModal(taskId) {
   });
 }
 
+// After adding, make sure the new task is actually visible: if the current
+// scope/status filters would hide it, they read as "the add button is broken".
+function revealScope(scope) {
+  if (state.todoFilter === "done") {
+    state.todoFilter = "all";
+    $$("#todo-filter .seg-item").forEach((b) => b.classList.toggle("active", b.dataset.filter === "all"));
+  }
+  if (state.todoScope !== "all" && state.todoScope !== scope) {
+    state.todoScope = scope;
+    state.todoBoard = null;
+    $$("#todo-scope .seg-item").forEach((b) => b.classList.toggle("active", b.dataset.scope === scope));
+  }
+}
+
 $("#todo-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const title = $("#todo-title").value.trim();
   if (!title) return;
   try {
-    await api.post("/todos", {
+    const created = await api.post("/todos", {
       title,
       priority: $("#todo-priority").value,
       scope: $("#todo-add-scope").value,
     });
     $("#todo-title").value = "";
+    revealScope(created.scope);
+    toast(`Task <b>${esc(created.title)}</b> added`);
     await Promise.all([loadTodos(), loadOverview()]);
   } catch (err) {
     toast(`<b>Error:</b> ${esc(err.message)}`);
@@ -1342,13 +1361,24 @@ async function loadSettings() {
   $("#setting-model").textContent = s.model || "—";
 
   await Promise.all([
-    loadProviderPanel(),
-    loadGenerationPanel(),
-    loadToolsPanel(),
-    loadSubAgentPanel(),
-    loadRulesPanel(),
-    loadModesPanel(),
-  ].map((p) => p.catch(() => {})));
+    withPanelFallback(loadProviderPanel, "#prov-settings"),
+    withPanelFallback(loadGenerationPanel, null),
+    withPanelFallback(loadToolsPanel, "#tool-grid"),
+    withPanelFallback(loadSubAgentPanel, null),
+    withPanelFallback(loadRulesPanel, "#rules-path"),
+    withPanelFallback(loadModesPanel, "#modes-list"),
+  ]);
+}
+
+async function withPanelFallback(loader, containerSel) {
+  try {
+    await loader();
+  } catch (err) {
+    const el = containerSel && $(containerSel);
+    if (el) {
+      el.innerHTML = `<span class="hint">failed to load: ${esc(err.message)} — leave and reopen Settings to retry</span>`;
+    }
+  }
 }
 
 /* ---- provider panel ---- */
