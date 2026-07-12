@@ -14,8 +14,9 @@ namespace Saturn.Tools
 {
     public class ExecuteCommandTool : ToolBase
     {
-        private const int DefaultTimeoutSeconds = 30;
-        private const int MaxOutputLength = 1048576; // 1MB
+        private const int DefaultTimeoutSeconds = 120;
+        private const int MaxOutputLength = 1048576; // 1MB shown to the model
+        private const int MaxCaptureLength = 8388608; // 8MB safety ceiling retained during capture
         private readonly List<CommandHistory> _commandHistory = new();
         private readonly CommandExecutorConfig _config;
         private readonly ICommandApprovalService _approvalService;
@@ -37,9 +38,10 @@ namespace Saturn.Tools
 How commands run:
 - On Windows the command is run with 'cmd.exe /c'; on Linux/macOS with '/bin/sh -c'. Use the syntax of the current platform.
 - Commands run non-interactively with no stdin. Do not run commands that wait for user input (e.g. editors, REPLs, prompts) - they will hang until the timeout.
-- Default timeout is 30 seconds; pass 'timeout' (in seconds) for longer-running commands like builds or test suites.
-- Output is captured up to 1 MB; anything beyond that is truncated.
+- Default timeout is 120 seconds; pass 'timeout' (in seconds) for longer-running commands like builds or test suites. On timeout the process is killed and any output captured so far is still returned.
+- Output is captured up to 1 MB; the middle is elided if it is longer, keeping the start and end.
 - The user may be asked to approve each command before it runs; a denied command returns an error.
+- For long-running processes (dev servers, watchers), set 'run_in_background' to true. The tool returns a command_id immediately; poll its output with get_command_output and stop it with kill_command.
 
 When to use:
 - Running builds, tests, linters, or type checkers
@@ -68,8 +70,15 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 { "timeout", new Dictionary<string, object>
                     {
                         { "type", "integer" },
-                        { "default", 30 },
-                        { "description", "Command timeout in seconds. Default is 30 seconds; increase for builds and test runs" }
+                        { "default", 120 },
+                        { "description", "Command timeout in seconds. Default is 120 seconds; increase for builds and test runs. Ignored when run_in_background is true" }
+                    }
+                },
+                { "run_in_background", new Dictionary<string, object>
+                    {
+                        { "type", "boolean" },
+                        { "default", false },
+                        { "description", "Run the command in the background and return a command_id immediately instead of waiting. Use for dev servers, watchers, and other long-lived processes; read output with get_command_output and stop it with kill_command" }
                     }
                 },
                 { "captureOutput", new Dictionary<string, object>
@@ -114,6 +123,7 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 var timeoutSeconds = GetParameter<int>(arguments, "timeout", _config.DefaultTimeout);
                 var captureOutput = GetParameter<bool>(arguments, "captureOutput", true);
                 var runAsShell = GetParameter<bool>(arguments, "runAsShell", true);
+                var runInBackground = GetParameter<bool>(arguments, "run_in_background", false);
 
                 if (AgentContext.RequireCommandApproval)
                 {
@@ -136,6 +146,11 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 if (!Directory.Exists(workingDirectory))
                 {
                     return CreateErrorResult($"Working directory does not exist: {workingDirectory}");
+                }
+
+                if (runInBackground)
+                {
+                    return StartBackgroundCommand(command, workingDirectory, runAsShell);
                 }
 
                 var historyEntry = new CommandHistory
@@ -208,7 +223,7 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             {
                 process.OutputDataReceived += (sender, e) =>
                 {
-                    if (e.Data != null && outputBuilder.Length < MaxOutputLength)
+                    if (e.Data != null && outputBuilder.Length < MaxCaptureLength)
                     {
                         outputBuilder.AppendLine(e.Data);
                     }
@@ -216,7 +231,7 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
 
                 process.ErrorDataReceived += (sender, e) =>
                 {
-                    if (e.Data != null && errorBuilder.Length < MaxOutputLength)
+                    if (e.Data != null && errorBuilder.Length < MaxCaptureLength)
                     {
                         errorBuilder.AppendLine(e.Data);
                     }
@@ -234,32 +249,86 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(timeout);
 
+            var timedOut = false;
             try
             {
                 await process.WaitForExitAsync(cts.Token);
             }
             catch (OperationCanceledException)
             {
+                timedOut = true;
                 try
                 {
                     process.Kill(entireProcessTree: true);
                 }
                 catch { }
 
-                throw new TimeoutException($"Command execution timed out after {timeout.TotalSeconds} seconds");
+                // Let the process finish exiting so any buffered output is flushed to us.
+                try { await process.WaitForExitAsync(); } catch { }
             }
+
+            // A blocking WaitForExit with no timeout ensures the async output handlers have
+            // drained before we read the buffers, so the tail of the output isn't lost.
+            try { process.WaitForExit(); } catch { }
 
             stopwatch.Stop();
 
+            int exitCode;
+            try { exitCode = process.ExitCode; } catch { exitCode = -1; }
+
             return new CommandResult
             {
-                ExitCode = process.ExitCode,
+                ExitCode = exitCode,
                 StandardOutput = outputBuilder.ToString(),
                 StandardError = errorBuilder.ToString(),
                 Duration = stopwatch.Elapsed,
                 Command = command,
-                WorkingDirectory = workingDirectory
+                WorkingDirectory = workingDirectory,
+                TimedOut = timedOut
             };
+        }
+
+        private ToolResult StartBackgroundCommand(string command, string workingDirectory, bool runAsShell)
+        {
+            var processInfo = CreateProcessStartInfo(command, workingDirectory, captureOutput: true, runAsShell);
+            var process = new Process { StartInfo = processInfo, EnableRaisingEvents = true };
+            var bg = BackgroundCommandManager.Instance.Register(command, workingDirectory, process);
+
+            process.OutputDataReceived += (sender, e) => { if (e.Data != null) bg.AppendStdout(e.Data); };
+            process.ErrorDataReceived += (sender, e) => { if (e.Data != null) bg.AppendStderr(e.Data); };
+            process.Exited += (sender, e) =>
+            {
+                int? exitCode = null;
+                try { exitCode = process.ExitCode; } catch { }
+                bg.MarkExited(exitCode);
+            };
+
+            try
+            {
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+            }
+            catch
+            {
+                // The process never started, so drop the registration instead of leaving a
+                // phantom entry stuck in the 'running' state forever.
+                BackgroundCommandManager.Instance.Remove(bg.Id);
+                throw;
+            }
+
+            var message =
+                $"Command started in background with id '{bg.Id}'.\n" +
+                $"Read its output with get_command_output (command_id: '{bg.Id}') and stop it with kill_command.";
+
+            return CreateSuccessResult(
+                new Dictionary<string, object>
+                {
+                    ["command_id"] = bg.Id,
+                    ["status"] = "running",
+                    ["command"] = command
+                },
+                message);
         }
 
         private ProcessStartInfo CreateProcessStartInfo(string command, string workingDirectory, bool captureOutput, bool runAsShell)
@@ -338,9 +407,13 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
         private ToolResult FormatResult(CommandResult result)
         {
             var output = new StringBuilder();
-            
+
             output.AppendLine($"Command: {result.Command}");
             output.AppendLine($"Working Directory: {result.WorkingDirectory}");
+            if (result.TimedOut)
+            {
+                output.AppendLine($"Status: TIMED OUT after {result.Duration.TotalSeconds:F1}s and was terminated (partial output below)");
+            }
             output.AppendLine($"Exit Code: {result.ExitCode}");
             output.AppendLine($"Duration: {result.Duration.TotalMilliseconds:F2}ms");
             output.AppendLine();
@@ -367,7 +440,14 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             if (output.Length <= MaxOutputLength)
                 return output;
 
-            return output.Substring(0, MaxOutputLength) + "\n\n... (output truncated)";
+            // Keep the start and end; the middle is usually the least useful part of a long log.
+            var headLength = MaxOutputLength * 2 / 3;
+            var tailLength = MaxOutputLength - headLength;
+            var elided = output.Length - headLength - tailLength;
+
+            return output.Substring(0, headLength)
+                + $"\n\n... ({elided} characters elided) ...\n\n"
+                + output.Substring(output.Length - tailLength);
         }
 
         public IReadOnlyList<CommandHistory> GetCommandHistory() => _commandHistory.AsReadOnly();

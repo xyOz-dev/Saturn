@@ -10,5 +10,6 @@ namespace Saturn.Tools.Objects
         public TimeSpan Duration { get; set; }
         public string Command { get; set; } = string.Empty;
         public string WorkingDirectory { get; set; } = string.Empty;
+        public bool TimedOut { get; set; }
     }
 }
