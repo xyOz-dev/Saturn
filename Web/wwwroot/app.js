@@ -186,7 +186,7 @@ function showView(name) {
 
 async function refreshView(name) {
   try {
-    if (name === "overview") await loadOverview();
+    if (name === "overview") { await loadOverview(); await loadWakes(); }
     else if (name === "agents") await loadAgents();
     else if (name === "tasks") await loadTasks();
     else if (name === "orchestrator") await loadTranscript();
@@ -281,6 +281,30 @@ setInterval(() => {
     $("#uptime-chip").textContent = `up ${fmtDuration(up)}`;
   }
 }, 1000);
+
+async function loadWakes() {
+  try {
+    const wakes = await api.get("/wake");
+    $("#wake-list").innerHTML = wakes.length === 0
+      ? `<li class="hint" style="padding:6px 2px;border:none">Nothing queued — the orchestrator is caught up.</li>`
+      : wakes
+          .map(
+            (w) => `
+            <li>
+              <span class="activity-time">${esc(w.kind)}</span>
+              <span class="activity-text">${esc(w.prompt.slice(0, 90))}</span>
+              <button class="todo-del" data-wake-del="${esc(w.id)}" title="drop this wake">✕</button>
+            </li>`
+          )
+          .join("");
+    $$("[data-wake-del]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        await api.del(`/wake/${b.dataset.wakeDel}`);
+        await loadWakes();
+      })
+    );
+  } catch { /* panel is best-effort */ }
+}
 
 /* ---------- agents ---------- */
 
@@ -759,6 +783,8 @@ function renderTodos() {
         <span class="task-badges">${taskBadges(t)}</span>
         ${state.todoScope === "all" ? `<span class="task-scope">${esc(t.scope)}${t.board !== "default" ? `/${esc(t.board)}` : ""}</span>` : ""}
         <button class="todo-pri ${esc(t.priority)}" data-id="${esc(t.id)}" data-pri="${esc(t.priority)}" title="cycle priority">${esc(t.priority)}</button>
+        ${!isTerminal(t.status) && !t.dispatchedTo && !t.blocked ? `<button class="btn ghost sm" data-dispatch="${esc(t.id)}" title="hand off to an agent">▶</button>` : ""}
+        <button class="btn ghost sm" data-detail="${esc(t.id)}" title="details">ⓘ</button>
         <button class="btn ghost sm" data-edit="${esc(t.id)}" title="edit">✎</button>
         <button class="todo-del" data-del="${esc(t.id)}" title="delete">✕</button>
       </li>`
@@ -822,6 +848,8 @@ function renderTodos() {
   );
 
   $$("[data-edit]").forEach((b) => b.addEventListener("click", () => openTaskModal(b.dataset.edit)));
+  $$("[data-detail]").forEach((b) => b.addEventListener("click", () => openTaskDetail(b.dataset.detail)));
+  $$("[data-dispatch]").forEach((b) => b.addEventListener("click", () => openDispatchModal(b.dataset.dispatch)));
 
   $$("[data-del]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -875,41 +903,111 @@ function openTaskModal(taskId) {
           .join("")}
       </div>
     </div>
-    <div class="field-row" style="margin-bottom:14px">
-      <label class="field" style="flex:1;margin:0"><span>Recurrence</span>
-        <select class="input select" id="tm-recur-kind" style="width:100%">
-          ${["none", "interval", "cron"].map((k) => `<option value="${k}" ${(t?.recurrenceKind || "none") === k ? "selected" : ""}>${k}</option>`).join("")}
-        </select></label>
-      <label class="field" style="flex:1;margin:0"><span>Every N minutes</span><input class="input" id="tm-recur-interval" type="number" min="1" style="width:100%" value="${t?.recurrenceIntervalSeconds ? Math.round(t.recurrenceIntervalSeconds / 60) : ""}"></label>
+    <div class="field"><span style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Recurrence</span>
+      <div class="seg" id="tm-recur-preset" style="flex-wrap:wrap">
+        ${["none", "minutes", "hours", "daily", "weekly", "cron"].map((p) => `<button type="button" class="seg-item" data-preset="${p}">${p}</button>`).join("")}
+      </div>
+      <div id="tm-recur-fields" style="margin-top:10px"></div>
+      <span class="hint" id="tm-cron-preview"></span>
     </div>
-    <label class="field"><span>Cron expression (advanced)</span><input class="input" id="tm-recur-cron" style="width:100%" placeholder="0 9 * * 1-5" value="${esc(t?.recurrenceCron || "")}"><span class="hint" id="tm-cron-preview"></span></label>
+    <label class="field" id="tm-catchup-wrap" hidden><span>If a run is missed while Saturn is offline</span>
+      <select class="input select" id="tm-catchup" style="width:100%">
+        <option value="run_once" ${(t?.catchUpPolicy || "run_once") === "run_once" ? "selected" : ""}>run once on startup (catch up)</option>
+        <option value="skip" ${t?.catchUpPolicy === "skip" ? "selected" : ""}>skip missed runs</option>
+      </select>
+    </label>
     <div class="modal-actions">
       <button class="btn" id="tm-cancel">Cancel</button>
       <button class="btn primary" id="tm-save">${t ? "Save" : "Create"}</button>
     </div>`
   );
 
-  const cronInput = $("#tm-recur-cron");
-  cronInput.addEventListener("input", async () => {
-    const expr = cronInput.value.trim();
-    if (!expr) {
-      $("#tm-cron-preview").textContent = "";
-      return;
+  // --- recurrence presets ---
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  function detectPreset() {
+    if (!t || t.recurrenceKind === "none") return { preset: "none" };
+    if (t.recurrenceKind === "interval") {
+      const s = t.recurrenceIntervalSeconds || 3600;
+      return s % 3600 === 0 ? { preset: "hours", n: s / 3600 } : { preset: "minutes", n: Math.round(s / 60) };
     }
+    const cron = t.recurrenceCron || "";
+    let m = cron.match(/^(\d+) (\d+) \* \* \*$/);
+    if (m) return { preset: "daily", time: `${m[2].padStart(2, "0")}:${m[1].padStart(2, "0")}` };
+    m = cron.match(/^(\d+) (\d+) \* \* ([\d,]+)$/);
+    if (m) return { preset: "weekly", time: `${m[2].padStart(2, "0")}:${m[1].padStart(2, "0")}`, days: m[3].split(",").map(Number) };
+    return { preset: "cron", cron };
+  }
+
+  const initial = detectPreset();
+  let currentPreset = initial.preset;
+
+  function renderRecurFields() {
+    const el = $("#tm-recur-fields");
+    $("#tm-catchup-wrap").hidden = currentPreset === "none";
+    if (currentPreset === "none") { el.innerHTML = ""; validateRecur(); return; }
+    if (currentPreset === "minutes" || currentPreset === "hours") {
+      el.innerHTML = `<div class="field-row"><input class="input" id="tm-recur-n" type="number" min="1" value="${initial.preset === currentPreset ? initial.n || 1 : 1}" style="max-width:120px"><span style="align-self:center;color:var(--muted);font-size:12px">every N ${currentPreset}</span></div>`;
+    } else if (currentPreset === "daily") {
+      el.innerHTML = `<div class="field-row"><input class="input" id="tm-recur-time" type="time" value="${initial.preset === "daily" ? initial.time : "09:00"}" style="max-width:140px"><span style="align-self:center;color:var(--muted);font-size:12px">every day at this time</span></div>`;
+    } else if (currentPreset === "weekly") {
+      const selected = initial.preset === "weekly" ? initial.days || [] : [1];
+      el.innerHTML = `
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${DAYS.map((d, i) => `<button type="button" class="seg-item tm-day ${selected.includes(i) ? "active" : ""}" data-day="${i}" style="border:1px solid var(--border);border-radius:6px">${d}</button>`).join("")}</div>
+        <input class="input" id="tm-recur-time" type="time" value="${initial.preset === "weekly" ? initial.time : "09:00"}" style="max-width:140px">`;
+      $$(".tm-day").forEach((b) => b.addEventListener("click", () => { b.classList.toggle("active"); validateRecur(); }));
+    } else if (currentPreset === "cron") {
+      el.innerHTML = `<input class="input" id="tm-recur-cron" style="width:100%" placeholder="0 9 * * 1-5 (min hour day month weekday, local time)" value="${esc(initial.preset === "cron" ? initial.cron : "")}">`;
+      $("#tm-recur-cron").addEventListener("input", validateRecur);
+    }
+    el.querySelectorAll("input").forEach((i) => i.addEventListener("input", validateRecur));
+    validateRecur();
+  }
+
+  function compileRecurrence() {
+    if (currentPreset === "none") return { recurrenceKind: "none", recurrenceIntervalSeconds: null, recurrenceCron: null };
+    if (currentPreset === "minutes" || currentPreset === "hours") {
+      const n = Math.max(1, parseInt($("#tm-recur-n")?.value, 10) || 1);
+      return { recurrenceKind: "interval", recurrenceIntervalSeconds: n * (currentPreset === "hours" ? 3600 : 60), recurrenceCron: null };
+    }
+    const time = ($("#tm-recur-time")?.value || "09:00").split(":");
+    const minute = parseInt(time[1], 10) || 0;
+    const hour = parseInt(time[0], 10) || 0;
+    if (currentPreset === "daily") {
+      return { recurrenceKind: "cron", recurrenceCron: `${minute} ${hour} * * *`, recurrenceIntervalSeconds: null };
+    }
+    if (currentPreset === "weekly") {
+      const days = $$(".tm-day").filter((b) => b.classList.contains("active")).map((b) => b.dataset.day);
+      return { recurrenceKind: "cron", recurrenceCron: `${minute} ${hour} * * ${days.length ? days.join(",") : "1"}`, recurrenceIntervalSeconds: null };
+    }
+    return { recurrenceKind: "cron", recurrenceCron: ($("#tm-recur-cron")?.value || "").trim(), recurrenceIntervalSeconds: null };
+  }
+
+  async function validateRecur() {
+    const preview = $("#tm-cron-preview");
+    const r = compileRecurrence();
+    if (r.recurrenceKind !== "cron" || !r.recurrenceCron) { preview.textContent = ""; return; }
     try {
-      const r = await api.get(`/todos/validate-cron?expr=${encodeURIComponent(expr)}`);
-      $("#tm-cron-preview").textContent = r.valid
-        ? `next: ${r.nextRuns.map((d) => new Date(d).toLocaleString()).join(" · ")}`
-        : r.error;
-    } catch {
-      $("#tm-cron-preview").textContent = "";
-    }
+      const v = await api.get(`/todos/validate-cron?expr=${encodeURIComponent(r.recurrenceCron)}`);
+      preview.textContent = v.valid
+        ? `next: ${v.nextRuns.map((d) => new Date(d).toLocaleString()).join(" · ")}`
+        : v.error;
+    } catch { preview.textContent = ""; }
+  }
+
+  $$("#tm-recur-preset .seg-item").forEach((b) => {
+    b.classList.toggle("active", b.dataset.preset === currentPreset);
+    b.addEventListener("click", () => {
+      currentPreset = b.dataset.preset;
+      $$("#tm-recur-preset .seg-item").forEach((x) => x.classList.toggle("active", x === b));
+      renderRecurFields();
+    });
   });
+  renderRecurFields();
 
   $("#tm-cancel").addEventListener("click", closeModal);
   $("#tm-save").addEventListener("click", async () => {
-    const kind = $("#tm-recur-kind").value;
-    const intervalMinutes = parseInt($("#tm-recur-interval").value, 10);
+    const recurrence = compileRecurrence();
     const payload = {
       title: $("#tm-title").value.trim(),
       notes: $("#tm-notes").value,
@@ -920,9 +1018,8 @@ function openTaskModal(taskId) {
       requiresApproval: $("#tm-requires-approval").checked,
       userHandoffOnly: $("#tm-user-handoff").checked,
       blockedBy: $$("#tm-deps [data-dep]").filter((c) => c.checked).map((c) => c.dataset.dep),
-      recurrenceKind: kind,
-      recurrenceIntervalSeconds: kind === "interval" && intervalMinutes ? intervalMinutes * 60 : null,
-      recurrenceCron: kind === "cron" ? cronInput.value.trim() : null,
+      ...recurrence,
+      catchUpPolicy: $("#tm-catchup").value,
     };
     if (!payload.title) {
       toast("<b>Title is required</b>");
@@ -940,6 +1037,71 @@ function openTaskModal(taskId) {
     } catch (err) {
       toast(`<b>Error:</b> ${esc(err.message)}`);
       $("#tm-save").disabled = false;
+    }
+  });
+}
+
+async function openTaskDetail(taskId) {
+  let d;
+  try {
+    d = await api.get(`/todos/${taskId}`);
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+    return;
+  }
+  const t = d.task;
+  const section = (title, rows) =>
+    `<div class="toolbar" style="margin:14px 0 8px"><span class="toolbar-title">${title}</span></div>` +
+    (rows.length ? rows.join("") : '<div class="hint">none</div>');
+
+  openModal(
+    t.title,
+    `
+    <div class="kv"><span>Id</span><span>${esc(t.id)}</span></div>
+    <div class="kv"><span>Scope</span><span>${esc(t.scope)}/${esc(t.board)}</span></div>
+    <div class="kv"><span>Status</span><span>${esc(t.status)}${t.blocked ? " (blocked)" : ""}</span></div>
+    <div class="kv"><span>Created by</span><span>${esc(t.createdBy)}</span></div>
+    <div class="kv"><span>Claim</span><span>${esc(t.claimStatus)}${t.claimedBy ? ` by ${esc(t.claimedBy)}` : ""}</span></div>
+    ${t.recurrenceDescription ? `<div class="kv"><span>Recurs</span><span>${esc(t.recurrenceDescription)} · next ${t.nextRunAt ? new Date(t.nextRunAt).toLocaleString() : "—"}</span></div>` : ""}
+    ${t.notes ? `<div class="hint" style="margin-top:10px;white-space:pre-wrap">${esc(t.notes)}</div>` : ""}
+    ${section("Blocked by", t.blockedBy.map((b) => `<div class="kv"><span>${esc(b.title)}${b.missing ? " (deleted)" : ""}</span><span>${esc(b.status)}</span></div>`))}
+    ${section("Blocks", d.dependents.map((id) => `<div class="kv"><span>${esc(id)}</span><span></span></div>`))}
+    ${section("Run history", d.runs.map((r) => `<div class="kv"><span>${new Date(r.firedAt).toLocaleString()}</span><span>${esc(r.outcome || "pending")}</span></div>`))}
+    ${section("Dispatches", d.dispatches.map((x) => `<div class="kv"><span>${esc(x.agentName || "?")} · ${new Date(x.startedAt).toLocaleString()}${x.orphaned ? " · orphaned" : ""}</span><span>${x.completedAt ? (x.success ? "done" : "failed") : "running"}</span></div>`))}
+    ${section("Waiting on this", d.waiters.map((w) => `<div class="kv"><span>${esc(w.waiterKind)}${w.waiterAgentName ? ` · ${esc(w.waiterAgentName)}` : ""}</span><span>since ${new Date(w.createdAt).toLocaleString()}</span></div>`))}
+    ${d.dispatches.some((x) => x.result) ? `<div class="toolbar" style="margin:14px 0 8px"><span class="toolbar-title">Latest result</span></div><div class="result-pre md" id="task-detail-result"></div>` : ""}`
+  );
+  const latest = d.dispatches.find((x) => x.result);
+  if (latest && $("#task-detail-result")) {
+    renderMarkdown($("#task-detail-result"), latest.result);
+  }
+}
+
+async function openDispatchModal(taskId) {
+  const agents = await api.get("/agents");
+  const idle = agents.filter((a) => !a.currentTask);
+  openModal(
+    "Hand off to an agent",
+    `
+    ${idle.length === 0 ? '<p class="hint">No idle agents. Create one in the Agents tab first, or let the orchestrator handle it.</p>' : `
+    <label class="field"><span>Agent</span>
+      <select class="input select" id="dp-agent" style="width:100%">
+        ${idle.map((a) => `<option value="${esc(a.agentId)}">${esc(a.name)} (${esc(a.agentId)})</option>`).join("")}
+      </select></label>`}
+    <div class="modal-actions">
+      <button class="btn" id="dp-cancel">Cancel</button>
+      ${idle.length > 0 ? '<button class="btn primary" id="dp-send">Dispatch</button>' : ""}
+    </div>`
+  );
+  $("#dp-cancel").addEventListener("click", closeModal);
+  $("#dp-send")?.addEventListener("click", async () => {
+    try {
+      const r = await api.post(`/todos/${taskId}/dispatch`, { agentId: $("#dp-agent").value });
+      toast(esc(r.message));
+      closeModal();
+      await Promise.all([loadTodos(), loadOverview()]);
+    } catch (err) {
+      toast(`<b>Error:</b> ${esc(err.message)}`);
     }
   });
 }
@@ -1227,7 +1389,28 @@ function connectEvents() {
   es.addEventListener("agents.cleared", () => refreshIf(["agents", "tasks"], [loadAgents, loadTasks]));
   es.addEventListener("tasks.cleared", () => refreshIf(["tasks"], [loadTasks]));
   es.addEventListener("todos.changed", () => refreshIf(["todos"], [loadTodos]));
+  es.addEventListener("tasks.changed", () => refreshIf(["todos", "overview"], [loadTodos, loadWakes]));
   es.addEventListener("settings.changed", () => refreshIf(["settings"], [loadSettings]));
+  es.addEventListener("wake.enqueued", (e) => {
+    const d = JSON.parse(e.data);
+    logActivity(`wake queued: <b>${esc(d.kind)}</b>${d.taskId ? ` (${esc(d.taskId)})` : ""}`);
+    refreshIf(["overview"], [loadWakes]);
+  });
+  es.addEventListener("wake.delivered", () => refreshIf(["overview"], [loadWakes]));
+  es.addEventListener("task.due", (e) => {
+    const d = JSON.parse(e.data);
+    logActivity(`recurring task due: <b>${esc(d.title)}</b>${d.skipped ? " (skipped)" : ""}`);
+  });
+  es.addEventListener("task.unblocked", (e) => {
+    const d = JSON.parse(e.data);
+    logActivity(`task unblocked: <b>${esc(d.title)}</b>`);
+    refreshIf(["todos"], [loadTodos]);
+  });
+  es.addEventListener("task.dispatched", (e) => {
+    const d = JSON.parse(e.data);
+    logActivity(`task <b>${esc(d.taskId)}</b> dispatched to <b>${esc(d.agentName)}</b>`);
+    refreshIf(["todos", "agents"], [loadTodos, loadAgents]);
+  });
 
   es.addEventListener("approval.requested", (e) => {
     const d = JSON.parse(e.data);

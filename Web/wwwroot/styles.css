@@ -295,7 +295,17 @@ textarea.input { resize: vertical; font-family: inherit; }
 
 .quick-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.activity-feed { list-style: none; max-height: 380px; overflow-y: auto; }
+.activity-feed, .wake-list { list-style: none; max-height: 380px; overflow-y: auto; }
+.wake-list li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.wake-list li:last-child { border-bottom: none; }
+.wake-list .activity-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-feed li {
   display: flex;
   gap: 10px;

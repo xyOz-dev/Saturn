@@ -127,9 +127,10 @@ The web UI runs instead of the terminal interface and gives you:
 
 - **Agent manager**: spawn agents individually or as a fleet (e.g. 30+ identical workers in one click), watch live status, hand off tasks, and terminate agents — the concurrent agent limit is adjustable at runtime from the Settings tab
 - **Task board**: running and completed tasks with full result output and durations
-- **Orchestrator chat**: talk to the root agent from the browser with streamed responses and live tool-call activity
-- **Todo list**: a persistent task list (stored in `.saturn/todos.json`) with priorities, inline editing and reordering
-- **Command approvals**: shell commands agents want to run appear in the Approvals tab for one-click approve/deny
+- **Orchestrator chat**: talk to the root agent from the browser with streamed responses, markdown and LaTeX rendering, and live tool-call activity
+- **Durable task system**: SQLite-backed todo lists in three scopes — global (machine-wide), project (per-repo boards) and per-agent — with dependencies, recurring tasks (presets or full cron), and per-task flags controlling whether agents may take them, whether your approval is needed first, or whether only you can hand them off
+- **Long-horizon orchestration**: a scheduler wakes the orchestrator when recurring tasks fire, dependencies unblock or dispatched work completes; agents can wait on other tasks and are automatically re-prompted with the result — all state survives restarts, including the orchestrator's own conversation memory
+- **Tiered command approval**: a global trust mode, an LLM judge that vets sub-agent shell commands (approve/deny/escalate), and your approval queue — which can wait indefinitely for long unattended runs
 - **Session browser**: inspect saved chat history for the main agent and every sub-agent
 
 Everything updates in real time over server-sent events; no refresh needed.

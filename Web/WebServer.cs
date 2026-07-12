@@ -336,12 +336,14 @@ namespace Saturn.Web
                     .Concat(await _tasks.Global.GetDependentsAsync(id)).Distinct().ToList();
                 var runs = await _tasks.RepoOf(task).GetRunsAsync(id);
                 var dispatches = await _tasks.Project.GetDispatchesForTaskAsync(id);
+                var waiters = await _tasks.Project.GetPendingWaitersAsync(id);
                 return Results.Ok(new
                 {
                     task = ProjectTaskView(view),
                     dependents,
                     runs,
-                    dispatches
+                    dispatches,
+                    waiters
                 });
             });
 
