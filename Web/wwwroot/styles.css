@@ -189,15 +189,29 @@ textarea.input { resize: vertical; font-family: inherit; }
 }
 .panel.narrow { max-width: 520px; }
 
-/* Settings lays out as a responsive card grid instead of one long strip */
-#view-settings.active {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 18px;
-  align-items: start;
-  align-content: start;
+/* Settings: labeled sections, each a compact responsive row of related panels */
+.settings-section { margin-bottom: 24px; }
+.settings-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
-#view-settings .panel { margin-bottom: 0; max-width: none; }
+.settings-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+#view-settings .panel { margin-bottom: 0; max-width: none; padding: 14px 16px; }
+#view-settings .panel-head { margin-bottom: 10px; }
+#view-settings .field { margin-bottom: 10px; }
+#view-settings .switch-row { padding: 3px 0; }
+#view-settings .hint { font-size: 11.5px; margin-top: 8px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .panel-head h2 { font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 

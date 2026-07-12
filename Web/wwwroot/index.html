@@ -231,57 +231,10 @@
 
       <!-- SETTINGS -->
       <section class="view" id="view-settings">
-        <div class="panel narrow">
-          <div class="panel-head"><h2>Limits</h2></div>
-          <label class="field">
-            <span>Max concurrent agents</span>
-            <div class="field-row">
-              <input class="input" id="setting-max-agents" type="number" min="1" max="200">
-              <button class="btn primary" id="save-max-agents">Apply</button>
-            </div>
-          </label>
-        </div>
-        <div class="panel narrow">
-          <div class="panel-head"><h2>Safety &amp; Autonomy</h2></div>
-          <label class="switch-row">
-            <span>Require command approval</span>
-            <input type="checkbox" id="setting-approval" class="switch">
-          </label>
-          <label class="switch-row danger-row">
-            <span>Trust mode — auto-approve everything</span>
-            <input type="checkbox" id="setting-trust" class="switch">
-          </label>
-          <label class="switch-row">
-            <span>Orchestrator judges sub-agent commands</span>
-            <input type="checkbox" id="setting-judge" class="switch">
-          </label>
-          <p class="hint">With trust mode off and the judge on, sub-agent shell commands are approved or denied by an LLM judge; anything ambiguous escalates to your Approvals tab. Your own orchestrator's commands always come to you.</p>
-          <label class="field" style="margin-top:12px">
-            <span>Approval timeout (minutes, 0 = wait forever)</span>
-            <div class="field-row">
-              <input class="input" id="setting-approval-timeout" type="number" min="0">
-              <button class="btn primary" id="save-approval-timeout">Apply</button>
-            </div>
-          </label>
-        </div>
-        <div class="panel narrow">
-          <div class="panel-head"><h2>Scheduler</h2></div>
-          <label class="field">
-            <span>Sweep interval (seconds, restart required)</span>
-            <div class="field-row">
-              <input class="input" id="setting-scheduler-interval" type="number" min="5">
-              <button class="btn primary" id="save-scheduler-interval">Apply</button>
-            </div>
-          </label>
-          <label class="field">
-            <span>Max orchestrator wakes per hour</span>
-            <div class="field-row">
-              <input class="input" id="setting-max-wakes" type="number" min="1">
-              <button class="btn primary" id="save-max-wakes">Apply</button>
-            </div>
-          </label>
-        </div>
-        <div class="panel narrow">
+        <div class="settings-section">
+          <h3 class="settings-label">Model &amp; Provider</h3>
+          <div class="settings-row">
+        <div class="panel">
           <div class="panel-head"><h2>Provider &amp; Model</h2></div>
           <div class="kv"><span>Active</span><span><span id="setting-provider">—</span> · <span id="setting-model">—</span></span></div>
           <label class="field" style="margin-top:12px"><span>Provider</span>
@@ -297,7 +250,7 @@
           <p class="hint" id="prov-status"></p>
         </div>
 
-        <div class="panel narrow">
+        <div class="panel">
           <div class="panel-head"><h2>Generation</h2></div>
           <div class="field-row" style="margin-bottom:12px">
             <label class="field" style="flex:1;margin:0"><span>Temperature</span><input class="input" id="gen-temp" type="number" step="0.05" min="0" max="2" style="width:100%"></label>
@@ -310,14 +263,13 @@
           <label class="switch-row"><span>Use user rules</span><input type="checkbox" id="gen-userrules" class="switch"></label>
           <button class="btn primary" id="gen-apply" style="margin-top:12px">Apply generation settings</button>
         </div>
-
-        <div class="panel narrow">
-          <div class="panel-head"><h2>Orchestrator Tools</h2></div>
-          <div class="dep-picker" id="tool-grid" style="max-height:260px"></div>
-          <button class="btn primary" id="tools-apply" style="margin-top:12px">Apply tool selection</button>
+          </div>
         </div>
 
-        <div class="panel narrow">
+        <div class="settings-section">
+          <h3 class="settings-label">Agents</h3>
+          <div class="settings-row">
+        <div class="panel">
           <div class="panel-head"><h2>Sub-Agent Defaults</h2></div>
           <label class="field"><span>Default model</span><input class="input" id="sa-model" list="prov-model-list" style="width:100%"></label>
           <div class="field-row" style="margin-bottom:12px">
@@ -334,17 +286,88 @@
           <button class="btn primary" id="sa-apply">Apply sub-agent defaults</button>
         </div>
 
-        <div class="panel narrow">
+        <div class="panel">
+          <div class="panel-head"><h2>Orchestrator Tools</h2></div>
+          <div class="dep-picker" id="tool-grid" style="max-height:220px"></div>
+          <button class="btn primary" id="tools-apply" style="margin-top:12px">Apply tool selection</button>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Limits</h2></div>
+          <label class="field">
+            <span>Max concurrent agents</span>
+            <div class="field-row">
+              <input class="input" id="setting-max-agents" type="number" min="1" max="200">
+              <button class="btn primary" id="save-max-agents">Apply</button>
+            </div>
+          </label>
+        </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-label">Autonomy &amp; Approvals</h3>
+          <div class="settings-row">
+        <div class="panel">
+          <div class="panel-head"><h2>Safety</h2></div>
+          <label class="switch-row">
+            <span>Require command approval</span>
+            <input type="checkbox" id="setting-approval" class="switch">
+          </label>
+          <label class="switch-row danger-row">
+            <span>Trust mode — auto-approve everything</span>
+            <input type="checkbox" id="setting-trust" class="switch">
+          </label>
+          <label class="switch-row">
+            <span>Orchestrator judges sub-agent commands</span>
+            <input type="checkbox" id="setting-judge" class="switch">
+          </label>
+          <label class="field" style="margin-top:10px">
+            <span>Approval timeout (minutes, 0 = wait forever)</span>
+            <div class="field-row">
+              <input class="input" id="setting-approval-timeout" type="number" min="0">
+              <button class="btn primary" id="save-approval-timeout">Apply</button>
+            </div>
+          </label>
+          <p class="hint">Judge on: sub-agent commands get vetted by an LLM; ambiguous ones escalate to you. Your orchestrator's commands always come to you.</p>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Scheduler</h2></div>
+          <label class="field">
+            <span>Sweep interval (seconds, restart required)</span>
+            <div class="field-row">
+              <input class="input" id="setting-scheduler-interval" type="number" min="5">
+              <button class="btn primary" id="save-scheduler-interval">Apply</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>Max orchestrator wakes per hour</span>
+            <div class="field-row">
+              <input class="input" id="setting-max-wakes" type="number" min="1">
+              <button class="btn primary" id="save-max-wakes">Apply</button>
+            </div>
+          </label>
+        </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-label">Rules &amp; Modes</h3>
+          <div class="settings-row">
+        <div class="panel">
           <div class="panel-head"><h2>User Rules</h2></div>
           <p class="hint" id="rules-path" style="margin-bottom:8px"></p>
           <textarea class="input" id="rules-content" rows="8" style="width:100%;font-family:var(--font-mono);font-size:12px" placeholder="Rules injected into every agent's system prompt…"></textarea>
           <button class="btn primary" id="rules-save" style="margin-top:10px">Save rules</button>
         </div>
 
-        <div class="panel narrow">
+        <div class="panel">
           <div class="panel-head"><h2>Modes</h2></div>
           <div id="modes-list"></div>
           <p class="hint">Modes bundle model, prompt, tools and safety settings. Create or edit them in the terminal UI; apply them here.</p>
+        </div>
+          </div>
         </div>
       </section>
     </main>
