@@ -500,16 +500,33 @@ async function loadTranscript() {
 
 function renderTranscript() {
   $("#chat-log").innerHTML = state.transcript
-    .map((e) => `<div class="chat-msg ${esc(e.role)}">${esc(e.content)}</div>`)
+    .map((e) => `<div class="chat-msg ${esc(e.role)}${e.optimistic ? " pending" : ""}">${esc(e.content)}</div>`)
     .join("");
   $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
+}
+
+let workingSince = null;
+let workingTimer = null;
+
+function updateWorkingLabel() {
+  if (!workingSince) return;
+  const s = Math.floor((Date.now() - workingSince) / 1000);
+  $("#working-label").textContent = s >= 2 ? `assistant is working · ${fmtDuration(s)}` : "assistant is working";
 }
 
 function setOrchestratorBusy(busy) {
   state.orchestratorBusy = busy;
   $("#chat-send").disabled = busy;
   $("#chat-cancel").hidden = !busy;
-  if (!busy) {
+  if (busy) {
+    if (!workingSince) workingSince = Date.now();
+    $("#chat-stream").hidden = false;
+    updateWorkingLabel();
+    if (!workingTimer) workingTimer = setInterval(updateWorkingLabel, 1000);
+  } else {
+    workingSince = null;
+    clearInterval(workingTimer);
+    workingTimer = null;
     $("#chat-stream").hidden = true;
     $("#chat-stream-text").textContent = "";
     $("#tool-chips").innerHTML = "";
@@ -521,10 +538,22 @@ $("#chat-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const message = $("#chat-text").value.trim();
   if (!message || state.orchestratorBusy) return;
+
+  // Optimistic: show the message and working state immediately, before the
+  // server round-trip; the SSE echo confirms it (or the catch rolls it back).
+  const entry = { role: "user", content: message, optimistic: true };
+  state.transcript.push(entry);
+  renderTranscript();
+  setOrchestratorBusy(true);
+  $("#chat-text").value = "";
+
   try {
     await api.post("/orchestrator/message", { message });
-    $("#chat-text").value = "";
   } catch (err) {
+    state.transcript = state.transcript.filter((x) => x !== entry);
+    renderTranscript();
+    setOrchestratorBusy(false);
+    $("#chat-text").value = message;
     toast(`<b>Error:</b> ${esc(err.message)}`);
   }
 });
@@ -847,6 +876,15 @@ function connectEvents() {
 
   es.addEventListener("orchestrator.message", (e) => {
     const entry = JSON.parse(e.data);
+    if (entry.role === "user") {
+      const match = state.transcript.find((x) => x.optimistic && x.content === entry.content);
+      if (match) {
+        Object.assign(match, entry);
+        delete match.optimistic;
+        if (state.view === "orchestrator") renderTranscript();
+        return;
+      }
+    }
     state.transcript.push(entry);
     if (state.view === "orchestrator") renderTranscript();
   });

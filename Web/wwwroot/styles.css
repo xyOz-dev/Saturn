@@ -421,6 +421,7 @@ textarea.input { resize: vertical; font-family: inherit; }
   animation: rise-in 0.25s var(--ease);
 }
 .chat-msg.user { align-self: flex-end; background: var(--white); color: #000; border-bottom-right-radius: 4px; }
+.chat-msg.pending { opacity: 0.65; }
 .chat-msg.assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .chat-msg.system { align-self: center; color: var(--dim); font-size: 12px; background: none; padding: 2px; }
 
@@ -440,6 +441,12 @@ textarea.input { resize: vertical; font-family: inherit; }
   font-size: 13.5px;
   max-height: 300px;
   overflow-y: auto;
+}
+.chat-stream pre:empty::before {
+  content: "waiting for the model — it may be reading files or calling tools…";
+  color: var(--dim);
+  font-size: 12px;
+  animation: breathe 2.4s ease-in-out infinite;
 }
 
 .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--white); animation: pulse 1.2s ease-in-out infinite; }
