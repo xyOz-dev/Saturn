@@ -52,6 +52,33 @@ namespace Saturn.Web
 
     public record ApprovalDecisionRequest(bool Approved);
 
+    public record ProviderSwitchRequest(string Provider, Dictionary<string, string?>? Settings, string? Model);
+
+    public record ModelSwitchRequest(string Model);
+
+    public record AgentConfigUpdateRequest(
+        double? Temperature,
+        int? MaxTokens,
+        double? TopP,
+        bool? EnableStreaming,
+        bool? MaintainHistory,
+        int? MaxHistoryMessages,
+        bool? EnableUserRules,
+        List<string>? ToolNames);
+
+    public record UserRulesUpdateRequest(string Content);
+
+    public record SubAgentDefaultsRequest(
+        string? DefaultModel,
+        double? DefaultTemperature,
+        int? DefaultMaxTokens,
+        double? DefaultTopP,
+        bool? DefaultEnableTools,
+        bool? EnableReviewStage,
+        string? ReviewerModel,
+        int? ReviewTimeoutSeconds,
+        int? MaxRevisionCycles);
+
     public record SettingsUpdateRequest(
         int? MaxConcurrentAgents,
         bool? RequireCommandApproval,

@@ -12,9 +12,13 @@ namespace Saturn.Web
 {
     public class TranscriptEntry
     {
+        public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
         public string Role { get; init; } = "";
         public string Content { get; init; } = "";
         public string Source { get; init; } = "user";
+        public string? AgentName { get; init; }
+        public string? TaskId { get; init; }
+        public bool? Success { get; init; }
         public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     }
 
@@ -66,7 +70,15 @@ namespace Saturn.Web
                     .Where(m => (m.Role == "user" || m.Role == "assistant")
                         && !string.IsNullOrWhiteSpace(m.Content)
                         && m.Content != "null")
-                    .Select(m => new TranscriptEntry { Role = m.Role, Content = m.Content, Timestamp = m.Timestamp })
+                    .Select(m => new TranscriptEntry
+                    {
+                        Role = m.Role,
+                        Content = m.Content,
+                        Timestamp = m.Timestamp,
+                        // Persisted messages carry no source; recover the scheduler tag
+                        // from the prompt prefix so they keep their styling after restart.
+                        Source = m.Role == "user" && m.Content.StartsWith("[Saturn Scheduler]") ? "scheduler" : "user"
+                    })
                     .ToList();
 
                 if (restored.Count == 0)
@@ -181,6 +193,36 @@ namespace Saturn.Web
                 AgentManager.Instance.SetParentEnableUserRules(_agent.Configuration.EnableUserRules);
                 _parentWired = true;
             }
+        }
+
+        public void AddTaskResultEntry(string taskId, string agentName, bool success, string result)
+        {
+            var entry = new TranscriptEntry
+            {
+                Role = "task",
+                Content = result,
+                Source = "task",
+                AgentName = agentName,
+                TaskId = taskId,
+                Success = success
+            };
+            lock (_transcriptLock)
+            {
+                _transcript.Add(entry);
+            }
+            _hub.Publish("orchestrator.message", entry);
+        }
+
+        public void StartNewSession()
+        {
+            Cancel();
+            _agent.ClearHistory();
+            _parentWired = false;
+            lock (_transcriptLock)
+            {
+                _transcript.Clear();
+            }
+            _hub.Publish("orchestrator.cleared");
         }
 
         private void AddEntry(string role, string content, string source = "user")

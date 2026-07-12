@@ -109,6 +109,7 @@ namespace Saturn.Web
             manager.OnAgentStatusChanged += (agentId, name, status) =>
                 _hub.Publish("agent.status", new { agentId, name, status });
             manager.OnTaskCompleted += (taskId, result) =>
+            {
                 _hub.Publish("task.completed", new
                 {
                     taskId,
@@ -118,6 +119,10 @@ namespace Saturn.Web
                     result.CompletedAt,
                     durationSeconds = result.Duration.TotalSeconds
                 });
+                // Attach the full result to the orchestrator transcript so the
+                // user can see what actually happened without leaving the chat.
+                _orchestrator.AddTaskResultEntry(taskId, result.AgentName, result.Success, result.Result);
+            };
         }
 
         private void MapApi(WebApplication app)
@@ -272,6 +277,103 @@ namespace Saturn.Web
                 manager.ClearCompletedTasks();
                 _hub.Publish("tasks.cleared");
                 return Results.Ok();
+            });
+
+            api.MapGet("/providers", async () =>
+            {
+                var persisted = await Saturn.Configuration.ConfigurationManager.LoadConfigurationAsync();
+                return Results.Ok(ProviderRegistry.All.Select(p =>
+                {
+                    var saved = Saturn.Configuration.ConfigurationManager.GetProviderSettings(persisted, p.Name);
+                    return new
+                    {
+                        name = p.Name,
+                        displayName = p.DisplayName,
+                        active = string.Equals(_clientSource.ActiveProviderName, p.Name, StringComparison.OrdinalIgnoreCase),
+                        model = Saturn.Configuration.ConfigurationManager.GetProviderModel(persisted, p.Name),
+                        settings = p.SettingDescriptors.Select(d => new
+                        {
+                            key = d.Key,
+                            label = d.Label,
+                            kind = d.Kind.ToString().ToLowerInvariant(),
+                            required = d.Required,
+                            defaultValue = d.DefaultValue,
+                            environmentVariable = d.EnvironmentVariable,
+                            configured = !string.IsNullOrWhiteSpace(d.Resolve(saved)),
+                            // Secrets are never echoed back to the browser.
+                            value = d.Kind == ProviderSettingKind.Secret ? null : saved.Get(d.Key)
+                        })
+                    };
+                }));
+            });
+
+            api.MapPost("/providers/switch", async (ProviderSwitchRequest request) =>
+            {
+                if (!ProviderRegistry.TryGet(request.Provider ?? "", out var provider))
+                {
+                    return Results.NotFound(new { error = $"Unknown provider '{request.Provider}'" });
+                }
+
+                var persisted = await Saturn.Configuration.ConfigurationManager.LoadConfigurationAsync();
+                var settings = Saturn.Configuration.ConfigurationManager.GetProviderSettings(persisted, provider.Name);
+                if (request.Settings != null)
+                {
+                    foreach (var kvp in request.Settings)
+                    {
+                        settings.Set(kvp.Key, kvp.Value);
+                    }
+                }
+
+                var swap = await LlmClientManager.Instance.SwapAsync(provider.Name, settings, requireValidation: true);
+                if (!swap.Success)
+                {
+                    return Results.BadRequest(new { error = swap.Error ?? "Provider switch failed" });
+                }
+
+                var model = request.Model;
+                if (string.IsNullOrWhiteSpace(model))
+                {
+                    model = Saturn.Configuration.ConfigurationManager.GetProviderModel(persisted, provider.Name)
+                        ?? _clientSource.Current.Capabilities.DefaultModel;
+                }
+                if (string.IsNullOrWhiteSpace(model))
+                {
+                    try
+                    {
+                        var available = await _clientSource.Current.ListModelsAsync();
+                        model = available.FirstOrDefault(m => m.IsLoaded == true)?.Id ?? available.FirstOrDefault()?.Id;
+                    }
+                    catch
+                    {
+                        model = null;
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(model))
+                {
+                    model = await ModelCatalog.ResolveModelAsync(_clientSource, model);
+                }
+
+                _rootAgent.Configuration.Model = model ?? "";
+                manager.SetParentModel(model);
+                await Saturn.Configuration.ConfigurationManager.SaveProviderSelectionAsync(provider.Name, settings, model);
+                _hub.Publish("provider.changed", new { provider = _clientSource.ActiveProviderName, model });
+                return Results.Ok(new { provider = _clientSource.ActiveProviderName, model, connected = _clientSource.IsConnected });
+            });
+
+            api.MapPost("/model", async (ModelSwitchRequest request) =>
+            {
+                if (string.IsNullOrWhiteSpace(request.Model))
+                {
+                    return Results.BadRequest(new { error = "model is required" });
+                }
+                var model = await ModelCatalog.ResolveModelAsync(_clientSource, request.Model.Trim());
+                _rootAgent.Configuration.Model = model;
+                manager.SetParentModel(model);
+                var persisted = await Saturn.Configuration.ConfigurationManager.LoadConfigurationAsync();
+                var settings = Saturn.Configuration.ConfigurationManager.GetProviderSettings(persisted, _clientSource.ActiveProviderName);
+                await Saturn.Configuration.ConfigurationManager.SaveProviderSelectionAsync(_clientSource.ActiveProviderName, settings, model);
+                _hub.Publish("provider.changed", new { provider = _clientSource.ActiveProviderName, model });
+                return Results.Ok(new { model });
             });
 
             api.MapGet("/models", async () =>
@@ -574,6 +676,166 @@ namespace Saturn.Web
 
                 _hub.Publish("settings.changed", CurrentSettings());
                 return Results.Ok(CurrentSettings());
+            });
+
+            // ---------- agent generation config ----------
+
+            object CurrentAgentConfig() => new
+            {
+                model = _rootAgent.Configuration.Model,
+                temperature = _rootAgent.Configuration.Temperature,
+                maxTokens = _rootAgent.Configuration.MaxTokens,
+                topP = _rootAgent.Configuration.TopP,
+                enableStreaming = _rootAgent.Configuration.EnableStreaming,
+                maintainHistory = _rootAgent.Configuration.MaintainHistory,
+                maxHistoryMessages = _rootAgent.Configuration.MaxHistoryMessages,
+                enableUserRules = _rootAgent.Configuration.EnableUserRules,
+                toolNames = _rootAgent.Configuration.ToolNames
+            };
+
+            async Task PersistAgentConfigAsync()
+            {
+                await Saturn.Configuration.ConfigurationManager.SaveConfigurationAsync(
+                    Saturn.Configuration.ConfigurationManager.FromAgentConfiguration(_rootAgent.Configuration));
+            }
+
+            api.MapGet("/agent-config", () => Results.Ok(CurrentAgentConfig()));
+
+            api.MapPut("/agent-config", async (AgentConfigUpdateRequest request) =>
+            {
+                var cfg = _rootAgent.Configuration;
+                if (request.Temperature.HasValue) cfg.Temperature = Math.Clamp(request.Temperature.Value, 0, 2);
+                if (request.MaxTokens.HasValue) cfg.MaxTokens = Math.Max(1, request.MaxTokens.Value);
+                if (request.TopP.HasValue) cfg.TopP = Math.Clamp(request.TopP.Value, 0, 1);
+                if (request.EnableStreaming.HasValue) cfg.EnableStreaming = request.EnableStreaming.Value;
+                if (request.MaintainHistory.HasValue) cfg.MaintainHistory = request.MaintainHistory.Value;
+                if (request.MaxHistoryMessages.HasValue) cfg.MaxHistoryMessages = Math.Max(2, request.MaxHistoryMessages.Value);
+                if (request.EnableUserRules.HasValue)
+                {
+                    cfg.EnableUserRules = request.EnableUserRules.Value;
+                    manager.SetParentEnableUserRules(cfg.EnableUserRules);
+                }
+                if (request.ToolNames != null && request.ToolNames.Count > 0)
+                {
+                    var known = ToolRegistry.Instance.GetAllNames().ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    cfg.ToolNames = request.ToolNames.Where(t => known.Contains(t)).ToList();
+                }
+                await PersistAgentConfigAsync();
+                _hub.Publish("settings.changed", CurrentAgentConfig());
+                return Results.Ok(CurrentAgentConfig());
+            });
+
+            api.MapGet("/tools", () =>
+            {
+                var enabled = _rootAgent.Configuration.ToolNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                return Results.Ok(ToolRegistry.Instance.GetAll()
+                    .OrderBy(t => t.Name)
+                    .Select(t => new
+                    {
+                        name = t.Name,
+                        enabled = enabled.Count == 0 || enabled.Contains(t.Name),
+                        description = t.Description.Split('\n')[0]
+                    }));
+            });
+
+            // ---------- sub-agent defaults ----------
+
+            object CurrentSubAgentDefaults()
+            {
+                var prefs = Saturn.Config.SubAgentPreferences.Instance;
+                return new
+                {
+                    defaultModel = prefs.DefaultModel,
+                    defaultTemperature = prefs.DefaultTemperature,
+                    defaultMaxTokens = prefs.DefaultMaxTokens,
+                    defaultTopP = prefs.DefaultTopP,
+                    defaultEnableTools = prefs.DefaultEnableTools,
+                    enableReviewStage = prefs.EnableReviewStage,
+                    reviewerModel = prefs.ReviewerModel,
+                    reviewTimeoutSeconds = prefs.ReviewTimeoutSeconds,
+                    maxRevisionCycles = prefs.MaxRevisionCycles
+                };
+            }
+
+            api.MapGet("/subagent-defaults", () => Results.Ok(CurrentSubAgentDefaults()));
+
+            api.MapPut("/subagent-defaults", (SubAgentDefaultsRequest request) =>
+            {
+                var prefs = Saturn.Config.SubAgentPreferences.Instance;
+                if (!string.IsNullOrWhiteSpace(request.DefaultModel)) prefs.DefaultModel = request.DefaultModel.Trim();
+                if (request.DefaultTemperature.HasValue) prefs.DefaultTemperature = Math.Clamp(request.DefaultTemperature.Value, 0, 2);
+                if (request.DefaultMaxTokens.HasValue) prefs.DefaultMaxTokens = Math.Max(1, request.DefaultMaxTokens.Value);
+                if (request.DefaultTopP.HasValue) prefs.DefaultTopP = Math.Clamp(request.DefaultTopP.Value, 0, 1);
+                if (request.DefaultEnableTools.HasValue) prefs.DefaultEnableTools = request.DefaultEnableTools.Value;
+                if (request.EnableReviewStage.HasValue) prefs.EnableReviewStage = request.EnableReviewStage.Value;
+                if (request.ReviewerModel != null) prefs.ReviewerModel = string.IsNullOrWhiteSpace(request.ReviewerModel) ? null : request.ReviewerModel.Trim();
+                if (request.ReviewTimeoutSeconds.HasValue) prefs.ReviewTimeoutSeconds = Math.Max(30, request.ReviewTimeoutSeconds.Value);
+                if (request.MaxRevisionCycles.HasValue) prefs.MaxRevisionCycles = Math.Clamp(request.MaxRevisionCycles.Value, 0, 10);
+                prefs.Save();
+                _hub.Publish("settings.changed", CurrentSubAgentDefaults());
+                return Results.Ok(CurrentSubAgentDefaults());
+            });
+
+            // ---------- user rules ----------
+
+            api.MapGet("/user-rules", async () =>
+            {
+                var (content, wasTruncated, error) = await Saturn.Core.UserRulesManager.LoadUserRules();
+                return Results.Ok(new
+                {
+                    content,
+                    wasTruncated,
+                    error,
+                    path = Saturn.Core.UserRulesManager.GetRulesFilePath(),
+                    enabled = _rootAgent.Configuration.EnableUserRules
+                });
+            });
+
+            api.MapPut("/user-rules", async (UserRulesUpdateRequest request) =>
+            {
+                var saved = await Saturn.Core.UserRulesManager.SaveRulesAsync(request.Content ?? "");
+                if (!saved)
+                {
+                    return Results.Problem("Failed to save rules file");
+                }
+                return Results.Ok(new { saved = true });
+            });
+
+            // ---------- modes ----------
+
+            api.MapGet("/modes", () => Results.Ok(Saturn.Agents.Core.ModeManager.Instance.GetAllModes()
+                .Select(m => new
+                {
+                    id = m.Id,
+                    name = m.Name,
+                    description = m.Description,
+                    model = m.Model,
+                    temperature = m.Temperature,
+                    requireCommandApproval = m.RequireCommandApproval,
+                    toolCount = m.ToolNames?.Count
+                })));
+
+            api.MapPost("/modes/{id:guid}/apply", async (Guid id) =>
+            {
+                var mode = Saturn.Agents.Core.ModeManager.Instance.GetMode(id);
+                if (mode == null)
+                {
+                    return Results.NotFound(new { error = $"Mode {id} not found" });
+                }
+                Saturn.Agents.Core.ModeManager.Instance.ApplyModeToConfiguration(id, _rootAgent.Configuration);
+                var model = await ModelCatalog.ResolveModelAsync(_clientSource, _rootAgent.Configuration.Model);
+                _rootAgent.Configuration.Model = model;
+                manager.SetParentModel(model);
+                manager.SetParentEnableUserRules(_rootAgent.Configuration.EnableUserRules);
+                await PersistAgentConfigAsync();
+                _hub.Publish("settings.changed", CurrentAgentConfig());
+                return Results.Ok(new { applied = mode.Name, model });
+            });
+
+            api.MapPost("/orchestrator/new-session", () =>
+            {
+                _orchestrator.StartNewSession();
+                return Results.Ok();
             });
         }
 

@@ -633,10 +633,55 @@ async function loadTranscript() {
   renderTranscript();
 }
 
+function summarizeToolArgs(argsJson) {
+  try {
+    const args = JSON.parse(argsJson);
+    const parts = Object.entries(args)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .slice(0, 2)
+      .map(([k, v]) => `${k}: ${String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 48)}`);
+    return parts.join(" · ");
+  } catch {
+    return "";
+  }
+}
+
+function buildToolStrip(tools) {
+  const details = document.createElement("details");
+  details.className = "tool-strip";
+  const summary = document.createElement("summary");
+  summary.textContent = `⚙ ${tools.length} tool ${tools.length === 1 ? "call" : "calls"}`;
+  details.appendChild(summary);
+  const list = document.createElement("div");
+  list.className = "tool-strip-body";
+  for (const t of tools) {
+    const row = document.createElement("div");
+    row.className = "tool-row";
+    row.innerHTML = `<span class="tool-row-name">${esc(t.name)}</span><span class="tool-row-args">${esc(t.args)}</span>`;
+    list.appendChild(row);
+  }
+  details.appendChild(list);
+  return details;
+}
+
 function renderTranscript() {
   const log = $("#chat-log");
   log.innerHTML = "";
   for (const e of state.transcript) {
+    if (e.role === "task") {
+      const card = document.createElement("details");
+      card.className = `chat-task${e.success === false ? " failed" : ""}`;
+      const summary = document.createElement("summary");
+      summary.innerHTML = `<span class="chat-task-mark">${e.success === false ? "✗" : "✓"}</span> <b>${esc(e.agentName || "agent")}</b> ${e.success === false ? "failed" : "completed"} ${esc(e.taskId || "a task")} <span class="chat-task-time">${e.timestamp ? fmtTime(e.timestamp) : ""}</span>`;
+      card.appendChild(summary);
+      const body = document.createElement("div");
+      body.className = "md chat-task-body";
+      renderMarkdown(body, e.content);
+      card.appendChild(body);
+      log.appendChild(card);
+      continue;
+    }
+
     const div = document.createElement("div");
     div.className = `chat-msg ${e.role}${e.optimistic ? " pending" : ""}`;
     if (e.role === "user" && e.source === "scheduler") {
@@ -645,6 +690,9 @@ function renderTranscript() {
     if (e.role === "assistant") {
       div.classList.add("md");
       renderMarkdown(div, e.content);
+      if (e.tools?.length) {
+        div.prepend(buildToolStrip(e.tools));
+      }
     } else {
       div.textContent = e.content;
     }
@@ -677,9 +725,23 @@ function setOrchestratorBusy(busy) {
     workingTimer = null;
     $("#chat-stream").hidden = true;
     $("#chat-stream-text").innerHTML = "";
-    $("#tool-chips").innerHTML = "";
+    $("#tool-log").innerHTML = "";
     streamBuffer = "";
   }
+}
+
+let currentTurnTools = [];
+
+function renderToolLog() {
+  $("#tool-log").innerHTML = currentTurnTools
+    .map(
+      (t, i) => `
+      <div class="tool-row ${i === currentTurnTools.length - 1 ? "latest" : ""}">
+        <span class="tool-row-name">${esc(t.name)}</span>
+        <span class="tool-row-args">${esc(t.args)}</span>
+      </div>`
+    )
+    .join("");
 }
 
 $("#chat-form").addEventListener("submit", async (e) => {
@@ -692,6 +754,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
   const entry = { role: "user", content: message, optimistic: true };
   state.transcript.push(entry);
   renderTranscript();
+  currentTurnTools = [];
   setOrchestratorBusy(true);
   $("#chat-text").value = "";
 
@@ -714,6 +777,15 @@ $("#chat-text").addEventListener("keydown", (e) => {
 });
 
 $("#chat-cancel").addEventListener("click", () => api.post("/orchestrator/cancel").catch(() => {}));
+
+$("#chat-new").addEventListener("click", async () => {
+  if (!confirm("Start a fresh conversation? The current chat context is closed (history stays in Sessions).")) return;
+  try {
+    await api.post("/orchestrator/new-session");
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
 
 /* ---------- todos / task manager ---------- */
 
@@ -1268,6 +1340,223 @@ async function loadSettings() {
   $("#setting-max-wakes").value = s.maxWakesPerHour;
   $("#setting-provider").textContent = s.provider;
   $("#setting-model").textContent = s.model || "—";
+
+  await Promise.all([
+    loadProviderPanel(),
+    loadGenerationPanel(),
+    loadToolsPanel(),
+    loadSubAgentPanel(),
+    loadRulesPanel(),
+    loadModesPanel(),
+  ].map((p) => p.catch(() => {})));
+}
+
+/* ---- provider panel ---- */
+
+let providerData = [];
+
+async function loadProviderPanel() {
+  providerData = await api.get("/providers");
+  const active = providerData.find((p) => p.active);
+  const select = $("#prov-select");
+  select.innerHTML = providerData
+    .map((p) => `<option value="${esc(p.name)}" ${p.active ? "selected" : ""}>${esc(p.displayName)}</option>`)
+    .join("");
+  renderProviderSettings(select.value);
+  $("#prov-model").value = state.settings?.model || active?.model || "";
+  await refreshModelList();
+}
+
+function renderProviderSettings(providerName) {
+  const provider = providerData.find((p) => p.name === providerName);
+  if (!provider) return;
+  $("#prov-settings").innerHTML = provider.settings
+    .map(
+      (d) => `
+      <label class="field"><span>${esc(d.label)}${d.required ? " *" : ""}${d.configured ? " · configured" : ""}${d.environmentVariable ? ` (env: ${esc(d.environmentVariable)})` : ""}</span>
+        <input class="input prov-setting" data-key="${esc(d.key)}" type="${d.kind === "secret" ? "password" : d.kind === "number" ? "number" : "text"}"
+          style="width:100%" placeholder="${esc(d.kind === "secret" && d.configured ? "(unchanged)" : d.defaultValue || "")}"
+          value="${esc(d.value || "")}">
+      </label>`
+    )
+    .join("");
+  const model = provider.model || "";
+  if (!provider.active) $("#prov-model").value = model;
+}
+
+async function refreshModelList() {
+  try {
+    const models = await api.get("/models");
+    $("#prov-model-list").innerHTML = models.map((m) => `<option value="${esc(m.id)}">${esc(m.displayName)}</option>`).join("");
+  } catch { /* provider may be unreachable */ }
+}
+
+$("#prov-select").addEventListener("change", (e) => renderProviderSettings(e.target.value));
+
+$("#prov-apply").addEventListener("click", async () => {
+  const settings = {};
+  $$(".prov-setting").forEach((i) => {
+    if (i.value.trim() !== "") settings[i.dataset.key] = i.value.trim();
+  });
+  $("#prov-status").textContent = "Connecting…";
+  $("#prov-apply").disabled = true;
+  try {
+    const r = await api.post("/providers/switch", {
+      provider: $("#prov-select").value,
+      settings,
+      model: $("#prov-model").value.trim() || null,
+    });
+    $("#prov-status").textContent = `Switched to ${r.provider} · ${r.model || "no model"}${r.connected ? "" : " (connection unverified)"}`;
+    await Promise.all([loadSettings(), loadOverview()]);
+  } catch (err) {
+    $("#prov-status").textContent = `Failed: ${err.message}`;
+  } finally {
+    $("#prov-apply").disabled = false;
+  }
+});
+
+$("#model-apply").addEventListener("click", async () => {
+  const model = $("#prov-model").value.trim();
+  if (!model) return;
+  try {
+    const r = await api.post("/model", { model });
+    toast(`Model set to <b>${esc(r.model)}</b>`);
+    await Promise.all([loadSettings(), loadOverview()]);
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---- generation panel ---- */
+
+async function loadGenerationPanel() {
+  const c = await api.get("/agent-config");
+  $("#gen-temp").value = c.temperature ?? "";
+  $("#gen-maxtokens").value = c.maxTokens ?? "";
+  $("#gen-topp").value = c.topP ?? "";
+  $("#gen-maxhistory").value = c.maxHistoryMessages ?? "";
+  $("#gen-streaming").checked = c.enableStreaming;
+  $("#gen-history").checked = c.maintainHistory;
+  $("#gen-userrules").checked = c.enableUserRules;
+}
+
+$("#gen-apply").addEventListener("click", async () => {
+  try {
+    await api.put("/agent-config", {
+      temperature: parseFloat($("#gen-temp").value) || null,
+      maxTokens: parseInt($("#gen-maxtokens").value, 10) || null,
+      topP: parseFloat($("#gen-topp").value) || null,
+      maxHistoryMessages: parseInt($("#gen-maxhistory").value, 10) || null,
+      enableStreaming: $("#gen-streaming").checked,
+      maintainHistory: $("#gen-history").checked,
+      enableUserRules: $("#gen-userrules").checked,
+    });
+    toast("Generation settings <b>applied</b>");
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---- tools panel ---- */
+
+async function loadToolsPanel() {
+  const tools = await api.get("/tools");
+  $("#tool-grid").innerHTML = tools
+    .map(
+      (t) => `<label class="check-row" title="${esc(t.description)}"><input type="checkbox" data-tool="${esc(t.name)}" ${t.enabled ? "checked" : ""}> <span style="font-family:var(--font-mono);font-size:11.5px">${esc(t.name)}</span></label>`
+    )
+    .join("");
+}
+
+$("#tools-apply").addEventListener("click", async () => {
+  const names = $$("#tool-grid [data-tool]").filter((c) => c.checked).map((c) => c.dataset.tool);
+  if (names.length === 0) {
+    toast("<b>Select at least one tool</b>");
+    return;
+  }
+  try {
+    await api.put("/agent-config", { toolNames: names });
+    toast(`Orchestrator now has <b>${names.length}</b> tools`);
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---- sub-agent defaults panel ---- */
+
+async function loadSubAgentPanel() {
+  const d = await api.get("/subagent-defaults");
+  $("#sa-model").value = d.defaultModel || "";
+  $("#sa-temp").value = d.defaultTemperature;
+  $("#sa-maxtokens").value = d.defaultMaxTokens;
+  $("#sa-topp").value = d.defaultTopP;
+  $("#sa-tools").checked = d.defaultEnableTools;
+  $("#sa-review").checked = d.enableReviewStage;
+  $("#sa-reviewer").value = d.reviewerModel || "";
+  $("#sa-revisions").value = d.maxRevisionCycles;
+}
+
+$("#sa-apply").addEventListener("click", async () => {
+  try {
+    await api.put("/subagent-defaults", {
+      defaultModel: $("#sa-model").value.trim() || null,
+      defaultTemperature: parseFloat($("#sa-temp").value),
+      defaultMaxTokens: parseInt($("#sa-maxtokens").value, 10),
+      defaultTopP: parseFloat($("#sa-topp").value),
+      defaultEnableTools: $("#sa-tools").checked,
+      enableReviewStage: $("#sa-review").checked,
+      reviewerModel: $("#sa-reviewer").value,
+      maxRevisionCycles: parseInt($("#sa-revisions").value, 10),
+    });
+    toast("Sub-agent defaults <b>applied</b>");
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---- user rules panel ---- */
+
+async function loadRulesPanel() {
+  const r = await api.get("/user-rules");
+  $("#rules-content").value = r.content || "";
+  $("#rules-path").textContent = `${r.path}${r.error ? ` — ${r.error}` : ""}${r.wasTruncated ? " (truncated)" : ""}`;
+}
+
+$("#rules-save").addEventListener("click", async () => {
+  try {
+    await api.put("/user-rules", { content: $("#rules-content").value });
+    toast("User rules <b>saved</b> — applies to newly created agents");
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---- modes panel ---- */
+
+async function loadModesPanel() {
+  const modes = await api.get("/modes");
+  $("#modes-list").innerHTML = modes.length === 0
+    ? '<p class="hint">No saved modes.</p>'
+    : modes
+        .map(
+          (m) => `
+          <div class="kv">
+            <span><b>${esc(m.name)}</b>${m.description ? ` — ${esc(m.description)}` : ""}<br><span class="hint">${esc(m.model)} · temp ${m.temperature}${m.toolCount != null ? ` · ${m.toolCount} tools` : ""}</span></span>
+            <span><button class="btn sm" data-mode-apply="${esc(m.id)}">Apply</button></span>
+          </div>`
+        )
+        .join("");
+  $$("[data-mode-apply]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        const r = await api.post(`/modes/${b.dataset.modeApply}/apply`, {});
+        toast(`Mode <b>${esc(r.applied)}</b> applied (model: ${esc(r.model)})`);
+        await loadSettings();
+      } catch (err) {
+        toast(`<b>Error:</b> ${esc(err.message)}`);
+      }
+    })
+  );
 }
 
 async function putSetting(patch, message) {
@@ -1446,15 +1735,15 @@ function connectEvents() {
   es.addEventListener("orchestrator.toolcall", (e) => {
     const d = JSON.parse(e.data);
     $("#chat-stream").hidden = false;
-    const chip = document.createElement("span");
-    chip.className = "tool-chip";
-    chip.textContent = d.toolName;
-    $("#tool-chips").appendChild(chip);
+    currentTurnTools.push({ name: d.toolName, args: summarizeToolArgs(d.arguments) });
+    renderToolLog();
     logActivity(`orchestrator ran <b>${esc(d.toolName)}</b>`);
   });
 
   es.addEventListener("orchestrator.message", (e) => {
     const entry = JSON.parse(e.data);
+    // Exact duplicates (SSE replay, reconnect races) are dropped by id.
+    if (entry.id && state.transcript.some((x) => x.id === entry.id)) return;
     if (entry.role === "user") {
       const match = state.transcript.find((x) => x.optimistic && x.content === entry.content);
       if (match) {
@@ -1464,8 +1753,29 @@ function connectEvents() {
         return;
       }
     }
+    if (entry.role === "assistant" && currentTurnTools.length) {
+      entry.tools = currentTurnTools.slice();
+      currentTurnTools = [];
+    }
     state.transcript.push(entry);
     if (state.view === "orchestrator") renderTranscript();
+  });
+
+  es.addEventListener("orchestrator.cleared", () => {
+    state.transcript = [];
+    currentTurnTools = [];
+    setOrchestratorBusy(false);
+    if (state.view === "orchestrator") renderTranscript();
+    toast("Started a <b>new conversation</b>");
+  });
+
+  es.addEventListener("provider.changed", (e) => {
+    const d = JSON.parse(e.data);
+    toast(`Provider: <b>${esc(d.provider)}</b> · ${esc(d.model || "no model")}`);
+    state.models = [];
+    ensureModels();
+    loadOverview().catch(() => {});
+    if (state.view === "settings") loadSettings().catch(() => {});
   });
 }
 

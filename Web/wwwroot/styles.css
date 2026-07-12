@@ -485,17 +485,76 @@ textarea.input { resize: vertical; font-family: inherit; }
 
 .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--white); animation: pulse 1.2s ease-in-out infinite; }
 
-.tool-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
-.tool-chip {
+/* live tool log inside the streaming panel */
+.tool-log { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; max-height: 160px; overflow-y: auto; }
+.tool-log:empty { display: none; }
+
+.tool-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   font-family: var(--font-mono);
-  font-size: 10px;
-  background: var(--panel-3);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 8px;
-  color: var(--muted);
-  animation: fade-in 0.3s;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-left: 2px solid var(--border);
+  color: var(--dim);
+  animation: slide-left 0.25s var(--ease);
+  min-width: 0;
 }
+.tool-row.latest { border-left-color: var(--white); color: var(--muted); }
+.tool-row.latest .tool-row-name::after { content: "…"; animation: breathe 1.2s ease-in-out infinite; }
+.tool-row-name { color: var(--text); flex-shrink: 0; }
+.tool-row-args { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* collapsed tool summary attached to a finished assistant turn */
+.tool-strip {
+  margin: -2px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 12px;
+}
+.tool-strip summary {
+  cursor: pointer;
+  padding: 5px 10px;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  list-style: none;
+  transition: color 0.15s;
+}
+.tool-strip summary:hover { color: var(--text); }
+.tool-strip summary::-webkit-details-marker { display: none; }
+.tool-strip[open] summary { border-bottom: 1px solid var(--border); }
+.tool-strip-body { padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+
+/* task result cards in the chat */
+.chat-task {
+  align-self: stretch;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--white);
+  border-radius: 10px;
+  animation: rise-in 0.25s var(--ease);
+}
+.chat-task.failed { border-left-style: dashed; }
+.chat-task summary {
+  cursor: pointer;
+  padding: 9px 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+  list-style: none;
+  transition: color 0.15s;
+}
+.chat-task summary:hover { color: var(--text); }
+.chat-task summary::-webkit-details-marker { display: none; }
+.chat-task summary b { color: var(--text); }
+.chat-task-mark { font-weight: 700; color: var(--white); margin-right: 2px; }
+.chat-task.failed .chat-task-mark { opacity: 0.6; }
+.chat-task-time { float: right; font-family: var(--font-mono); font-size: 10.5px; color: var(--dim); }
+.chat-task[open] summary { border-bottom: 1px solid var(--border); }
+.chat-task-body { padding: 12px 14px; font-size: 13px; max-height: 320px; overflow-y: auto; }
 
 .chat-input { display: flex; gap: 10px; align-items: flex-end; border-top: 1px solid var(--border); padding-top: 14px; }
 .chat-input textarea {

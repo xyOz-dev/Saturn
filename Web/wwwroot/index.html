@@ -157,8 +157,8 @@
             <div class="chat-stream-head">
               <span class="pulse-dot"></span>
               <span id="working-label">assistant is working</span>
-              <span class="tool-chips" id="tool-chips"></span>
             </div>
+            <div class="tool-log" id="tool-log"></div>
             <div class="md stream-md" id="chat-stream-text"></div>
           </div>
           <form class="chat-input" id="chat-form">
@@ -166,6 +166,7 @@
             <div class="chat-buttons">
               <button type="submit" class="btn primary" id="chat-send">Send</button>
               <button type="button" class="btn danger" id="chat-cancel" hidden>Cancel</button>
+              <button type="button" class="btn ghost sm" id="chat-new" title="start a fresh conversation">New chat</button>
             </div>
           </form>
         </div>
@@ -281,10 +282,69 @@
           </label>
         </div>
         <div class="panel narrow">
-          <div class="panel-head"><h2>Provider</h2></div>
-          <div class="kv"><span>Provider</span><span id="setting-provider">—</span></div>
-          <div class="kv"><span>Model</span><span id="setting-model">—</span></div>
-          <p class="hint">Provider and model are configured at launch (or from the terminal UI).</p>
+          <div class="panel-head"><h2>Provider &amp; Model</h2></div>
+          <div class="kv"><span>Active</span><span><span id="setting-provider">—</span> · <span id="setting-model">—</span></span></div>
+          <label class="field" style="margin-top:12px"><span>Provider</span>
+            <select id="prov-select" class="input select" style="width:100%"></select></label>
+          <div id="prov-settings"></div>
+          <label class="field"><span>Model</span>
+            <input id="prov-model" class="input" list="prov-model-list" style="width:100%" placeholder="model id">
+            <datalist id="prov-model-list"></datalist></label>
+          <div class="field-row">
+            <button class="btn primary" id="prov-apply">Switch provider</button>
+            <button class="btn" id="model-apply">Change model only</button>
+          </div>
+          <p class="hint" id="prov-status"></p>
+        </div>
+
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Generation</h2></div>
+          <div class="field-row" style="margin-bottom:12px">
+            <label class="field" style="flex:1;margin:0"><span>Temperature</span><input class="input" id="gen-temp" type="number" step="0.05" min="0" max="2" style="width:100%"></label>
+            <label class="field" style="flex:1;margin:0"><span>Max tokens</span><input class="input" id="gen-maxtokens" type="number" min="1" style="width:100%"></label>
+            <label class="field" style="flex:1;margin:0"><span>Top P</span><input class="input" id="gen-topp" type="number" step="0.05" min="0" max="1" style="width:100%"></label>
+          </div>
+          <label class="field"><span>Max history messages</span><input class="input" id="gen-maxhistory" type="number" min="2" style="width:140px"></label>
+          <label class="switch-row"><span>Streaming</span><input type="checkbox" id="gen-streaming" class="switch"></label>
+          <label class="switch-row"><span>Maintain history</span><input type="checkbox" id="gen-history" class="switch"></label>
+          <label class="switch-row"><span>Use user rules</span><input type="checkbox" id="gen-userrules" class="switch"></label>
+          <button class="btn primary" id="gen-apply" style="margin-top:12px">Apply generation settings</button>
+        </div>
+
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Orchestrator Tools</h2></div>
+          <div class="dep-picker" id="tool-grid" style="max-height:260px"></div>
+          <button class="btn primary" id="tools-apply" style="margin-top:12px">Apply tool selection</button>
+        </div>
+
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Sub-Agent Defaults</h2></div>
+          <label class="field"><span>Default model</span><input class="input" id="sa-model" list="prov-model-list" style="width:100%"></label>
+          <div class="field-row" style="margin-bottom:12px">
+            <label class="field" style="flex:1;margin:0"><span>Temperature</span><input class="input" id="sa-temp" type="number" step="0.05" min="0" max="2" style="width:100%"></label>
+            <label class="field" style="flex:1;margin:0"><span>Max tokens</span><input class="input" id="sa-maxtokens" type="number" min="1" style="width:100%"></label>
+            <label class="field" style="flex:1;margin:0"><span>Top P</span><input class="input" id="sa-topp" type="number" step="0.05" min="0" max="1" style="width:100%"></label>
+          </div>
+          <label class="switch-row"><span>Sub-agents get tools</span><input type="checkbox" id="sa-tools" class="switch"></label>
+          <label class="switch-row"><span>Review stage (peer review of results)</span><input type="checkbox" id="sa-review" class="switch"></label>
+          <div class="field-row" style="margin:12px 0">
+            <label class="field" style="flex:2;margin:0"><span>Reviewer model (blank = default)</span><input class="input" id="sa-reviewer" style="width:100%"></label>
+            <label class="field" style="flex:1;margin:0"><span>Max revisions</span><input class="input" id="sa-revisions" type="number" min="0" max="10" style="width:100%"></label>
+          </div>
+          <button class="btn primary" id="sa-apply">Apply sub-agent defaults</button>
+        </div>
+
+        <div class="panel narrow">
+          <div class="panel-head"><h2>User Rules</h2></div>
+          <p class="hint" id="rules-path" style="margin-bottom:8px"></p>
+          <textarea class="input" id="rules-content" rows="8" style="width:100%;font-family:var(--font-mono);font-size:12px" placeholder="Rules injected into every agent's system prompt…"></textarea>
+          <button class="btn primary" id="rules-save" style="margin-top:10px">Save rules</button>
+        </div>
+
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Modes</h2></div>
+          <div id="modes-list"></div>
+          <p class="hint">Modes bundle model, prompt, tools and safety settings. Create or edit them in the terminal UI; apply them here.</p>
         </div>
       </section>
     </main>
