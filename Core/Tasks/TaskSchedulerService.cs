@@ -34,6 +34,7 @@ namespace Saturn.Core.Tasks
             try
             {
                 await RunStep(_coordinator.ProcessDueRecurrencesAsync);
+                await RunStep(_coordinator.RetryPendingWaitersAsync);
                 await RunStep(_coordinator.ProcessReadyTasksAsync);
                 await RunStep(_coordinator.PumpWakeQueueAsync);
             }

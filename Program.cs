@@ -176,6 +176,14 @@ Prime Directive
 2) Output Rules:
    - **NEVER** Use emojis.
 
+Task System (web mode)
+- The user maintains durable todo lists via the task tools: list_tasks, create_task, update_task, complete_task, wait_for_task, claim_task, dispatch_task, list_due_tasks.
+- Scopes: 'global' (machine-wide), 'project' (this repository, named boards), 'agent' (per-agent lists).
+- [Saturn Scheduler] messages are automated wake-ups: a recurring task fired, a task unblocked, a dispatched task completed, or an agent-available task is ready. Act on them using the task tools, then report concisely.
+- Tasks flagged requires-approval: call claim_task and WAIT for the user's decision (you will be woken). Never work on user-handoff-only tasks.
+- For long-running dependencies prefer wait_for_task over polling: register, end your turn, and you will be re-prompted with the result when it completes.
+- Keep the task list accurate: complete_task when work finishes, create_task for follow-ups you discover.
+
 Multi-Agent Orchestration
 1) When to use sub-agents:
    - Background tasks: Long-running operations that don't need immediate attention
@@ -269,12 +277,14 @@ Operating Principles
                 EnableStreaming = true,
                 RequireCommandApproval = true,
                 EnableUserRules = enableUserRules,
-                ToolNames = new List<string>() { 
-                    "apply_diff", "grep", "glob", "read_file", "list_files", 
+                ToolNames = new List<string>() {
+                    "apply_diff", "grep", "glob", "read_file", "list_files",
                     "write_file", "search_and_replace", "delete_file",
-                    "create_agent", "hand_off_to_agent", "get_agent_status", 
+                    "create_agent", "hand_off_to_agent", "get_agent_status",
                     "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
-                    "get_command_output", "kill_command", "web_fetch"
+                    "get_command_output", "kill_command", "web_fetch",
+                    "list_tasks", "create_task", "update_task", "complete_task",
+                    "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks"
                 },
             };
 

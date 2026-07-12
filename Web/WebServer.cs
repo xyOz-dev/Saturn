@@ -403,6 +403,26 @@ namespace Saturn.Web
                     : Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
             });
 
+            api.MapPost("/todos/{id}/dispatch", async (string id, TaskDispatchRequest request) =>
+            {
+                if (string.IsNullOrWhiteSpace(request.AgentId))
+                {
+                    return Results.BadRequest(new { error = "agentId is required" });
+                }
+                var status = manager.GetAgentStatus(request.AgentId);
+                if (!status.Exists)
+                {
+                    return Results.NotFound(new { error = $"Agent {request.AgentId} not found" });
+                }
+                if (!status.IsIdle)
+                {
+                    return Results.Conflict(new { error = $"Agent {status.Name} is busy" });
+                }
+                // Manual user handoff bypasses the userHandoffOnly restriction by design.
+                var (ok, message, _) = await _coordinator.DispatchTaskAsync(id, request.AgentId, status.Name);
+                return ok ? Results.Ok(new { message }) : Results.BadRequest(new { error = message });
+            });
+
             api.MapDelete("/todos/{id}", async (string id) =>
             {
                 return await _tasks.DeleteAsync(id)

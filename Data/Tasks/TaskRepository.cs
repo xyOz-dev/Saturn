@@ -529,6 +529,20 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
+        public Task SetDispatchManagerTaskIdAsync(string dispatchId, string mgrTaskId, CancellationToken ct = default)
+        {
+            return WithWriteLockAsync<object?>(async () =>
+            {
+                using var connection = CreateConnection();
+                using var cmd = new SqliteCommand(
+                    "UPDATE TaskDispatches SET AgentManagerTaskId = @Mgr WHERE Id = @Id", connection);
+                cmd.Parameters.AddWithValue("@Id", dispatchId);
+                cmd.Parameters.AddWithValue("@Mgr", mgrTaskId);
+                await cmd.ExecuteNonQueryAsync(ct);
+                return null;
+            }, ct);
+        }
+
         public Task CompleteDispatchAsync(string dispatchId, bool success, string result, CancellationToken ct = default)
         {
             return WithWriteLockAsync<object?>(async () =>
