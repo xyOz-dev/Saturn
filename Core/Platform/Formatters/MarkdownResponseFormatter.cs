@@ -140,7 +140,7 @@ namespace Saturn.Core.Platform.Formatters
         public async Task<List<FormattedResponse>> SplitLongMessageAsync(string content, FormattingContext context)
         {
             var responses = new List<FormattedResponse>();
-            var maxLength = context.MaxLength - 50; // Reserve space for formatting
+            var maxLength = context.MaxLength - 50;
             
             var chunks = SplitByCodeBlocks(content, maxLength);
             
@@ -178,9 +178,7 @@ namespace Saturn.Core.Platform.Formatters
             content = Regex.Replace(content, @"@(everyone|here)\b", "@\u200b$1");
             
             content = Regex.Replace(content, @"<@!?\d+>", match => match.Value.Insert(2, "\u200b"));
-            
-            // Code blocks are preserved as-is during sanitization
-            
+
             return content;
         }
         
@@ -330,7 +328,7 @@ namespace Saturn.Core.Platform.Formatters
             
             foreach (var line in lines)
             {
-                if (currentChunk.Length + line.Length + 4 > maxLength) // +4 for closing ```
+                if (currentChunk.Length + line.Length + 4 > maxLength)
                 {
                     currentChunk.AppendLine("```");
                     chunks.Add(currentChunk.ToString());

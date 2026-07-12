@@ -21,16 +21,8 @@ namespace Saturn.Providers
         public static SwapResult Failed(string error) => new(false, error, null);
     }
 
-    /// <summary>
-    /// The swap engine. Builds and validates a candidate client before touching the
-    /// active one, so a failed connect leaves the session exactly where it was. The
-    /// replaced client is disposed after a grace period because in-flight requests
-    /// that resolved it before the swap may still be streaming on it.
-    /// </summary>
     public sealed class LlmClientManager : ILlmClientSource, IDisposable
     {
-        // Long enough to outlive any realistic in-flight turn on the old client,
-        // including local-server requests that use LM Studio's 10-minute timeout.
         private static readonly TimeSpan RetiredClientGracePeriod = TimeSpan.FromMinutes(30);
 
         private readonly object _swapLock = new();
@@ -48,7 +40,6 @@ namespace Saturn.Providers
 
         public string ActiveProviderName => _activeProviderName;
 
-        /// <summary>Settings the active client was built with; used to prefill the provider dialog.</summary>
         public ProviderSettings ActiveSettings => _activeSettings.Clone();
 
         public event EventHandler<ProviderChangedEventArgs>? ProviderChanged;
@@ -56,11 +47,6 @@ namespace Saturn.Providers
         public Task<SwapResult> SwapAsync(string providerName, ProviderSettings settings, CancellationToken cancellationToken = default)
             => SwapAsync(providerName, settings, requireValidation: true, cancellationToken);
 
-        /// <summary>
-        /// Connects a provider. With <paramref name="requireValidation"/> false the client
-        /// is installed without a liveness probe — used at startup so a transient network
-        /// blip degrades to per-request errors instead of refusing to launch.
-        /// </summary>
         public async Task<SwapResult> SwapAsync(string providerName, ProviderSettings settings, bool requireValidation, CancellationToken cancellationToken = default)
         {
             ILlmProvider provider;

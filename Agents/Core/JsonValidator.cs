@@ -6,9 +6,6 @@ namespace Saturn.Agents.Core
 {
     public static class JsonValidator
     {
-        /// <summary>
-        /// Validates if a JSON string is complete and well-formed
-        /// </summary>
         public static bool IsCompleteJson(string json)
         {
             if (string.IsNullOrWhiteSpace(json))
@@ -28,9 +25,6 @@ namespace Saturn.Agents.Core
             }
         }
 
-        /// <summary>
-        /// Checks if JSON has balanced braces and brackets
-        /// </summary>
         private static bool HasBalancedBraces(string json)
         {
             int braceCount = 0;
@@ -85,9 +79,6 @@ namespace Saturn.Agents.Core
             return braceCount == 0 && bracketCount == 0 && !inString;
         }
 
-        /// <summary>
-        /// Attempts to safely parse JSON, returning null if invalid
-        /// </summary>
         public static T? TryParseJson<T>(string json) where T : class
         {
             if (!IsCompleteJson(json))
@@ -103,9 +94,6 @@ namespace Saturn.Agents.Core
             }
         }
 
-        /// <summary>
-        /// Validates and repairs common JSON issues in streamed content
-        /// </summary>
         public static string RepairStreamedJson(string json)
         {
             if (string.IsNullOrWhiteSpace(json))
@@ -174,15 +162,12 @@ namespace Saturn.Agents.Core
         }
     }
 
-    /// <summary>
-    /// Accumulates JSON fragments from streaming and validates completeness
-    /// </summary>
     public class JsonStreamAccumulator
     {
         private readonly StringBuilder _buffer = new StringBuilder();
         private readonly int _maxBufferSize;
 
-        public JsonStreamAccumulator(int maxBufferSize = 1048576) // 1MB default
+        public JsonStreamAccumulator(int maxBufferSize = 1048576)
         {
             _maxBufferSize = maxBufferSize;
         }

@@ -45,7 +45,6 @@ namespace Saturn.Tests.Providers
             client.LastRequest.Should().NotBeNull();
             client.LastRequest!.Transforms.Should().BeNull();
             client.LastRequest.Usage.Should().BeNull();
-            // No tools attached, so tool_choice must stay off the wire too.
             client.LastRequest.ToolChoice.Should().BeNull();
             client.LastRequest.Tools.Should().BeNull();
         }
@@ -85,9 +84,6 @@ namespace Saturn.Tests.Providers
         [InlineData("{\"patchText\": \"truncated mid-str")]
         public async Task Execute_ToolCallWithUnparseableArguments_IsSanitizedBeforeItPoisonsHistory(string brokenArguments)
         {
-            // A generation cut off by the token limit can emit a tool call whose
-            // arguments are empty or truncated JSON. Echoed back verbatim, that crashes
-            // strict chat templates server-side on every subsequent request.
             var client = new FakeLlmClient();
             client.ResponseQueue.Enqueue(new ChatCompletionResponse
             {
@@ -112,7 +108,6 @@ namespace Saturn.Tests.Providers
                     }
                 }
             });
-            // Second (default) response is a plain reply, ending the tool loop.
 
             var agent = CreateAgent(new LlmClientCapabilities { SupportsToolChoice = true }, client,
                 enableTools: true, toolNames: new List<string> { "read_file" });
@@ -177,13 +172,10 @@ namespace Saturn.Tests.Providers
         [Fact]
         public async Task Execute_AfterSwapToNonCachingProvider_StripsCacheControlFromHistory()
         {
-            // History accumulated under a caching provider (system message is a
-            // cache_control content-part array)...
             var cachingClient = new FakeLlmClient();
             var agent = CreateAgent(new LlmClientCapabilities { SupportsCaching = true }, cachingClient);
             agent.ChatHistory[0].Content.ValueKind.Should().Be(JsonValueKind.Array);
 
-            // ...must go over the wire as plain text once a non-caching provider is active.
             var plainClient = new FakeLlmClient { Capabilities = new LlmClientCapabilities { SupportsCaching = false } };
             agent.Configuration.ClientSource = new StaticClientSource(plainClient, "swapped");
 
@@ -194,7 +186,6 @@ namespace Saturn.Tests.Providers
             systemMessage.Role.Should().Be("system");
             systemMessage.Content.ValueKind.Should().Be(JsonValueKind.String);
 
-            // The stored history keeps its original shape for a potential swap back.
             agent.ChatHistory[0].Content.ValueKind.Should().Be(JsonValueKind.Array);
         }
     }

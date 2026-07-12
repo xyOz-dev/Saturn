@@ -154,16 +154,8 @@ namespace Saturn.Core
         private static async Task<(bool success, string output)> CreateInitialCommit(string path)
         {
             string addCommand = "add .";
-            //if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            //{
             //    //TODO: Rethink this as it causes errors.
-            //    //addCommand = "add --all . -- ':!nul' ':!NUL' ':!nul.*' ':!NUL.*'";
-            //}
-            //else
-            //{
-            //    addCommand = "add .";
-            //}
-            
+
             var addResult = await ExecuteGitCommand(addCommand, path);
             if (!addResult.success)
             {

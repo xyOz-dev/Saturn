@@ -60,8 +60,6 @@ namespace Saturn.Tests.Providers
                 Model = "anthropic/claude-sonnet-4"
             };
 
-            // The flat legacy field belonged to OpenRouter, so it must not leak into
-            // another provider's model resolution.
             ConfigurationManager.GetProviderModel(config, "openrouter").Should().Be("anthropic/claude-sonnet-4");
             ConfigurationManager.GetProviderModel(config, "lmstudio").Should().BeNull();
         }

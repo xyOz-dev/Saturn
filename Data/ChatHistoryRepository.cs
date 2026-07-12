@@ -136,7 +136,6 @@ public class ChatHistoryRepository : IDisposable
         }
         catch
         {
-            // Ignore cleanup errors for backwards compatibility
         }
     }
 

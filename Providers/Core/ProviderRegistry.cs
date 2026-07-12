@@ -4,10 +4,6 @@ using System.Linq;
 
 namespace Saturn.Providers
 {
-    /// <summary>
-    /// Name-to-provider lookup. Adding a provider to Saturn means implementing
-    /// <see cref="ILlmProvider"/> and registering it here during startup.
-    /// </summary>
     public static class ProviderRegistry
     {
         private static readonly object _lock = new();
@@ -55,7 +51,6 @@ namespace Saturn.Providers
             }
         }
 
-        /// <summary>Removes all registrations. Intended for test isolation only.</summary>
         public static void Clear()
         {
             lock (_lock)

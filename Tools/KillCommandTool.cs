@@ -51,8 +51,6 @@ Terminates the process and its child process tree. Use this to shut down dev ser
                 return Task.FromResult(CreateErrorResult($"No background command with id '{commandId}'"));
             }
 
-            // Claim the killed state before terminating: killing the process fires its own
-            // Exited event, which would otherwise race us and report 'exited' instead of 'killed'.
             if (!bg.MarkKilled())
             {
                 var current = bg.Status.ToString().ToLowerInvariant();
@@ -67,8 +65,6 @@ Terminates the process and its child process tree. Use this to shut down dev ser
             }
             catch (Exception ex)
             {
-                // Termination failed, so don't leave the command falsely marked as killed:
-                // reconcile with the process's real state (exited or still running).
                 bg.RevertKill();
                 return Task.FromResult(CreateErrorResult($"Failed to kill command '{commandId}': {ex.Message}"));
             }

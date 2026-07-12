@@ -9,36 +9,17 @@ using Saturn.OpenRouter.Models.Api.Credits;
 
 namespace Saturn.OpenRouter.Services
 {
-    /// <summary>
-    /// Credits API service for GET /credits.
-    /// Provides both a typed-light wrapper (with parsed totals when present) and a raw JSON accessor
-    /// to remain robust against schema changes.
-    /// </summary>
     public sealed class CreditsService
     {
         private readonly HttpClientAdapter _http;
 
-        /// <summary>
-        /// Internal constructor. Instances are exposed via <c>OpenRouterClient</c>.
-        /// </summary>
-        /// <param name="http">HTTP client adapter with configured base URL, authorization, and headers.</param>
         internal CreditsService(HttpClientAdapter http)
         {
             _http = http ?? throw new ArgumentNullException(nameof(http));
         }
 
-        /// <summary>
-        /// GET /credits
-        /// Returns a typed-light container with:
-        /// - Root: the entire JSON response body as JsonElement
-        /// - Data: the top-level "data" object if present
-        /// - TotalCredits: best-effort decimal parsed from data.total_credits
-        /// - TotalUsage: best-effort decimal parsed from data.total_usage
-        /// </summary>
-        /// <param name="cancellationToken">Cancellation token.</param>
         public async Task<CreditsResponse> GetAsync(CancellationToken cancellationToken = default)
         {
-            // Relative path against adapter.BaseAddress (".../api/v1/").
             var root = await _http
                 .SendJsonAsync<JsonElement>(HttpMethod.Get, "credits", null, null, cancellationToken)
                 .ConfigureAwait(false);
@@ -74,11 +55,6 @@ namespace Saturn.OpenRouter.Services
             };
         }
 
-        /// <summary>
-        /// GET /credits
-        /// Returns the full response body as a JsonDocument for consumers who need complete control over the payload.
-        /// </summary>
-        /// <param name="cancellationToken">Cancellation token.</param>
         public async Task<JsonDocument> GetRawAsync(CancellationToken cancellationToken = default)
         {
             using var response = await _http
@@ -106,7 +82,6 @@ namespace Saturn.OpenRouter.Services
                     if (el.TryGetDecimal(out var d))
                         return d;
 
-                    // Fallback: try double then convert
                     if (el.TryGetDouble(out var dbl))
                         return (decimal)dbl;
                 }
@@ -119,7 +94,6 @@ namespace Saturn.OpenRouter.Services
             }
             catch
             {
-                // Best-effort parsing; swallow and return null.
             }
 
             return null;

@@ -4,17 +4,11 @@ using System.Text.Json.Serialization;
 
 namespace Saturn.OpenRouter.Models.Api.Chat
 {
-    /// <summary>
-    /// Tool choice: "none" | "auto" | {"type":"function","function":{"name":...}}.
-    /// Uses a custom converter to support the union.
-    /// </summary>
     [JsonConverter(typeof(ToolChoice.Converter))]
     public sealed class ToolChoice
     {
-        /// <summary>Indicates which kind of tool choice is represented.</summary>
         public ToolChoiceKind Kind { get; private set; }
 
-        /// <summary>When Kind==Function, the function name to force.</summary>
         public string? FunctionName { get; private set; }
 
         private ToolChoice(ToolChoiceKind kind, string? functionName = null)
@@ -23,16 +17,12 @@ namespace Saturn.OpenRouter.Models.Api.Chat
             FunctionName = functionName;
         }
 
-        /// <summary>Create a "none" tool choice.</summary>
         public static ToolChoice None() => new ToolChoice(ToolChoiceKind.None);
 
-        /// <summary>Create an "auto" tool choice.</summary>
         public static ToolChoice Auto() => new ToolChoice(ToolChoiceKind.Auto);
 
-        /// <summary>Create a function tool choice with the given name.</summary>
         public static ToolChoice Function(string name) => new ToolChoice(ToolChoiceKind.Function, name);
 
-        /// <summary>Discriminator for tool choice kind.</summary>
         public enum ToolChoiceKind
         {
             None,

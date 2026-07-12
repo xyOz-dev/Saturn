@@ -3,10 +3,6 @@ using System.Collections.Generic;
 
 namespace Saturn.Providers
 {
-    /// <summary>
-    /// String-keyed settings bag for one provider, persisted in agent-config.json.
-    /// Keys are defined by each provider's <see cref="ProviderSettingDescriptor"/> list.
-    /// </summary>
     public sealed class ProviderSettings
     {
         public Dictionary<string, string?> Values { get; init; } = new(StringComparer.OrdinalIgnoreCase);

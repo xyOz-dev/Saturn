@@ -53,8 +53,7 @@ namespace Saturn.Tests.Tools
 
             result.Success.Should().BeTrue();
             _fileHelper.FileExists("test.txt").Should().BeTrue();
-            
-            // Platform-aware line ending check
+
             var expectedContent = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? "Line 1\r\nLine 2\r\nLine 3"
                 : "Line 1\nLine 2\nLine 3";
@@ -419,15 +418,13 @@ Content C");
 
             result.Success.Should().BeTrue();
             var updatedContent = _fileHelper.ReadFile("windows.txt");
-            
-            // Platform-aware line ending check
+
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 updatedContent.Should().Contain("\r\n");
             }
             else
             {
-                // On Unix-based systems, line endings may be normalized to \n
                 updatedContent.Should().Contain("\n");
             }
             updatedContent.Should().Contain("Line 4");
@@ -456,16 +453,13 @@ Content C");
 
             result.Success.Should().BeTrue();
             var updatedContent = File.ReadAllText(filePath);
-            
-            // Platform-aware line ending check
+
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                // Windows may preserve or convert line endings
                 updatedContent.Should().Contain("\n");
             }
             else
             {
-                // Unix systems should not have Windows line endings
                 updatedContent.Should().NotContain("\r\n");
                 updatedContent.Should().Contain("\n");
             }
@@ -599,7 +593,7 @@ Content C");
             var summary = _tool.GetDisplaySummary(parameters);
             
             summary.Should().Contain("Patching");
-            summary.Should().Contain("3+");  // 2 from new.txt + 1 from existing.txt
+            summary.Should().Contain("3+");
             summary.Should().Contain("1-");
         }
 

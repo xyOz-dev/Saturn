@@ -92,8 +92,6 @@ namespace Saturn.Agents.MultiAgent
             
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
 
-            // Requested model ids are often written for one provider (e.g. OpenRouter
-            // slugs); substitute something the active provider actually serves.
             model = await ModelCatalog.ResolveModelAsync(_clientSource, model, _parentModel);
 
             var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
@@ -342,8 +340,7 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
         {
             var results = new List<AgentTaskResult>();
             var pendingTaskIds = new List<string>();
-            
-            // First check which tasks are already complete
+
             foreach (var taskId in taskIds)
             {
                 if (_completedTasks.TryGetValue(taskId, out var result))
@@ -476,8 +473,7 @@ Your decision:";
                 var reviewText = reviewResult.Content.ToString().Trim();
                 
                 _reviewers.TryRemove(reviewerId, out _);
-                
-                // Parse review decision
+
                 if (reviewText.StartsWith("APPROVED:", StringComparison.OrdinalIgnoreCase))
                 {
                     return new ReviewDecision
@@ -504,7 +500,6 @@ Your decision:";
                 }
                 else
                 {
-                    // Default to approved if can't parse
                     return new ReviewDecision
                     {
                         Status = ReviewStatus.Approved,

@@ -10,11 +10,6 @@ using Xunit;
 
 namespace Saturn.Tests.Providers
 {
-    /// <summary>
-    /// File-backed config tests, isolated from the user's real config via the
-    /// SATURN_CONFIG_DIR override. Kept in one class so the process-wide env var
-    /// is only touched by sequentially-running tests.
-    /// </summary>
     public class ConfigurationManagerFileTests : IDisposable
     {
         private readonly string _configDir;
@@ -43,7 +38,6 @@ namespace Saturn.Tests.Providers
         [Fact]
         public async Task Load_LegacyConfig_MigratesToProviderShape()
         {
-            // A config written before provider support: flat model, no provider fields.
             await File.WriteAllTextAsync(ConfigFile,
                 """{"name":"Assistant","model":"anthropic/claude-sonnet-4","temperature":0.15,"enableStreaming":true}""");
 
@@ -59,7 +53,6 @@ namespace Saturn.Tests.Providers
         [Fact]
         public async Task Save_WithoutProviderFields_PreservesProvidersBlockOnDisk()
         {
-            // Seed a config that knows about both providers.
             var seeded = new PersistedAgentConfiguration
             {
                 Name = "Assistant",
@@ -77,7 +70,6 @@ namespace Saturn.Tests.Providers
             };
             await ConfigurationManager.SaveConfigurationAsync(seeded);
 
-            // A UI-style save built from the live agent config: no provider fields at all.
             await ConfigurationManager.SaveConfigurationAsync(new PersistedAgentConfiguration
             {
                 Name = "Assistant",
@@ -90,7 +82,6 @@ namespace Saturn.Tests.Providers
             reloaded.Providers.Should().ContainKey("openrouter");
             reloaded.Providers!["openrouter"].Model.Should().Be("anthropic/claude-sonnet-4");
             reloaded.Providers["lmstudio"].Settings!["baseUrl"].Should().Be("http://box:5000/v1");
-            // The flat model save flows into the active provider's model memory.
             reloaded.Providers["lmstudio"].Model.Should().Be("new-local-model");
         }
 
@@ -108,9 +99,6 @@ namespace Saturn.Tests.Providers
         [Fact]
         public async Task Load_CaseCollidingProviderKeys_CollapsesInsteadOfDroppingConfig()
         {
-            // A hand-edited (or pre-fix) file can contain keys differing only by case;
-            // rebuilding with a case-insensitive comparer must not throw and take the
-            // whole config load down with it.
             await File.WriteAllTextAsync(ConfigFile,
                 """{"activeProvider":"lmstudio","model":"first-model","providers":{"lmstudio":{"model":"first-model"},"LMStudio":{"model":"second-model"}}}""");
 
@@ -144,8 +132,6 @@ namespace Saturn.Tests.Providers
                     }
                 });
 
-                // Value identical to the env var: persisting it would store the key in
-                // plaintext and shadow the env var after rotation.
                 var mirrored = new ProviderSettings();
                 mirrored.Set("apiKey", "sk-from-env");
                 await ConfigurationManager.SaveProviderSelectionAsync(providerName, mirrored);
@@ -153,7 +139,6 @@ namespace Saturn.Tests.Providers
                 var config = await ConfigurationManager.LoadConfigurationAsync();
                 config!.Providers![providerName].Settings.Should().NotContainKey("apiKey");
 
-                // An explicitly different key is the user's deliberate choice and persists.
                 var custom = new ProviderSettings();
                 custom.Set("apiKey", "sk-custom");
                 await ConfigurationManager.SaveProviderSelectionAsync(providerName, custom);

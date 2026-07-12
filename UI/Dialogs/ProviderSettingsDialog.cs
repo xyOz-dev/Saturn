@@ -8,12 +8,6 @@ using Saturn.Providers;
 
 namespace Saturn.UI.Dialogs
 {
-    /// <summary>
-    /// Generic provider picker. The provider list comes from the registry and the
-    /// settings fields are rendered from each provider's descriptors, so new providers
-    /// get their UI for free. Apply validates the connection before swapping; a failed
-    /// connect leaves the current provider untouched.
-    /// </summary>
     public class ProviderSettingsDialog : Dialog
     {
         private readonly LlmClientManager manager;
@@ -32,11 +26,6 @@ namespace Saturn.UI.Dialogs
         public bool Applied { get; private set; }
         public ProviderSettings? AppliedSettings { get; private set; }
 
-        /// <summary>
-        /// While a test/apply is in flight the dialog must not close: dismissing it
-        /// mid-swap would leave the manager half-applied and the later RequestStop
-        /// would land on the main window instead.
-        /// </summary>
         public override bool ProcessKey(KeyEvent keyEvent)
         {
             if (isBusy && keyEvent.Key == Key.Esc)
@@ -145,7 +134,6 @@ namespace Saturn.UI.Dialogs
             var provider = SelectedProvider;
             var saved = ConfigurationManager.GetProviderSettings(persistedConfig, provider.Name);
 
-            // Prefer the values the live connection was actually built with.
             if (string.Equals(provider.Name, manager.ActiveProviderName, StringComparison.OrdinalIgnoreCase))
             {
                 foreach (var kvp in manager.ActiveSettings.Values)
@@ -286,8 +274,6 @@ namespace Saturn.UI.Dialogs
                     Application.MainLoop.Invoke(() =>
                     {
                         SetBusy(false);
-                        // Only stop this dialog; if it somehow already closed, stopping
-                        // the current toplevel would take down the main window.
                         if (Application.Current == this)
                         {
                             Application.RequestStop();

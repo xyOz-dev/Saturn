@@ -83,8 +83,6 @@ namespace Saturn.Tests.Providers
         [Fact]
         public async Task SwapAsync_ValidationNotRequired_InstallsUnreachableClient()
         {
-            // Startup path: a transient outage must degrade to per-request errors, not
-            // refuse to connect at all.
             var providerName = "swap-novalidate-" + Guid.NewGuid().ToString("N");
             var client = new FakeLlmClient { ValidateResult = false };
             ProviderRegistry.Register(new FakeProvider { Name = providerName, Factory = _ => client });

@@ -12,8 +12,6 @@ namespace Saturn.Providers
         public const string BaseUrlSetting = "baseUrl";
         public const string TimeoutSetting = "timeoutSeconds";
 
-        // Local generation can take minutes on modest hardware, so the default request
-        // timeout is far above the cloud default.
         private const int DefaultTimeoutSeconds = 600;
 
         public string Name => ProviderName;

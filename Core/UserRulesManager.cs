@@ -7,8 +7,8 @@ namespace Saturn.Core
     public static class UserRulesManager
     {
         public static readonly string RulesFileName = "rules.md";
-        public static readonly int MaxFileSize = 1024 * 1024; // 1MB
-        public static readonly int MaxContentLength = 50000; // 50k characters
+        public static readonly int MaxFileSize = 1024 * 1024;
+        public static readonly int MaxContentLength = 50000;
         public static readonly string TruncationNotice = "\n[Content truncated - rules file too long]";
         
         public static string GetRulesFilePath()
@@ -92,7 +92,6 @@ namespace Saturn.Core
                     return true;
                 }
                 
-                // Save content
                 await File.WriteAllTextAsync(rulesPath, content).ConfigureAwait(false);
                 return true;
             }

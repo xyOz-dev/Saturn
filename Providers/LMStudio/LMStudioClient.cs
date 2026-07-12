@@ -14,12 +14,6 @@ using Saturn.OpenRouter.Services;
 
 namespace Saturn.Providers
 {
-    /// <summary>
-    /// Client for LM Studio's local server. Chat goes through the OpenAI-compatible
-    /// /v1 endpoints, reusing the SDK's HTTP/SSE plumbing with a different base URL and
-    /// no auth. Model listings are enriched best-effort from LM Studio's native REST API
-    /// (/api/v0/models), which knows context lengths and which models are loaded.
-    /// </summary>
     public sealed class LMStudioClient : ILlmClient
     {
         private readonly HttpClientAdapter _v1Http;
@@ -33,9 +27,6 @@ namespace Saturn.Providers
             var root = NormalizeRootUrl(baseUrl);
             _baseUrl = root + "/v1";
 
-            // ApiKey is deliberately left null: LM Studio ignores auth, and constructing
-            // the adapter directly (instead of OpenRouterClient) avoids picking up
-            // OPENROUTER_API_KEY from the environment and sending it to a local server.
             var v1Options = new OpenRouterOptions
             {
                 BaseUrl = _baseUrl,
@@ -91,8 +82,6 @@ namespace Saturn.Providers
                 root = root.Substring(0, root.Length - "/v1".Length).TrimEnd('/');
             }
 
-            // Require an explicit http(s) scheme: "localhost:1234" parses as a URI with
-            // scheme "localhost" and would only fail later with a generic connect error.
             if (!Uri.TryCreate(root, UriKind.Absolute, out var uri) ||
                 (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
@@ -169,11 +158,6 @@ namespace Saturn.Providers
                 .ToList();
         }
 
-        /// <summary>
-        /// Fills in context length and loaded state from /api/v0/models. That API is
-        /// beta and may be disabled or change shape, so any failure leaves the baseline
-        /// /v1 listing untouched.
-        /// </summary>
         private async Task EnrichFromNativeApiAsync(List<ModelInfo> models, CancellationToken cancellationToken)
         {
             if (models.Count == 0)

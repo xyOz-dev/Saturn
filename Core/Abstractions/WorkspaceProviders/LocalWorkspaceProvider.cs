@@ -47,7 +47,6 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
             }
             catch
             {
-                // Watcher initialization failed, continue without file watching
             }
         }
         
@@ -236,7 +235,6 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
                 candidatePath = Path.GetFullPath(Path.Combine(_rootPath, path));
             }
             
-            // Ensure the resolved path is contained within the root path
             if (!IsPathContainedInRoot(candidatePath, _rootPath))
             {
                 throw new UnauthorizedAccessException($"Path '{path}' resolves to '{candidatePath}' which is outside the workspace root '{_rootPath}'.");
@@ -247,7 +245,6 @@ namespace Saturn.Core.Abstractions.WorkspaceProviders
         
         private static bool IsPathContainedInRoot(string candidatePath, string rootPath)
         {
-            // Normalize both paths to ensure consistent comparison
             var normalizedCandidate = Path.GetFullPath(candidatePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             

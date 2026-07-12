@@ -15,8 +15,8 @@ namespace Saturn.Tools
     public class ExecuteCommandTool : ToolBase
     {
         private const int DefaultTimeoutSeconds = 120;
-        private const int MaxOutputLength = 1048576; // 1MB shown to the model
-        private const int MaxCaptureLength = 8388608; // 8MB safety ceiling retained during capture
+        private const int MaxOutputLength = 1048576;
+        private const int MaxCaptureLength = 8388608;
         private readonly List<CommandHistory> _commandHistory = new();
         private readonly CommandExecutorConfig _config;
         private readonly ICommandApprovalService _approvalService;
@@ -263,12 +263,9 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 }
                 catch { }
 
-                // Let the process finish exiting so any buffered output is flushed to us.
                 try { await process.WaitForExitAsync(); } catch { }
             }
 
-            // A blocking WaitForExit with no timeout ensures the async output handlers have
-            // drained before we read the buffers, so the tail of the output isn't lost.
             try { process.WaitForExit(); } catch { }
 
             stopwatch.Stop();
@@ -311,8 +308,6 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             }
             catch
             {
-                // Start() may have succeeded before BeginOutputReadLine threw; disposing the wrapper
-                // would not stop the OS process, so terminate it first, then drop the registration.
                 try { process.Kill(entireProcessTree: true); } catch { }
                 BackgroundCommandManager.Instance.Remove(bg.Id);
                 throw;
@@ -441,7 +436,6 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             if (output.Length <= MaxOutputLength)
                 return output;
 
-            // Keep the start and end; the middle is usually the least useful part of a long log.
             var headLength = MaxOutputLength * 2 / 3;
             var tailLength = MaxOutputLength - headLength;
             var elided = output.Length - headLength - tailLength;

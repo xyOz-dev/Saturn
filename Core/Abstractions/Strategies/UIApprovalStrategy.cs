@@ -22,11 +22,9 @@ namespace Saturn.Core.Abstractions.Strategies
             if (request == null)
                 throw new ArgumentNullException(nameof(request));
 
-            // Create dialog using factory if present, otherwise create default
-            var dialog = _dialogFactory?.Invoke(request) ?? 
+            var dialog = _dialogFactory?.Invoke(request) ??
                         new CommandApprovalDialog(request.Command ?? string.Empty, request.Description ?? string.Empty);
-            
-            // Run the dialog and get the result
+
             Terminal.Gui.Application.Run(dialog);
             
             var result = new ApprovalResult

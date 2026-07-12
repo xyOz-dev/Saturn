@@ -6,12 +6,6 @@ using Saturn.OpenRouter.Models.Api.Chat;
 
 namespace Saturn.Providers
 {
-    /// <summary>
-    /// A connected chat-completions backend. All providers speak the OpenAI-compatible
-    /// dialect, so the request/response DTOs from the OpenRouter SDK serve as the shared
-    /// wire format; providers that don't understand an extension field simply never
-    /// receive it (see <see cref="LlmClientCapabilities"/>).
-    /// </summary>
     public interface ILlmClient : IDisposable
     {
         LlmClientCapabilities Capabilities { get; }
@@ -22,7 +16,6 @@ namespace Saturn.Providers
 
         Task<List<ModelInfo>> ListModelsAsync(CancellationToken cancellationToken = default);
 
-        /// <summary>Cheap liveness/auth probe. Returns false rather than throwing on failure.</summary>
         Task<bool> ValidateConnectionAsync(CancellationToken cancellationToken = default);
     }
 }

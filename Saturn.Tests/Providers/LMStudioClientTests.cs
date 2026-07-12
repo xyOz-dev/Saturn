@@ -107,7 +107,6 @@ namespace Saturn.Tests.Providers
             var models = await client.ListModelsAsync();
 
             models.Should().HaveCount(2);
-            // Loaded models sort first.
             models[0].Id.Should().Be("model-b");
             models[0].IsLoaded.Should().BeTrue();
             models[0].ContextLength.Should().Be(8192);

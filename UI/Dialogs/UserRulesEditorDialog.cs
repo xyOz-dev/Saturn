@@ -173,7 +173,6 @@ namespace Saturn.UI.Dialogs
                 
                 if (!enabledCheckBox.Checked)
                 {
-                    // Just disable rules without deleting the file
                     RulesEnabled = enabledCheckBox.Checked;
                     statusLabel.Text = "Rules disabled (file preserved)";
                     statusLabel.ColorScheme = new ColorScheme 
@@ -185,7 +184,6 @@ namespace Saturn.UI.Dialogs
                     return;
                 }
                 
-                // Check content length and offer to truncate if too long
                 if (content.Length > maxContentLength)
                 {
                     var result = MessageBox.Query("Content Too Long", 
@@ -203,7 +201,6 @@ namespace Saturn.UI.Dialogs
                     }
                 }
                 
-                // Use centralized save with backup
                 var success = await UserRulesManager.SaveRulesAsync(content, createBackup: true);
                 
                 if (success)
@@ -215,8 +212,7 @@ namespace Saturn.UI.Dialogs
                     };
                     
                     RulesSaved = true;
-                    
-                    // Auto-close after brief delay
+
                     Application.MainLoop.AddTimeout(TimeSpan.FromMilliseconds(1500), (timer) =>
                     {
                         Application.RequestStop();
@@ -234,7 +230,6 @@ namespace Saturn.UI.Dialogs
             }
             catch (ArgumentException ex)
             {
-                // Handle content too long error from UserRulesManager
                 statusLabel.Text = ex.Message;
                 statusLabel.ColorScheme = new ColorScheme 
                 { 

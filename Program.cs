@@ -60,7 +60,6 @@ namespace Saturn
 
             var persistedConfig = await ConfigurationManager.LoadConfigurationAsync();
 
-            // Provider resolution: environment beats saved config beats the historical default.
             var providerName = Environment.GetEnvironmentVariable("SATURN_PROVIDER");
             if (string.IsNullOrWhiteSpace(providerName))
             {
@@ -71,16 +70,11 @@ namespace Saturn
                 providerName = OpenRouterProvider.ProviderName;
             }
 
-            // Canonicalize the name (env vars arrive in any casing) so it is a stable
-            // config key; unknown names fail here with the list of registered providers.
             providerName = ProviderRegistry.Get(providerName.Trim()).Name;
 
             var manager = LlmClientManager.Instance;
             var providerSettings = ConfigurationManager.GetProviderSettings(persistedConfig, providerName);
 
-            // Install the client without a liveness probe: a transient network blip or a
-            // provider outage should degrade to per-request errors, not refuse to launch.
-            // Client construction still fails hard on unusable settings (e.g. missing key).
             var swap = await manager.SwapAsync(providerName, providerSettings, requireValidation: false);
             if (!swap.Success)
             {
@@ -107,7 +101,6 @@ namespace Saturn
                 temperature = 1.0;
             }
 
-            // Determine EnableUserRules from persisted config or default to true
             bool enableUserRules = persistedConfig?.EnableUserRules ?? true;
             
             var agentConfig = new Saturn.Agents.Core.AgentConfiguration
@@ -238,8 +231,6 @@ Operating Principles
             {
                 ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
 
-                // The flat persisted model may belong to a different provider; the
-                // per-provider resolution above is authoritative.
                 agentConfig.Model = model;
             }
             else
@@ -258,11 +249,6 @@ Operating Principles
             return (new Agent(agentConfig), manager);
         }
 
-        /// <summary>
-        /// Picks the model for the connected provider: the model remembered for it,
-        /// else the provider default, else the first available model (preferring ones
-        /// already loaded on local servers).
-        /// </summary>
         static async Task<string> ResolveStartupModelAsync(
             ILlmClientSource manager,
             Saturn.Configuration.Objects.PersistedAgentConfiguration? persistedConfig,
@@ -285,8 +271,6 @@ Operating Principles
                 }
                 catch
                 {
-                    // Provider unreachable at startup; leave the model unset and let the
-                    // user pick one from the UI once it comes back.
                     Console.WriteLine($"Warning: could not list models from {capabilities.ProviderName}. " +
                         "Select a model via Agent -> Select Model... once the provider is reachable.");
                     return string.Empty;
@@ -302,7 +286,6 @@ Operating Principles
             }
             else if (string.IsNullOrWhiteSpace(capabilities.DefaultModel))
             {
-                // Local providers: the remembered model may have been deleted since last run.
                 var resolved = await ModelCatalog.ResolveModelAsync(manager, model);
                 if (!string.Equals(resolved, model, StringComparison.OrdinalIgnoreCase))
                 {

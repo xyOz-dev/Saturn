@@ -35,8 +35,7 @@ namespace Saturn.UI
         private AgentConfiguration currentConfig;
         private ILlmClientSource? clientSource;
         private MarkdownRenderer markdownRenderer;
-        
-        // Rules file monitoring
+
         private DateTime? lastRulesCheckTime;
         private DateTime? lastRulesModifiedTime;
         private string? cachedSystemPromptWithRules;
@@ -599,7 +598,6 @@ namespace Saturn.UI
 
             try
             {
-                // Check and update system prompt if rules have changed
                 await CheckAndUpdateSystemPromptIfNeeded();
                 
                 if (agent.CurrentSessionId == null)
@@ -900,8 +898,6 @@ namespace Saturn.UI
 
             if (isProcessing)
             {
-                // Mixing providers inside one running task is a debugging nightmare;
-                // require an explicit cancel first.
                 var choice = MessageBox.Query("Provider",
                     "A task is currently running. Cancel it and switch providers?", "Yes", "No");
                 if (choice != 0) return;
@@ -911,8 +907,6 @@ namespace Saturn.UI
             }
             else if (AgentManager.Instance.GetCurrentAgentCount() > 0)
             {
-                // Sub-agents run detached from the main agent's processing flag and would
-                // otherwise keep executing against the retired client.
                 var choice = MessageBox.Query("Provider",
                     $"{AgentManager.Instance.GetCurrentAgentCount()} sub-agent(s) are still running. Terminate them and switch providers?",
                     "Yes", "No");
@@ -927,13 +921,11 @@ namespace Saturn.UI
 
             if (!dialog.Applied) return;
 
-            // The new provider must never see the old provider's cached model list.
             ModelCatalog.Invalidate();
 
             var providerName = manager.ActiveProviderName;
             var capabilities = manager.Current.Capabilities;
 
-            // Restore the model remembered for this provider, or pick one it serves.
             var model = ConfigurationManager.GetProviderModel(persisted, providerName);
             if (string.IsNullOrWhiteSpace(model))
             {
@@ -1250,7 +1242,6 @@ namespace Saturn.UI
             {
                 MessageBox.Query("User Rules", "User rules have been saved successfully.", "OK");
                 
-                // Update EnableUserRules from dialog's RulesEnabled flag
                 agent.Configuration.EnableUserRules = dialog.RulesEnabled;
                 currentConfig.EnableUserRules = dialog.RulesEnabled;
                 
@@ -1259,16 +1250,12 @@ namespace Saturn.UI
                 
                 UpdateAgentStatus("Ready");
                 
-                // Force regeneration of the system prompt with the updated rules
-                // Extract base prompt without current directory or user rules sections
                 var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
                 var newSystemPrompt = await SystemPrompt.Create(basePrompt, includeDirectories: true, includeUserRules: dialog.RulesEnabled);
-                
-                // Update both agent and current config
+
                 agent.Configuration.SystemPrompt = newSystemPrompt;
                 currentConfig.SystemPrompt = newSystemPrompt;
-                
-                // Save the updated configuration
+
                 await ConfigurationManager.SaveConfigurationAsync(
                     ConfigurationManager.FromAgentConfiguration(agent.Configuration));
                     
@@ -1372,10 +1359,6 @@ namespace Saturn.UI
             }
         }
         
-        /// <summary>
-        /// Modes store model ids written for whichever provider was active when they were
-        /// created; substitute a model the current provider actually serves.
-        /// </summary>
         private async Task ResolveCurrentModelForProviderAsync()
         {
             if (clientSource == null || !clientSource.IsConnected) return;
@@ -1462,17 +1445,14 @@ namespace Saturn.UI
                 
                 if (!string.IsNullOrWhiteSpace(currentConfig.SystemPrompt))
                 {
-                    // Check if the prompt already contains directory information markers
-                    if (currentConfig.SystemPrompt.Contains("<current_directory>") || 
+                    if (currentConfig.SystemPrompt.Contains("<current_directory>") ||
                         currentConfig.SystemPrompt.Contains("Current working directory:") ||
                         currentConfig.SystemPrompt.Contains("</current_directory>"))
                     {
-                        // Already wrapped, assign directly
                         agent.Configuration.SystemPrompt = currentConfig.SystemPrompt;
                     }
                     else
                     {
-                        // Needs wrapping with directory context
                         agent.Configuration.SystemPrompt = await SystemPrompt.Create(currentConfig.SystemPrompt, includeDirectories: true, includeUserRules: currentConfig.EnableUserRules);
                     }
                 }
@@ -1494,7 +1474,6 @@ namespace Saturn.UI
             if (string.IsNullOrWhiteSpace(fullPrompt))
                 return fullPrompt;
             
-            // Remove the <current_directory> section if present
             var dirStartIndex = fullPrompt.IndexOf("\n<current_directory>");
             var dirEndIndex = fullPrompt.IndexOf("</current_directory>\n");
             if (dirStartIndex >= 0 && dirEndIndex > dirStartIndex)
@@ -1502,7 +1481,6 @@ namespace Saturn.UI
                 fullPrompt = fullPrompt.Remove(dirStartIndex, dirEndIndex - dirStartIndex + "</current_directory>\n".Length);
             }
             
-            // Remove the <user_rules> section if present
             var rulesStartIndex = fullPrompt.IndexOf("\n<user_rules>");
             var rulesEndIndex = fullPrompt.IndexOf("</user_rules>\n");
             if (rulesStartIndex >= 0 && rulesEndIndex > rulesStartIndex)
@@ -1515,7 +1493,6 @@ namespace Saturn.UI
         
         private async Task CheckAndUpdateSystemPromptIfNeeded()
         {
-            // Only check every 2 seconds to avoid excessive file system access
             var now = DateTime.UtcNow;
             if (lastRulesCheckTime.HasValue && (now - lastRulesCheckTime.Value).TotalSeconds < 2)
             {
@@ -1536,57 +1513,46 @@ namespace Saturn.UI
                 }
                 catch
                 {
-                    // If we can't read the file info, skip the check
                     return;
                 }
             }
-            
-            // Check if rules file has changed or if we need to initialize
+
             bool needsUpdate = false;
-            
+
             if (cachedSystemPromptWithRules == null)
             {
-                // First time - need to initialize
                 needsUpdate = true;
             }
             else if (lastRulesModifiedTime.HasValue && currentModifiedTime.HasValue)
             {
-                // Both times exist - check if file was modified
                 needsUpdate = currentModifiedTime.Value > lastRulesModifiedTime.Value;
             }
             else if (lastRulesModifiedTime.HasValue != currentModifiedTime.HasValue)
             {
-                // One exists and the other doesn't - file was created or deleted
                 needsUpdate = true;
             }
-            
+
             if (needsUpdate)
             {
-                // Extract the base prompt (without directory/rules sections)
                 var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
-                
-                // Regenerate with current rules state
+
                 var freshSystemPrompt = await SystemPrompt.Create(
-                    basePrompt, 
-                    includeDirectories: true, 
+                    basePrompt,
+                    includeDirectories: true,
                     includeUserRules: currentConfig.EnableUserRules
                 );
-                
-                // Update the cache
+
                 cachedSystemPromptWithRules = freshSystemPrompt;
                 lastRulesModifiedTime = currentModifiedTime;
-                
-                // Apply to both configurations
+
                 agent.Configuration.SystemPrompt = freshSystemPrompt;
                 currentConfig.SystemPrompt = freshSystemPrompt;
-                
-                // If we're in an active session, update the system message in chat history
+
                 if (agent.CurrentSessionId != null && agent.ChatHistory.Count > 0)
                 {
                     var firstMessage = agent.ChatHistory[0];
                     if (firstMessage.Role == "system")
                     {
-                        // Update the system message with the new prompt
                         firstMessage.Content = JsonDocument.Parse(
                             JsonSerializer.Serialize(freshSystemPrompt)
                         ).RootElement;

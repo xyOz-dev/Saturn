@@ -65,7 +65,6 @@ namespace Saturn.Tests.Providers
                 }
             };
 
-            // Routing variants never appear in the listing but are valid request ids.
             var resolved = await ModelCatalog.ResolveModelAsync(Source(client), "anthropic/claude-sonnet-4:nitro");
 
             resolved.Should().Be("anthropic/claude-sonnet-4:nitro");

@@ -11,20 +11,12 @@ using Saturn.OpenRouter.Serialization;
 
 namespace Saturn.OpenRouter.Services
 {
-    /// <summary>
-    /// Streaming Chat Completions service using Server-Sent Events (SSE).
-    /// </summary>
     public sealed class ChatCompletionsStreamingService
     {
         private readonly HttpClientAdapter _http;
         private readonly OpenRouterOptions _options;
         private readonly JsonSerializerOptions _jsonOptions;
 
-        /// <summary>
-        /// Internal constructor. Instances are exposed via OpenRouterClient.
-        /// </summary>
-        /// <param name="http">HTTP adapter with configured base URL, authorization, and headers.</param>
-        /// <param name="options">Client options providing JSON settings and defaults.</param>
         internal ChatCompletionsStreamingService(HttpClientAdapter http, OpenRouterOptions options)
         {
             _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -32,21 +24,12 @@ namespace Saturn.OpenRouter.Services
             _jsonOptions = _options.CreateJsonOptions();
         }
 
-        /// <summary>
-        /// POST /chat/completions (streaming via SSE).
-        /// Ensures stream=true and yields typed ChatCompletionChunk events as they arrive.
-        /// Comment lines and non-JSON payloads (including "[DONE]") are ignored safely.
-        /// </summary>
-        /// <param name="request">Chat completion request. Stream flag will be forced to true if not already.</param>
-        /// <param name="cancellationToken">Cancellation token to stop the stream promptly.</param>
-        /// <returns>Async sequence of ChatCompletionChunk values.</returns>
         public async IAsyncEnumerable<ChatCompletionChunk> StreamAsync(
             ChatCompletionRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             if (request is null) throw new ArgumentNullException(nameof(request));
 
-            // Ensure streaming
             if (request.Stream != true)
             {
                 request.Stream = true;
@@ -73,7 +56,7 @@ namespace Saturn.OpenRouter.Services
                     continue;
 
                 if (data == "[DONE]")
-                    yield break; // stop gracefully
+                    yield break;
 
                 ChatCompletionChunk? parsed;
                 try
@@ -82,12 +65,10 @@ namespace Saturn.OpenRouter.Services
                 }
                 catch (JsonException)
                 {
-                    // Skip non-JSON payloads (e.g., pings)
                     continue;
                 }
                 catch
                 {
-                    // Defensive: skip unknown payloads
                     continue;
                 }
 

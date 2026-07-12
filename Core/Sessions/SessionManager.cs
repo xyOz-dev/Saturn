@@ -89,7 +89,6 @@ namespace Saturn.Core.Sessions
             if (!_userSessions.TryGetValue(userId, out var userSessionSet))
                 return new List<PlatformSession>();
             
-            // Take a snapshot of session IDs to avoid racey enumeration
             var sessionIds = userSessionSet.Keys.ToList();
             
             return sessionIds
@@ -137,7 +136,6 @@ namespace Saturn.Core.Sessions
             if (!_userSessions.TryGetValue(userId, out var userSessionSet))
                 return;
             
-            // Take a snapshot of session IDs to avoid racey enumeration
             var sessionIds = userSessionSet.Keys.ToList();
             var tasks = sessionIds.Select(TerminateSessionAsync);
             await Task.WhenAll(tasks);

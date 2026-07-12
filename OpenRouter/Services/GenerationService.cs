@@ -10,33 +10,15 @@ using Saturn.OpenRouter.Serialization;
 
 namespace Saturn.OpenRouter.Services
 {
-    /// <summary>
-    /// Generation API service for GET /generation?id={id}.
-    /// Exposes both a typed-light wrapper and a raw JSON accessor to remain robust
-    /// against schema changes in the OpenRouter endpoint.
-    /// </summary>
     public sealed class GenerationService
     {
         private readonly HttpClientAdapter _http;
 
-        /// <summary>
-        /// Internal constructor. Instances are exposed via <c>OpenRouterClient</c>.
-        /// </summary>
         internal GenerationService(HttpClientAdapter http)
         {
             _http = http ?? throw new ArgumentNullException(nameof(http));
         }
 
-        /// <summary>
-        /// GET /generation?id={id}
-        /// Retrieves a specific generation's metadata and usage details.
-        /// Returns a typed-light container with:
-        /// - Root: the entire JSON response body as JsonElement
-        /// - Best-effort fields mapped from top-level properties (Id, Model, Provider, Created)
-        /// - Usage: parsed from a top-level "usage" object when present
-        /// </summary>
-        /// <param name="id">The generation identifier returned by a prior request (e.g., "gen-...").</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
         public async Task<GenerationResponse> GetAsync(string id, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(id)) throw new ArgumentNullException(nameof(id));
@@ -86,7 +68,6 @@ namespace Saturn.OpenRouter.Services
                     }
                     catch
                     {
-                        // Ignore mapping errors; Usage remains null for forward-compat.
                     }
                 }
             }
@@ -102,12 +83,6 @@ namespace Saturn.OpenRouter.Services
             };
         }
 
-        /// <summary>
-        /// GET /generation?id={id}
-        /// Returns the full response body as a JsonDocument for consumers who need complete control over the payload.
-        /// </summary>
-        /// <param name="id">The generation identifier returned by a prior request (e.g., "gen-...").</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
         public async Task<JsonDocument> GetRawAsync(string id, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(id)) throw new ArgumentNullException(nameof(id));

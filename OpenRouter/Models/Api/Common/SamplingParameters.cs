@@ -3,9 +3,6 @@ using System.Text.Json.Serialization;
 
 namespace Saturn.OpenRouter.Models.Api.Common
 {
-    /// <summary>
-    /// Common sampling parameters supported by various providers/models.
-    /// </summary>
     public sealed class SamplingParameters
     {
         [JsonPropertyName("temperature")]
@@ -26,15 +23,12 @@ namespace Saturn.OpenRouter.Models.Api.Common
         [JsonPropertyName("repetition_penalty")]
         public double? RepetitionPenalty { get; set; }
 
-        /// <summary>Bias for specific token ids. Keys are token IDs.</summary>
         [JsonPropertyName("logit_bias")]
         public Dictionary<int, double>? LogitBias { get; set; }
 
-        /// <summary>Whether to return log probabilities of output tokens.</summary>
         [JsonPropertyName("logprobs")]
         public bool? Logprobs { get; set; }
 
-        /// <summary>Number of top tokens to include per position when logprobs==true.</summary>
         [JsonPropertyName("top_logprobs")]
         public int? TopLogprobs { get; set; }
 
@@ -47,8 +41,7 @@ namespace Saturn.OpenRouter.Models.Api.Common
         [JsonPropertyName("seed")]
         public int? Seed { get; set; }
 
-        /// <summary>Custom stop sequences. Accepts a string or array of strings.</summary>
         [JsonPropertyName("stop")]
-        public object? Stop { get; set; } // string | string[]
+        public object? Stop { get; set; }
     }
 }

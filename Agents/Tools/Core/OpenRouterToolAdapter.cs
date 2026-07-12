@@ -7,29 +7,14 @@ using Saturn.Tools.Core;
 
 namespace Saturn.Agents.Tools.Core
 {
-    /// <summary>
-    /// Adapter that maps Saturn.Tools.Core.ITool instances to Saturn.OpenRouter tool definitions.
-    /// Behavior:
-    /// - Name/Description are taken from ITool metadata.
-    /// - Parameters JSON Schema:
-    ///     - If the tool exposes a schema via a GetParametersSchema() method or a ParametersSchema property,
-    ///       it is serialized to a JsonElement and used as ToolFunction.parameters.
-    ///     - Otherwise, falls back to a generic object schema: { "type": "object", "properties": {}, "required": [] }.
-    /// </summary>
     public static class OpenRouterToolAdapter
     {
-        /// <summary>
-        /// Convert a collection of ITool into a list of OpenRouter ToolDefinition objects.
-        /// </summary>
         public static List<ToolDefinition> ToOpenRouterTools(IEnumerable<ITool> tools)
         {
             if (tools == null) return new List<ToolDefinition>();
             return tools.Select(ToOpenRouterTool).ToList();
         }
 
-        /// <summary>
-        /// Convert a single ITool into an OpenRouter ToolDefinition object.
-        /// </summary>
         public static ToolDefinition ToOpenRouterTool(ITool tool)
         {
             if (tool == null) throw new ArgumentNullException(nameof(tool));
@@ -51,8 +36,6 @@ namespace Saturn.Agents.Tools.Core
 
         private static JsonElement? TryGetSchemaFromTool(ITool tool)
         {
-            // Prefer explicit schema if provided by the tool:
-            // 1) Method: GetParametersSchema()
             var method = tool.GetType().GetMethod("GetParametersSchema", Type.EmptyTypes);
             if (method != null)
             {
@@ -63,7 +46,6 @@ namespace Saturn.Agents.Tools.Core
                 }
             }
 
-            // 2) Property: ParametersSchema
             var prop = tool.GetType().GetProperty("ParametersSchema");
             if (prop != null)
             {
@@ -74,7 +56,6 @@ namespace Saturn.Agents.Tools.Core
                 }
             }
 
-            // 3) Heuristic: If GetParameters() returns a schema-like object, use it. Otherwise we fallback later.
             try
             {
                 var parameters = tool.GetParameters();
@@ -93,10 +74,8 @@ namespace Saturn.Agents.Tools.Core
             }
             catch
             {
-                // Ignore and fallback to generic schema
             }
 
-            // No explicit/heuristic schema found
             return null;
         }
 

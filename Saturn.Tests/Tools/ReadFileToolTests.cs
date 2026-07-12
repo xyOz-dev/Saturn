@@ -25,7 +25,6 @@ namespace Saturn.Tests.Tools
         [Fact]
         public async Task Execute_WithValidFile_ReturnsFileContent()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var testFile = CreateTestFile("test.txt", "Hello, World!\nThis is a test file.");
             var parameters = new Dictionary<string, object>
@@ -33,10 +32,8 @@ namespace Saturn.Tests.Tools
                 { "path", testFile }
             };
 
-            // Act
             var result = await tool.ExecuteAsync(parameters);
 
-            // Assert
             result.Should().NotBeNull();
             result.Success.Should().BeTrue();
             result.FormattedOutput.Should().Contain("Hello, World!");
@@ -46,7 +43,6 @@ namespace Saturn.Tests.Tools
         [Fact]
         public async Task Execute_WithNonExistentFile_ReturnsError()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var nonExistentFile = Path.Combine(_testDirectory, "nonexistent.txt");
             var parameters = new Dictionary<string, object>
@@ -54,10 +50,8 @@ namespace Saturn.Tests.Tools
                 { "path", nonExistentFile }
             };
 
-            // Act
             var result = await tool.ExecuteAsync(parameters);
 
-            // Assert
             result.Should().NotBeNull();
             result.Success.Should().BeFalse();
             result.Error.Should().Contain("NOT found");
@@ -66,7 +60,6 @@ namespace Saturn.Tests.Tools
         [Fact]
         public async Task Execute_WithEmptyFile_ReturnsEmptyContent()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var testFile = CreateTestFile("empty.txt", "");
             var parameters = new Dictionary<string, object>
@@ -74,10 +67,8 @@ namespace Saturn.Tests.Tools
                 { "path", testFile }
             };
 
-            // Act
             var result = await tool.ExecuteAsync(parameters);
 
-            // Assert
             result.Should().NotBeNull();
             result.Success.Should().BeTrue();
             result.FormattedOutput.Should().NotBeNullOrEmpty();
@@ -87,7 +78,6 @@ namespace Saturn.Tests.Tools
         [Fact]
         public async Task Execute_WithLargeFile_ReturnsContent()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var content = new StringBuilder();
             for (int i = 0; i < 100; i++)
@@ -100,10 +90,8 @@ namespace Saturn.Tests.Tools
                 { "path", testFile }
             };
 
-            // Act
             var result = await tool.ExecuteAsync(parameters);
 
-            // Assert
             result.Should().NotBeNull();
             result.Success.Should().BeTrue();
             result.FormattedOutput.Should().Contain("Line 1:");
@@ -113,7 +101,6 @@ namespace Saturn.Tests.Tools
         [Fact]
         public async Task Execute_WithSpecialCharacters_HandlesCorrectly()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var content = "Special chars: © ® ™ € £ ¥ • … 中文 日本語 한글";
             var testFile = CreateTestFile("special.txt", content);
@@ -122,10 +109,8 @@ namespace Saturn.Tests.Tools
                 { "path", testFile }
             };
 
-            // Act
             var result = await tool.ExecuteAsync(parameters);
 
-            // Assert
             result.Should().NotBeNull();
             result.Success.Should().BeTrue();
             result.FormattedOutput.Should().Contain("©");
@@ -135,17 +120,14 @@ namespace Saturn.Tests.Tools
         [Fact]
         public async Task Execute_WithRelativePath_ReturnsError()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var parameters = new Dictionary<string, object>
             {
                 { "path", "relative/path/file.txt" }
             };
 
-            // Act
             var result = await tool.ExecuteAsync(parameters);
             
-            // Assert
             result.Should().NotBeNull();
             result.Success.Should().BeFalse();
             result.Error.Should().Contain("NOT found");
@@ -154,14 +136,11 @@ namespace Saturn.Tests.Tools
         [Fact]
         public async Task Execute_WithMissingPath_ReturnsError()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var parameters = new Dictionary<string, object>();
 
-            // Act
             var result = await tool.ExecuteAsync(parameters);
             
-            // Assert
             result.Should().NotBeNull();
             result.Success.Should().BeFalse();
             result.Error.Should().Contain("CANNOT be empty");
@@ -170,27 +149,22 @@ namespace Saturn.Tests.Tools
         [Fact]
         public void GetDisplaySummary_ReturnsCorrectSummary()
         {
-            // Arrange
             var tool = new ReadFileTool();
             var parameters = new Dictionary<string, object>
             {
                 { "path", "/path/to/file.txt" }
             };
 
-            // Act
             var summary = tool.GetDisplaySummary(parameters);
 
-            // Assert
             summary.Should().Contain("file.txt");
         }
 
         [Fact]
         public void ToolMetadata_IsCorrect()
         {
-            // Arrange
             var tool = new ReadFileTool();
 
-            // Assert
             tool.Name.Should().Be("read_file");
             tool.Description.Should().Contain("read");
         }
@@ -205,7 +179,6 @@ namespace Saturn.Tests.Tools
 
         public void Dispose()
         {
-            // Clean up test files
             foreach (var file in _createdFiles)
             {
                 if (File.Exists(file))
@@ -214,7 +187,6 @@ namespace Saturn.Tests.Tools
                 }
             }
 
-            // Remove test directory
             if (Directory.Exists(_testDirectory))
             {
                 Directory.Delete(_testDirectory, true);

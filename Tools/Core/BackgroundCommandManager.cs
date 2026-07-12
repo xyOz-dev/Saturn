@@ -15,13 +15,9 @@ namespace Saturn.Tools.Core
         Killed
     }
 
-    /// <summary>
-    /// A command launched in the background. Output is buffered as it arrives and can be
-    /// drained incrementally via <see cref="ReadNew"/>, mirroring how a terminal is polled.
-    /// </summary>
     public class BackgroundCommand : IDisposable
     {
-        private const int MaxBufferLength = 1048576; // 1MB retained per stream
+        private const int MaxBufferLength = 1048576;
 
         private readonly StringBuilder _stdout = new();
         private readonly StringBuilder _stderr = new();
@@ -47,7 +43,6 @@ namespace Saturn.Tools.Core
             get { lock (_lock) { return _status != BackgroundCommandStatus.Running; } }
         }
 
-        /// <summary>Records a natural exit. No-op if the command was already killed or exited.</summary>
         public void MarkExited(int? exitCode)
         {
             lock (_lock)
@@ -59,7 +54,6 @@ namespace Saturn.Tools.Core
             }
         }
 
-        /// <summary>Records that the command was killed. Returns false if it had already finished.</summary>
         public bool MarkKilled()
         {
             lock (_lock)
@@ -71,10 +65,6 @@ namespace Saturn.Tools.Core
             }
         }
 
-        /// <summary>
-        /// Undoes a <see cref="MarkKilled"/> claim when termination could not be carried out,
-        /// reconciling with the process's actual state so the command is not stuck as 'killed'.
-        /// </summary>
         public void RevertKill()
         {
             lock (_lock)
@@ -107,9 +97,6 @@ namespace Saturn.Tools.Core
             lock (_lock) Append(_stderr, ref _stderrCursor, line);
         }
 
-        /// <summary>
-        /// Returns output produced since the previous call and advances the read cursors.
-        /// </summary>
         public (string StdOut, string StdErr) ReadNew()
         {
             lock (_lock)
@@ -127,7 +114,6 @@ namespace Saturn.Tools.Core
             buffer.AppendLine(line);
             if (buffer.Length > MaxBufferLength)
             {
-                // Drop from the front so the most recent output (and unread tail) is retained.
                 var overflow = buffer.Length - MaxBufferLength;
                 buffer.Remove(0, overflow);
                 cursor = Math.Max(0, cursor - overflow);
@@ -140,14 +126,8 @@ namespace Saturn.Tools.Core
         }
     }
 
-    /// <summary>
-    /// Tracks commands started in the background so their output can be polled and they can be
-    /// killed on demand. Mirrors the lifecycle role AgentManager plays for sub-agents.
-    /// </summary>
     public class BackgroundCommandManager
     {
-        // Retain a bounded number of commands so finished processes don't leak handles or memory
-        // over a long session. Only terminal (exited/killed) commands are ever evicted.
         private const int MaxRetainedCommands = 50;
 
         private static readonly Lazy<BackgroundCommandManager> _instance = new(() => new BackgroundCommandManager());
@@ -158,11 +138,9 @@ namespace Saturn.Tools.Core
 
         private BackgroundCommandManager()
         {
-            // Ensure background children don't outlive the host process.
             AppDomain.CurrentDomain.ProcessExit += (_, _) => Shutdown();
         }
 
-        /// <summary>Terminates and disposes every tracked command, including running ones.</summary>
         public void Shutdown()
         {
             foreach (var cmd in _commands.Values)
@@ -212,8 +190,6 @@ namespace Saturn.Tools.Core
             }
         }
 
-        // Drop the oldest finished commands once we exceed the retention cap. Running commands are
-        // never evicted so their output stays pollable until they finish.
         private void EvictTerminalOverflow()
         {
             var overflow = _commands.Count - MaxRetainedCommands;

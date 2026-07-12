@@ -12,13 +12,11 @@ namespace Saturn.Tests.Tools
 {
     public class ExecuteCommandToolTests
     {
-        // Approval is bypassed so the tool can run headlessly in CI.
         private static ExecuteCommandTool NewTool() =>
             new ExecuteCommandTool(new CommandExecutorConfig(), new CommandApprovalService(false));
 
         private static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
-        // Emits a line immediately, then blocks for ~20s so timeout/kill paths can be exercised.
         private static string EarlyOutputThenHang =>
             IsWindows ? "echo start && ping -n 20 127.0.0.1" : "echo start && sleep 20";
 
@@ -55,7 +53,6 @@ namespace Saturn.Tests.Tools
             var commandId = (string)data["command_id"];
             commandId.Should().NotBeNullOrEmpty();
 
-            // Poll until the process exits, accumulating output.
             var collected = "";
             var status = "running";
             for (var i = 0; i < 50 && status == "running"; i++)
@@ -93,7 +90,6 @@ namespace Saturn.Tests.Tools
             var killData = (Dictionary<string, object>)killResult.RawData!;
             ((string)killData["status"]).Should().Be("killed");
 
-            // The killed state must survive the race with the process exit handler.
             var poll = await getOutput.ExecuteAsync(new Dictionary<string, object> { ["command_id"] = commandId });
             var pollData = (Dictionary<string, object>)poll.RawData!;
             ((string)pollData["status"]).Should().Be("killed");

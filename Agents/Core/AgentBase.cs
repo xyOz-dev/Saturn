@@ -284,8 +284,6 @@ namespace Saturn.Agents.Core
 
         protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages)
         {
-            // Resolve once per turn so a provider swap mid-stream never splits a single
-            // tool-calling loop across two backends.
             var client = Configuration.ClientSource.Current;
 
             AssistantMessageResponse responseMessage = null;
@@ -813,8 +811,6 @@ namespace Saturn.Agents.Core
                         {
                             if (string.Equals(choice.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
                             {
-                                // Deliberately not added to contentBuffer: it is UI
-                                // feedback, not part of the assistant's message.
                                 await onChunk(new StreamChunk
                                 {
                                     Content = "\n[Response truncated: max token limit reached. Consider raising Max Tokens, especially for reasoning models.]\n",
@@ -842,9 +838,6 @@ namespace Saturn.Agents.Core
                 }
                 catch (Saturn.OpenRouter.Errors.OpenRouterException ex)
                 {
-                    // Some providers (e.g., OpenAI GPT-5) may reject streaming with an org verification error
-                    // or mark the 'stream' param as unsupported. In such cases, fall back to a non-streaming flow
-                    // so the user can continue without changing configuration manually.
                     var msg = ex.Message ?? string.Empty;
                     var looksLikeStreamingNotAllowed =
                         msg.IndexOf("param", StringComparison.OrdinalIgnoreCase) >= 0 &&
@@ -854,18 +847,15 @@ namespace Saturn.Agents.Core
 
                     if (looksLikeStreamingNotAllowed)
                     {
-                        // Notify the UI minimally, then perform a non-streaming pass that still supports tools.
                         await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
                         finalResponse = await ExecuteWithTools(currentMessages);
-                        // Ensure any accumulated tool calls/content buffers are cleared for the next turn
                         contentBuffer.Clear();
                         toolCallBuffer.Clear();
-                        // Break the outer while loop by disabling further processing here.
                         continueProcessing = false;
                     }
                     else
                     {
-                        throw; // Unknown API error: let it surface
+                        throw;
                     }
                 }
 
@@ -996,19 +986,10 @@ namespace Saturn.Agents.Core
             return finalResponse;
         }
 
-        /// <summary>
-        /// Builds a chat request shaped to what the active provider understands.
-        /// Extension fields (transforms, usage accounting) stay off the wire for
-        /// providers that don't declare support for them.
-        /// </summary>
         private ChatCompletionRequest BuildRequest(ILlmClient client, List<Message> currentMessages)
         {
             var capabilities = client.Capabilities;
 
-            // History written under a caching provider carries cache_control content
-            // parts; after a provider swap those must not reach a backend that never
-            // declared support for them. Sanitized copies only — the history itself is
-            // left intact for a potential swap back.
             var messages = capabilities.SupportsCaching
                 ? currentMessages.ToArray()
                 : currentMessages.Select(StripCacheControl).ToArray();
@@ -1033,8 +1014,6 @@ namespace Saturn.Agents.Core
                     ? ToolRegistry.Instance.GetOpenRouterToolDefinitions(Configuration.ToolNames.ToArray()).ToArray()
                     : ToolRegistry.Instance.GetOpenRouterToolDefinitions().ToArray();
 
-                // tool_choice without a tools array is rejected by some OpenAI-compatible
-                // backends, so it is only sent when tools are attached.
                 if (capabilities.SupportsToolChoice)
                 {
                     request.ToolChoice = ToolChoice.Auto();
@@ -1044,14 +1023,6 @@ namespace Saturn.Agents.Core
             return request;
         }
 
-        /// <summary>
-        /// Tool-call arguments are echoed back to the provider in the conversation on
-        /// every later request. Arguments that aren't valid JSON — empty or truncated
-        /// when generation hits the token limit — can crash strict chat templates
-        /// server-side and poison the whole session, so they are replaced with an empty
-        /// object; the tool then fails with a normal validation error the model can
-        /// react to.
-        /// </summary>
         private static string EnsureValidJsonArguments(string? arguments)
         {
             if (string.IsNullOrWhiteSpace(arguments))
@@ -1083,7 +1054,6 @@ namespace Saturn.Agents.Core
             {
                 if (part.ValueKind != JsonValueKind.Object || !part.TryGetProperty("text", out var textProp))
                 {
-                    // Not a pure text-part array (e.g. images); leave it untouched.
                     return message;
                 }
                 if (part.TryGetProperty("cache_control", out _))
@@ -1118,9 +1088,6 @@ namespace Saturn.Agents.Core
             return value.ValueKind == JsonValueKind.String ? (value.GetString() ?? string.Empty) : value.GetRawText();
         }
 
-        /// <summary>
-        /// Validates streamed tool calls to ensure they have required fields
-        /// </summary>
         private List<OpenRouter.Models.Api.Chat.ToolCall> ValidateStreamedToolCalls(OpenRouter.Models.Api.Chat.ToolCall[] toolCalls)
         {
             var validatedCalls = new List<OpenRouter.Models.Api.Chat.ToolCall>();
@@ -1145,9 +1112,6 @@ namespace Saturn.Agents.Core
             return validatedCalls;
         }
         
-        /// <summary>
-        /// Validates message sequence to ensure tool use/result pairing for Bedrock compatibility
-        /// </summary>
         protected bool ValidateToolMessageSequence(List<Message> messages)
         {
             var toolUseIds = new HashSet<string>();
@@ -1182,9 +1146,6 @@ namespace Saturn.Agents.Core
             return true;
         }
         
-        /// <summary>
-        /// Cleans up invalid tool messages to ensure proper pairing for Bedrock compatibility
-        /// </summary>
         protected List<Message> CleanupInvalidToolMessages(List<Message> messages)
         {
             var cleanedMessages = new List<Message>();
@@ -1214,8 +1175,6 @@ namespace Saturn.Agents.Core
                     }
                     else
                     {
-                        // Silently skip orphaned tool results to avoid cluttering output
-                        // Only log if explicitly in debug mode
                         if (System.Diagnostics.Debugger.IsAttached)
                         {
                             Console.Error.WriteLine($"Skipping orphaned tool result message with ID: {message.ToolCallId ?? "(null)"}");
@@ -1366,7 +1325,6 @@ namespace Saturn.Agents.Core
             }
             catch (InvalidOperationException)
             {
-                // No provider connected yet; emit plain string content.
                 return false;
             }
         }

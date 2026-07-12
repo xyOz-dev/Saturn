@@ -92,17 +92,11 @@ namespace Saturn.Tools.Core
             return _tools.Keys;
         }
 
-        /// <summary>
-        /// Returns OpenRouter-ready tool definitions for all registered tools.
-        /// </summary>
         public List<ToolDefinition> GetOpenRouterToolDefinitions()
         {
             return OpenRouterToolAdapter.ToOpenRouterTools(GetAll());
         }
 
-        /// <summary>
-        /// Returns OpenRouter-ready tool definitions filtered by provided tool names.
-        /// </summary>
         public List<ToolDefinition> GetOpenRouterToolDefinitions(params string[] toolNames)
         {
             var selected = toolNames != null && toolNames.Length > 0

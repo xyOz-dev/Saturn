@@ -334,7 +334,6 @@ namespace Saturn.Core.Security
             if (policy.RateLimit == null)
                 return null;
             
-            // Build composite key including tool + user + channel
             var userKey = policy.RateLimit.PerUser ? (principal.UserId ?? principal.Id ?? "anon") : "anon";
             var channelKey = policy.RateLimit.PerChannel ? (principal.ChannelId ?? "global") : "global";
             var compositeKey = $"{policy.ToolName}:{userKey}:{channelKey}";
@@ -344,7 +343,6 @@ namespace Saturn.Core.Security
             var now = DateTime.UtcNow;
             var minuteKey = now.ToString("yyyy-MM-dd-HH-mm");
             
-            // Get or create the minute bucket
             var minuteBucket = limits.GetOrAdd(minuteKey, _ => new RateLimitInfo
             {
                 MaxCalls = policy.RateLimit.MaxCallsPerMinute,
@@ -352,28 +350,22 @@ namespace Saturn.Core.Security
                 CurrentCount = 0,
                 ResetTime = now.AddMinutes(1)
             });
-            
-            // Increment the current minute bucket
+
             minuteBucket.CurrentCount++;
-            
-            // Calculate rolling sums for hour and day windows
+
             var minuteCount = minuteBucket.CurrentCount;
-            var hourCount = CalculateRollingSum(limits, now, 60); // Last 60 minutes
-            var dayCount = CalculateRollingSum(limits, now, 1440); // Last 1440 minutes (24 hours)
-            
-            // Clean up old buckets beyond 1440 minutes to bound memory
+            var hourCount = CalculateRollingSum(limits, now, 60);
+            var dayCount = CalculateRollingSum(limits, now, 1440);
+
             CleanupOldBuckets(limits, now, 1440);
-            
-            // Create comprehensive rate limit info
+
             var rateLimitInfo = new RateLimitInfo
             {
-                // Legacy properties for backward compatibility
                 MaxCalls = policy.RateLimit.MaxCallsPerMinute,
                 Period = TimeSpan.FromMinutes(1),
                 CurrentCount = minuteCount,
                 ResetTime = now.AddMinutes(1),
-                
-                // Multi-window properties
+
                 MinuteCount = minuteCount,
                 HourCount = hourCount,
                 DayCount = dayCount,

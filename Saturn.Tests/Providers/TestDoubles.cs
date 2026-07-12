@@ -22,7 +22,6 @@ namespace Saturn.Tests.Providers
         public List<ChatCompletionRequest> Requests { get; } = new();
         public string ResponseContent { get; set; } = "ok";
 
-        /// <summary>Scripted responses returned in order; when empty, a plain text reply is returned.</summary>
         public Queue<ChatCompletionResponse> ResponseQueue { get; } = new();
 
         public Task<ChatCompletionResponse?> ChatAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default)
@@ -78,7 +77,6 @@ namespace Saturn.Tests.Providers
             => Task.FromResult(Factory(settings));
     }
 
-    /// <summary>Agent that skips SQLite persistence so tests stay on the fake client only.</summary>
     public class TestAgent : AgentBase
     {
         public TestAgent(AgentConfiguration configuration) : base(configuration)

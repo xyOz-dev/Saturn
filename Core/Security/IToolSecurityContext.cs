@@ -81,8 +81,7 @@ namespace Saturn.Core.Security
         public int CurrentCount { get; set; }
         public DateTime ResetTime { get; set; }
         public bool IsExceeded => CurrentCount >= MaxCalls;
-        
-        // Multi-window support
+
         public int MinuteCount { get; set; }
         public int HourCount { get; set; }
         public int DayCount { get; set; }

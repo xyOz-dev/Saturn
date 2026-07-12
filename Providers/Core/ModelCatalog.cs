@@ -6,22 +6,12 @@ using System.Threading.Tasks;
 
 namespace Saturn.Providers
 {
-    /// <summary>
-    /// Shared, provider-keyed cache of model listings. Keyed per provider so swapping
-    /// never surfaces a previous provider's models, with each provider declaring its own
-    /// freshness window (local servers change their list whenever the user loads or
-    /// unloads a model).
-    /// </summary>
     public static class ModelCatalog
     {
         private static readonly object _lock = new();
         private static readonly Dictionary<string, (List<ModelInfo> Models, DateTime FetchedAt)> _cache =
             new(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Lists models for the active provider, from cache when fresh. Falls back to the
-        /// provider's static fallback list when the live listing fails or is empty.
-        /// </summary>
         public static async Task<List<ModelInfo>> GetAsync(ILlmClientSource clientSource, CancellationToken cancellationToken = default)
         {
             if (clientSource == null || !clientSource.IsConnected)
@@ -29,9 +19,6 @@ namespace Saturn.Providers
                 return new List<ModelInfo>();
             }
 
-            // The two reads on the source are not atomic across a concurrent swap; re-read
-            // the name until it brackets the client read consistently, so a list can never
-            // be cached under the wrong provider's key.
             string providerKey;
             ILlmClient client;
             while (true)
@@ -76,12 +63,6 @@ namespace Saturn.Providers
             return client.Capabilities.FallbackModels.ToList();
         }
 
-        /// <summary>
-        /// Returns <paramref name="requestedModel"/> when the active provider offers it;
-        /// otherwise the best available substitute (a loaded model first, then the
-        /// provider default, then the first listed). Lets sub-agent requests written for
-        /// one provider degrade gracefully after a swap instead of erroring per request.
-        /// </summary>
         public static async Task<string> ResolveModelAsync(ILlmClientSource clientSource, string requestedModel, string? preferredFallback = null)
         {
             try
@@ -97,9 +78,6 @@ namespace Saturn.Providers
                     return requestedModel;
                 }
 
-                // OpenRouter routing variants ("vendor/model:nitro", ":online", ":free")
-                // are valid request ids that never appear verbatim in the models listing;
-                // when the base model exists, trust the requested variant.
                 var variantSeparator = requestedModel.LastIndexOf(':');
                 if (variantSeparator > 0)
                 {

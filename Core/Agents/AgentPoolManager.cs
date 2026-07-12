@@ -23,10 +23,6 @@ namespace Saturn.Core.Agents
 
         private static AgentPoolManager? _instance;
 
-        /// <summary>
-        /// The shared pool. Must be initialized with a client source at startup; a pool
-        /// that silently constructed its own client would bypass provider selection.
-        /// </summary>
         public static AgentPoolManager Instance =>
             _instance ?? throw new InvalidOperationException(
                 "AgentPoolManager is not initialized. Call AgentPoolManager.Initialize at startup.");
@@ -55,7 +51,6 @@ namespace Saturn.Core.Agents
         {
             using var _ = await _sessionLocks.LockAsync(sessionId);
 
-            // Re-check for existing agent inside the lock
             if (reuseExisting && _sessionAgentMapping.TryGetValue(sessionId, out var existingAgentId))
             {
                 if (_agentPool.TryGetValue(existingAgentId, out var existingEntry))
@@ -110,7 +105,6 @@ namespace Saturn.Core.Agents
                 }
                 else
                 {
-                    // Initialize with a safe default prompt before calling SystemPrompt.Create
                     configuration.SystemPrompt = "You are a helpful AI assistant.";
                     configuration.SystemPrompt = await SystemPrompt.Create(
                         configuration.SystemPrompt,
@@ -169,10 +163,8 @@ namespace Saturn.Core.Agents
         
         private void AssignAgentToSession(string agentId, string sessionId)
         {
-            // First, check if there's a previous agent assigned to this session
             if (_sessionAgentMapping.TryGetValue(sessionId, out var previousAgentId))
             {
-                // Clean up the previous agent's state
                 if (_agentPool.TryGetValue(previousAgentId, out var previousEntry))
                 {
                     previousEntry.SessionId = null;
@@ -180,8 +172,7 @@ namespace Saturn.Core.Agents
                     previousEntry.LastAccessTime = DateTime.UtcNow;
                 }
             }
-            
-            // Now assign the new agent to the session
+
             _sessionAgentMapping[sessionId] = agentId;
             
             if (_agentPool.TryGetValue(agentId, out var entry))

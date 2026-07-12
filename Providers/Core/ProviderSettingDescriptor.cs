@@ -10,10 +10,6 @@ namespace Saturn.Providers
         Number
     }
 
-    /// <summary>
-    /// Describes one configurable setting of a provider so generic UI can render an
-    /// input field for it and resolution can fall back to environment variables.
-    /// </summary>
     public sealed class ProviderSettingDescriptor
     {
         public required string Key { get; init; }
@@ -22,13 +18,8 @@ namespace Saturn.Providers
         public bool Required { get; init; }
         public string? DefaultValue { get; init; }
 
-        /// <summary>Environment variable consulted when the setting is absent from saved config.</summary>
         public string? EnvironmentVariable { get; init; }
 
-        /// <summary>
-        /// Resolves the effective value: explicit setting first, then environment
-        /// variable, then the descriptor default.
-        /// </summary>
         public string? Resolve(ProviderSettings? settings)
         {
             var configured = settings?.Get(Key);

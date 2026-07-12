@@ -8,9 +8,6 @@ using Saturn.OpenRouter.Models.Api.Chat;
 
 namespace Saturn.Providers
 {
-    /// <summary>
-    /// ILlmClient adapter over the vendored OpenRouter SDK client.
-    /// </summary>
     public sealed class OpenRouterLlmClient : ILlmClient
     {
         private readonly OpenRouterClient _inner;
@@ -20,7 +17,6 @@ namespace Saturn.Providers
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
 
-        /// <summary>The underlying SDK client, for OpenRouter-specific services (credits, generation stats).</summary>
         public OpenRouterClient Inner => _inner;
 
         public LlmClientCapabilities Capabilities { get; } = new()

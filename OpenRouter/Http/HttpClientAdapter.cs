@@ -10,18 +10,11 @@ using Saturn.OpenRouter.Serialization;
 
 namespace Saturn.OpenRouter.Http
 {
-    /// <summary>
-    /// Lightweight wrapper around HttpClient providing consistent headers, JSON (de)serialization,
-    /// error handling, and SSE start helper for the OpenRouter API.
-    /// </summary>
     public sealed class HttpClientAdapter : IDisposable
     {
         private readonly HttpClient _http;
         private readonly OpenRouterOptions _options;
 
-        /// <summary>
-        /// Create a new adapter for the given <see cref="OpenRouterOptions"/>.
-        /// </summary>
         public HttpClientAdapter(OpenRouterOptions options)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -43,9 +36,6 @@ namespace Saturn.OpenRouter.Http
             _http.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
         }
 
-        /// <summary>
-        /// Create an HttpRequestMessage configured with default and per-call headers.
-        /// </summary>
         public HttpRequestMessage CreateRequest(HttpMethod method, string path, IDictionary<string, string>? headers = null, bool acceptSse = false)
         {
             if (string.IsNullOrWhiteSpace(path)) throw new ArgumentNullException(nameof(path));
@@ -90,10 +80,6 @@ namespace Saturn.OpenRouter.Http
             return request;
         }
 
-        /// <summary>
-        /// Send a request with an optional JSON body and deserialize the JSON response to <typeparamref name="TResponse"/>.
-        /// Throws <see cref="OpenRouterException"/> on non-success responses after attempting to parse the API error.
-        /// </summary>
         public async Task<TResponse?> SendJsonAsync<TResponse>(
             HttpMethod method,
             string path,
@@ -127,10 +113,6 @@ namespace Saturn.OpenRouter.Http
             return resp;
         }
 
-        /// <summary>
-        /// Send a request and return the raw <see cref="HttpResponseMessage"/> (disposed by caller).
-        /// Throws <see cref="OpenRouterException"/> on non-success status codes.
-        /// </summary>
         public async Task<HttpResponseMessage> SendRawAsync(
             HttpMethod method,
             string path,
@@ -158,10 +140,6 @@ namespace Saturn.OpenRouter.Http
             return response;
         }
 
-        /// <summary>
-        /// Start a Server-Sent Events request and return an async stream of <see cref="SseEvent"/>.
-        /// The underlying HTTP response is disposed automatically when iteration ends.
-        /// </summary>
         public async IAsyncEnumerable<SseEvent> StartSseAsync(
             HttpMethod method,
             string path,
@@ -277,7 +255,6 @@ namespace Saturn.OpenRouter.Http
         private static string Truncate(string value, int max)
             => value.Length <= max ? value : value.Substring(0, max);
 
-        /// <summary>Dispose the underlying HttpClient.</summary>
         public void Dispose()
         {
             _http.Dispose();
