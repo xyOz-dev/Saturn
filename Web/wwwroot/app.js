@@ -8,11 +8,16 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 const api = {
   async request(method, path, body) {
-    const res = await fetch(`/api${path}`, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch(`/api${path}`, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      throw new Error("can't reach the Saturn server — it may be restarting");
+    }
     if (!res.ok) {
       let message = `${res.status} ${res.statusText}`;
       try {
@@ -794,12 +799,21 @@ $("#setting-approval").addEventListener("change", async (e) => {
 
 function connectEvents() {
   const es = new EventSource("/api/events");
+  let wasDown = false;
 
   es.onopen = () => {
     $("#conn-dot").classList.add("on");
     $("#conn-label").textContent = "live";
+    if (wasDown) {
+      // Events were missed while disconnected (e.g. server restart) — re-sync everything.
+      wasDown = false;
+      toast("<b>Reconnected</b> — refreshing state");
+      loadOverview().catch(() => {});
+      refreshView(state.view);
+    }
   };
   es.onerror = () => {
+    wasDown = true;
     $("#conn-dot").classList.remove("on");
     $("#conn-label").textContent = "reconnecting…";
   };

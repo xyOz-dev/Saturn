@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Saturn.Agents;
 using Saturn.Agents.MultiAgent;
+using Saturn.Data;
 
 namespace Saturn.Web
 {
@@ -42,6 +43,44 @@ namespace Saturn.Web
             lock (_transcriptLock)
             {
                 return _transcript.ToList();
+            }
+        }
+
+        public async Task RestoreTranscriptAsync(ChatHistoryRepository history)
+        {
+            try
+            {
+                var sessions = await history.GetSessionsAsync("main", 1);
+                if (sessions.Count == 0)
+                {
+                    return;
+                }
+
+                var messages = await history.GetMessagesAsync(sessions[0].Id);
+                // Tool-call turns are stored with a literal "null" content; they are not part of the visible conversation.
+                var restored = messages
+                    .Where(m => (m.Role == "user" || m.Role == "assistant")
+                        && !string.IsNullOrWhiteSpace(m.Content)
+                        && m.Content != "null")
+                    .Select(m => new TranscriptEntry { Role = m.Role, Content = m.Content, Timestamp = m.Timestamp })
+                    .ToList();
+
+                if (restored.Count == 0)
+                {
+                    return;
+                }
+
+                lock (_transcriptLock)
+                {
+                    if (_transcript.Count == 0)
+                    {
+                        _transcript.AddRange(restored);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Restoring history is best-effort; an unreadable database should not block startup.
             }
         }
 

@@ -48,6 +48,7 @@ namespace Saturn.Web
         {
             CommandApprovalService.GlobalOverride = _approvals;
             WireAgentManagerEvents();
+            await _orchestrator.RestoreTranscriptAsync(_history);
 
             var builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders();
