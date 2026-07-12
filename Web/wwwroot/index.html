@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saturn — Agent Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">◯</div>
+        <div class="brand-text">
+          <span class="brand-name">SATURN</span>
+          <span class="brand-sub">agent manager</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview">
+          <span class="nav-icon">▣</span> Overview
+        </button>
+        <button class="nav-item" data-view="agents">
+          <span class="nav-icon">⬡</span> Agents
+          <span class="nav-badge" id="badge-agents">0</span>
+        </button>
+        <button class="nav-item" data-view="tasks">
+          <span class="nav-icon">≡</span> Tasks
+          <span class="nav-badge" id="badge-tasks">0</span>
+        </button>
+        <button class="nav-item" data-view="orchestrator">
+          <span class="nav-icon">◈</span> Orchestrator
+        </button>
+        <button class="nav-item" data-view="todos">
+          <span class="nav-icon">☑</span> Todo List
+          <span class="nav-badge" id="badge-todos">0</span>
+        </button>
+        <button class="nav-item" data-view="sessions">
+          <span class="nav-icon">◷</span> Sessions
+        </button>
+        <button class="nav-item" data-view="approvals">
+          <span class="nav-icon">⚑</span> Approvals
+          <span class="nav-badge alert" id="badge-approvals">0</span>
+        </button>
+        <button class="nav-item" data-view="settings">
+          <span class="nav-icon">⚙</span> Settings
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="conn">
+          <span class="conn-dot" id="conn-dot"></span>
+          <span id="conn-label">connecting</span>
+        </div>
+        <div class="provider-chip" id="provider-chip">—</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="view-title">Overview</h1>
+        <div class="topbar-right">
+          <span class="model-chip" id="model-chip">—</span>
+          <span class="uptime" id="uptime-chip">up 0s</span>
+        </div>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section class="view active" id="view-overview">
+        <div class="stat-grid">
+          <div class="stat-card" data-goto="agents">
+            <div class="stat-value" id="stat-agents">0</div>
+            <div class="stat-label">active agents</div>
+            <div class="stat-sub" id="stat-agents-sub">0 working · max 0</div>
+          </div>
+          <div class="stat-card" data-goto="tasks">
+            <div class="stat-value" id="stat-running">0</div>
+            <div class="stat-label">tasks running</div>
+            <div class="stat-sub" id="stat-tasks-sub">0 done · 0 failed</div>
+          </div>
+          <div class="stat-card" data-goto="todos">
+            <div class="stat-value" id="stat-todos">0</div>
+            <div class="stat-label">open todos</div>
+            <div class="stat-sub" id="stat-todos-sub">0 completed</div>
+          </div>
+          <div class="stat-card" data-goto="approvals">
+            <div class="stat-value" id="stat-approvals">0</div>
+            <div class="stat-label">pending approvals</div>
+            <div class="stat-sub" id="stat-orch-sub">orchestrator idle</div>
+          </div>
+        </div>
+
+        <div class="overview-columns">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Capacity</h2>
+            </div>
+            <div class="capacity">
+              <div class="capacity-bar"><div class="capacity-fill" id="capacity-fill"></div></div>
+              <div class="capacity-label" id="capacity-label">0 / 0 agents</div>
+            </div>
+            <div class="quick-actions">
+              <button class="btn" id="qa-create">+ New agent</button>
+              <button class="btn" id="qa-fleet">+ Spawn fleet</button>
+              <button class="btn danger" id="qa-terminate-all">Terminate all</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Activity</h2>
+              <button class="btn ghost sm" id="clear-activity">clear</button>
+            </div>
+            <ul class="activity-feed" id="activity-feed"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- AGENTS -->
+      <section class="view" id="view-agents">
+        <div class="toolbar">
+          <button class="btn primary" id="btn-create-agent">+ New agent</button>
+          <button class="btn" id="btn-fleet">+ Spawn fleet</button>
+          <div class="toolbar-spacer"></div>
+          <input class="input search" id="agent-search" type="text" placeholder="filter agents…">
+          <button class="btn danger" id="btn-terminate-all">Terminate all</button>
+        </div>
+        <div class="agent-grid" id="agent-grid"></div>
+        <div class="empty" id="agents-empty">No agents running. Spawn one to get started.</div>
+      </section>
+
+      <!-- TASKS -->
+      <section class="view" id="view-tasks">
+        <div class="toolbar">
+          <span class="toolbar-title">Running</span>
+          <div class="toolbar-spacer"></div>
+          <button class="btn" id="btn-clear-tasks">Clear completed</button>
+        </div>
+        <div class="task-list" id="task-running"></div>
+        <div class="toolbar">
+          <span class="toolbar-title">Completed</span>
+        </div>
+        <div class="task-list" id="task-completed"></div>
+        <div class="empty" id="tasks-empty">No tasks yet. Hand work off to an agent.</div>
+      </section>
+
+      <!-- ORCHESTRATOR -->
+      <section class="view" id="view-orchestrator">
+        <div class="chat">
+          <div class="chat-log" id="chat-log"></div>
+          <div class="chat-stream" id="chat-stream" hidden>
+            <div class="chat-stream-head">
+              <span class="pulse-dot"></span> assistant is working
+              <span class="tool-chips" id="tool-chips"></span>
+            </div>
+            <pre id="chat-stream-text"></pre>
+          </div>
+          <form class="chat-input" id="chat-form">
+            <textarea id="chat-text" rows="2" placeholder="Instruct the orchestrator… (Enter to send, Shift+Enter for newline)"></textarea>
+            <div class="chat-buttons">
+              <button type="submit" class="btn primary" id="chat-send">Send</button>
+              <button type="button" class="btn danger" id="chat-cancel" hidden>Cancel</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- TODOS -->
+      <section class="view" id="view-todos">
+        <form class="todo-add" id="todo-form">
+          <input class="input" id="todo-title" type="text" placeholder="Add a todo…">
+          <select class="input select" id="todo-priority">
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+            <option value="low">low</option>
+          </select>
+          <button type="submit" class="btn primary">Add</button>
+        </form>
+        <div class="toolbar">
+          <div class="seg" id="todo-filter">
+            <button class="seg-item active" data-filter="all">all</button>
+            <button class="seg-item" data-filter="open">open</button>
+            <button class="seg-item" data-filter="done">done</button>
+          </div>
+          <div class="toolbar-spacer"></div>
+          <button class="btn" id="btn-clear-todos">Clear completed</button>
+        </div>
+        <ul class="todo-list" id="todo-list"></ul>
+        <div class="empty" id="todos-empty">Nothing here. Add your first todo above.</div>
+      </section>
+
+      <!-- SESSIONS -->
+      <section class="view" id="view-sessions">
+        <div class="toolbar">
+          <span class="toolbar-title">Chat history</span>
+          <div class="toolbar-spacer"></div>
+          <button class="btn" id="btn-refresh-sessions">Refresh</button>
+        </div>
+        <div class="session-list" id="session-list"></div>
+        <div class="empty" id="sessions-empty">No sessions recorded yet.</div>
+      </section>
+
+      <!-- APPROVALS -->
+      <section class="view" id="view-approvals">
+        <div class="approval-list" id="approval-list"></div>
+        <div class="empty" id="approvals-empty">No commands waiting for approval.</div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" id="view-settings">
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Limits</h2></div>
+          <label class="field">
+            <span>Max concurrent agents</span>
+            <div class="field-row">
+              <input class="input" id="setting-max-agents" type="number" min="1" max="200">
+              <button class="btn primary" id="save-max-agents">Apply</button>
+            </div>
+          </label>
+        </div>
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Safety</h2></div>
+          <label class="switch-row">
+            <span>Require command approval</span>
+            <input type="checkbox" id="setting-approval" class="switch">
+          </label>
+          <p class="hint">When enabled, shell commands run by agents wait in the Approvals tab until you allow them.</p>
+        </div>
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Provider</h2></div>
+          <div class="kv"><span>Provider</span><span id="setting-provider">—</span></div>
+          <div class="kv"><span>Model</span><span id="setting-model">—</span></div>
+          <p class="hint">Provider and model are configured at launch (or from the terminal UI).</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <div class="modal" id="modal">
+      <div class="modal-head">
+        <h3 id="modal-title">Modal</h3>
+        <button class="btn ghost sm" id="modal-close">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

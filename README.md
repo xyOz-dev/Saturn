@@ -114,6 +114,26 @@ On first launch Saturn checks that you are in a Git repository (and offers to cr
 
 Your conversation is saved automatically and can be reloaded from the chat menu in a later session. Model selection, temperature and other settings are configurable from within the UI and persist between runs.
 
+## Web UI
+
+Saturn also ships with a local web interface built for managing agents at scale:
+
+```bash
+saturn --web            # starts on http://localhost:5225 and opens your browser
+saturn --web --port 8080
+```
+
+The web UI runs instead of the terminal interface and gives you:
+
+- **Agent manager**: spawn agents individually or as a fleet (e.g. 30+ identical workers in one click), watch live status, hand off tasks, and terminate agents — the concurrent agent limit is adjustable at runtime from the Settings tab
+- **Task board**: running and completed tasks with full result output and durations
+- **Orchestrator chat**: talk to the root agent from the browser with streamed responses and live tool-call activity
+- **Todo list**: a persistent task list (stored in `.saturn/todos.json`) with priorities, inline editing and reordering
+- **Command approvals**: shell commands agents want to run appear in the Approvals tab for one-click approve/deny
+- **Session browser**: inspect saved chat history for the main agent and every sub-agent
+
+Everything updates in real time over server-sent events; no refresh needed.
+
 ## Building from Source
 
 ```bash

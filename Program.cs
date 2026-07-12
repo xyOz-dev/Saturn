@@ -35,6 +35,17 @@ namespace Saturn
                 }
 
                 var (agent, client) = await CreateAgent();
+
+                if (TryParseWebOptions(args, out var port))
+                {
+                    var server = new Saturn.Web.WebServer(agent, client, port);
+                    Console.WriteLine($"Saturn web UI running at {server.Url}");
+                    Console.WriteLine("Press Ctrl+C to stop.");
+                    TryOpenBrowser(server.Url);
+                    await server.RunAsync();
+                    return;
+                }
+
                 using var chatInterface = new ChatInterface(agent, client);
                 chatInterface.Initialize();
                 chatInterface.Run();
@@ -52,6 +63,43 @@ namespace Saturn
             }
         }
         
+
+        static bool TryParseWebOptions(string[] args, out int port)
+        {
+            port = 5225;
+            var webRequested = false;
+
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (args[i] is "--web" or "-w")
+                {
+                    webRequested = true;
+                }
+                else if (args[i] == "--port" && i + 1 < args.Length && int.TryParse(args[i + 1], out var parsed))
+                {
+                    port = parsed;
+                    i++;
+                }
+            }
+
+            return webRequested;
+        }
+
+        static void TryOpenBrowser(string url)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // Opening the browser is best-effort; the URL is printed either way.
+            }
+        }
 
         static async Task<(Agent, ILlmClientSource)> CreateAgent()
         {

@@ -23,7 +23,9 @@ namespace Saturn.Agents.MultiAgent
         private readonly ConcurrentDictionary<string, ReviewerContext> _reviewers;
         private readonly SemaphoreSlim _reviewerSemaphore = new SemaphoreSlim(25);
         private ILlmClientSource _clientSource = null!;
-        private const int MaxConcurrentAgents = 25;
+        private const int DefaultMaxConcurrentAgents = 50;
+        private const int AbsoluteMaxConcurrentAgents = 200;
+        private int _maxConcurrentAgents = DefaultMaxConcurrentAgents;
         private string? _parentSessionId;
         private string? _parentModel;
         private bool _parentEnableUserRules = true;
@@ -80,14 +82,14 @@ namespace Saturn.Agents.MultiAgent
             string? systemPromptOverride = null,
             bool? includeUserRules = null)
         {
-            if (_runningAgents.Count >= MaxConcurrentAgents)
+            if (_runningAgents.Count >= _maxConcurrentAgents)
             {
                 var runningTasks = _runningAgents
                     .Where(kvp => kvp.Value.CurrentTask != null)
                     .Select(kvp => kvp.Value.CurrentTask!.Id)
                     .ToList();
-                
-                return (false, $"Maximum concurrent agent limit ({MaxConcurrentAgents}) reached", runningTasks);
+
+                return (false, $"Maximum concurrent agent limit ({_maxConcurrentAgents}) reached", runningTasks);
             }
             
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
@@ -567,7 +569,22 @@ Your decision:";
         
         public int GetMaxConcurrentAgents()
         {
-            return MaxConcurrentAgents;
+            return _maxConcurrentAgents;
+        }
+
+        public void SetMaxConcurrentAgents(int value)
+        {
+            _maxConcurrentAgents = Math.Clamp(value, 1, AbsoluteMaxConcurrentAgents);
+        }
+
+        public IReadOnlyList<SubAgentContext> GetAgentContexts()
+        {
+            return _runningAgents.Values.ToList();
+        }
+
+        public IReadOnlyList<AgentTaskResult> GetCompletedTasks()
+        {
+            return _completedTasks.Values.ToList();
         }
     }
 }
