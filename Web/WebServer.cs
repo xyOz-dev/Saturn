@@ -14,7 +14,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Saturn.Agents;
 using Saturn.Agents.MultiAgent;
+using Saturn.Core.Tasks;
 using Saturn.Data;
+using Saturn.Data.Tasks;
 using Saturn.Providers;
 using Saturn.Tools.Core;
 
@@ -28,7 +30,7 @@ namespace Saturn.Web
         private readonly DateTime _startedAt = DateTime.UtcNow;
 
         private readonly EventHub _hub = new();
-        private readonly TodoStore _todos = new();
+        private readonly TaskStore _tasks = new();
         private readonly OrchestratorService _orchestrator;
         private readonly WebCommandApprovalService _approvals;
         private readonly ChatHistoryRepository _history = new();
@@ -47,6 +49,14 @@ namespace Saturn.Web
         public async Task RunAsync(CancellationToken cancellationToken = default)
         {
             CommandApprovalService.GlobalOverride = _approvals;
+            TaskSystem.Store = _tasks;
+            _tasks.OnTaskChanged += (change, task) =>
+                _hub.Publish("tasks.changed", new { taskId = task.Id, scope = task.Scope, board = task.Board, change });
+            var imported = await _tasks.ImportLegacyTodosAsync();
+            if (imported > 0)
+            {
+                Console.WriteLine($"Imported {imported} legacy todos into the task system.");
+            }
             WireAgentManagerEvents();
             await _orchestrator.RestoreTranscriptAsync(_history);
 
@@ -93,11 +103,11 @@ namespace Saturn.Web
             api.MapGet("/events", async (HttpContext context) =>
                 await _hub.StreamAsync(context.Response, context.RequestAborted));
 
-            api.MapGet("/overview", () =>
+            api.MapGet("/overview", async () =>
             {
                 var contexts = manager.GetAgentContexts();
                 var completed = manager.GetCompletedTasks();
-                var todos = _todos.GetAll();
+                var todos = (await _tasks.ListAsync()).Select(v => v.Task).ToList();
                 return Results.Ok(new
                 {
                     provider = _clientSource.ActiveProviderName,
@@ -119,8 +129,8 @@ namespace Saturn.Web
                     },
                     todos = new
                     {
-                        open = todos.Count(t => t.Status != "done"),
-                        done = todos.Count(t => t.Status == "done")
+                        open = todos.Count(t => !TaskStatuses.IsTerminal(t.Status)),
+                        done = todos.Count(t => TaskStatuses.IsTerminal(t.Status))
                     },
                     orchestratorBusy = _orchestrator.IsBusy,
                     pendingApprovals = _approvals.GetPending().Count
@@ -258,46 +268,144 @@ namespace Saturn.Web
                 }
             });
 
-            api.MapGet("/todos", () => Results.Ok(_todos.GetAll()));
-
-            api.MapPost("/todos", (TodoCreateRequest request) =>
+            api.MapGet("/todos", async (string? scope, string? board, string? status, bool? includeDone) =>
             {
-                if (string.IsNullOrWhiteSpace(request.Title))
-                {
-                    return Results.BadRequest(new { error = "title is required" });
-                }
-                var item = _todos.Add(request.Title, request.Notes, request.Priority);
-                _hub.Publish("todos.changed");
-                return Results.Ok(item);
+                var views = await _tasks.ListAsync(scope, board, status, includeDone ?? true);
+                return Results.Ok(views.Select(ProjectTaskView));
             });
 
-            api.MapPatch("/todos/{id}", (string id, TodoUpdateRequest request) =>
+            api.MapGet("/todos/boards", async () =>
             {
-                var item = _todos.Update(id, request.Title, request.Notes, request.Status, request.Priority, request.Order);
-                if (item == null)
-                {
-                    return Results.NotFound(new { error = $"Todo {id} not found" });
-                }
-                _hub.Publish("todos.changed");
-                return Results.Ok(item);
+                var projectBoards = await _tasks.GetBoardsAsync(TaskScopes.Project);
+                var agentBoards = await _tasks.GetBoardsAsync(TaskScopes.Agent);
+                return Results.Ok(new { project = projectBoards, agent = agentBoards });
             });
 
-            api.MapDelete("/todos/{id}", (string id) =>
+            api.MapGet("/todos/validate-cron", (string expr) =>
             {
-                if (!_todos.Delete(id))
+                if (!RecurrenceCalculator.TryParseCron(expr, out _))
                 {
-                    return Results.NotFound(new { error = $"Todo {id} not found" });
+                    return Results.Ok(new { valid = false, error = $"Invalid cron expression: '{expr}'" });
                 }
-                _hub.Publish("todos.changed");
-                return Results.Ok();
+                var nextRuns = new List<DateTime>();
+                var after = DateTime.UtcNow;
+                for (var i = 0; i < 3; i++)
+                {
+                    var next = RecurrenceCalculator.GetNextOccurrenceUtc(RecurrenceKinds.Cron, null, expr, after);
+                    if (next == null) break;
+                    nextRuns.Add(next.Value);
+                    after = next.Value;
+                }
+                return Results.Ok(new { valid = true, nextRuns });
             });
 
-            api.MapPost("/todos/clear-completed", () =>
+            api.MapGet("/todos/{id}", async (string id) =>
             {
-                var removed = _todos.ClearCompleted();
-                if (removed > 0)
+                var task = await _tasks.FindAsync(id);
+                if (task == null)
                 {
-                    _hub.Publish("todos.changed");
+                    return Results.NotFound(new { error = $"Task {id} not found" });
+                }
+                var view = await _tasks.BuildViewAsync(task);
+                var dependents = (await _tasks.Project.GetDependentsAsync(id))
+                    .Concat(await _tasks.Global.GetDependentsAsync(id)).Distinct().ToList();
+                var runs = await _tasks.RepoOf(task).GetRunsAsync(id);
+                var dispatches = await _tasks.Project.GetDispatchesForTaskAsync(id);
+                return Results.Ok(new
+                {
+                    task = ProjectTaskView(view),
+                    dependents,
+                    runs,
+                    dispatches
+                });
+            });
+
+            api.MapPost("/todos", async (TaskCreateRequest request) =>
+            {
+                try
+                {
+                    var task = await _tasks.CreateAsync(new TaskCreateSpec
+                    {
+                        Title = request.Title ?? "",
+                        Notes = request.Notes,
+                        Scope = request.Scope ?? TaskScopes.Project,
+                        Board = request.Board ?? "default",
+                        Priority = request.Priority ?? "normal",
+                        CreatedBy = "user",
+                        BlockedBy = request.BlockedBy ?? new List<string>(),
+                        RecurrenceKind = request.RecurrenceKind ?? RecurrenceKinds.None,
+                        RecurrenceIntervalSeconds = request.RecurrenceIntervalSeconds,
+                        RecurrenceCron = request.RecurrenceCron,
+                        CatchUpPolicy = request.CatchUpPolicy ?? CatchUpPolicies.RunOnce,
+                        AgentAvailable = request.AgentAvailable ?? false,
+                        RequiresApproval = request.RequiresApproval ?? false,
+                        UserHandoffOnly = request.UserHandoffOnly ?? false
+                    });
+                    return Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
+                }
+                catch (ArgumentException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
+            });
+
+            api.MapPatch("/todos/{id}", async (string id, TaskUpdateRequest request) =>
+            {
+                try
+                {
+                    var task = await _tasks.UpdateAsync(id, new TaskUpdateSpec
+                    {
+                        Title = request.Title,
+                        Notes = request.Notes,
+                        Status = request.Status,
+                        Priority = request.Priority,
+                        Scope = request.Scope,
+                        Board = request.Board,
+                        SortOrder = request.SortOrder,
+                        BlockedBy = request.BlockedBy,
+                        RecurrenceKind = request.RecurrenceKind,
+                        RecurrenceIntervalSeconds = request.RecurrenceIntervalSeconds,
+                        RecurrenceCron = request.RecurrenceCron,
+                        CatchUpPolicy = request.CatchUpPolicy,
+                        AgentAvailable = request.AgentAvailable,
+                        RequiresApproval = request.RequiresApproval,
+                        UserHandoffOnly = request.UserHandoffOnly
+                    });
+                    return task == null
+                        ? Results.NotFound(new { error = $"Task {id} not found" })
+                        : Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
+                }
+                catch (ArgumentException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
+            });
+
+            api.MapPost("/todos/{id}/complete", async (string id, TaskCompleteRequest request) =>
+            {
+                var task = await _tasks.CompleteAsync(id, request.Success ?? true, request.Note);
+                return task == null
+                    ? Results.NotFound(new { error = $"Task {id} not found" })
+                    : Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
+            });
+
+            api.MapDelete("/todos/{id}", async (string id) =>
+            {
+                return await _tasks.DeleteAsync(id)
+                    ? Results.Ok()
+                    : Results.NotFound(new { error = $"Task {id} not found" });
+            });
+
+            api.MapPost("/todos/clear-completed", async (string? scope, string? board) =>
+            {
+                var views = await _tasks.ListAsync(scope, board);
+                var removed = 0;
+                foreach (var view in views.Where(v => TaskStatuses.IsTerminal(v.Task.Status)))
+                {
+                    if (await _tasks.DeleteAsync(view.Task.Id))
+                    {
+                        removed++;
+                    }
                 }
                 return Results.Ok(new { removed });
             });
@@ -400,6 +508,42 @@ namespace Saturn.Web
                     requireCommandApproval = _rootAgent.Configuration.RequireCommandApproval
                 });
             });
+        }
+
+        private static object ProjectTaskView(TaskView view)
+        {
+            var t = view.Task;
+            return new
+            {
+                id = t.Id,
+                scope = t.Scope,
+                board = t.Board,
+                title = t.Title,
+                notes = t.Notes,
+                status = t.Status,
+                priority = t.Priority,
+                sortOrder = t.SortOrder,
+                createdBy = t.CreatedBy,
+                agentAvailable = t.AgentAvailable,
+                requiresApproval = t.RequiresApproval,
+                userHandoffOnly = t.UserHandoffOnly,
+                claimStatus = t.ClaimStatus,
+                claimedBy = t.ClaimedBy,
+                recurrenceKind = t.RecurrenceKind,
+                recurrenceIntervalSeconds = t.RecurrenceIntervalSeconds,
+                recurrenceCron = t.RecurrenceCron,
+                recurrenceDescription = view.RecurrenceDescription,
+                catchUpPolicy = t.CatchUpPolicy,
+                nextRunAt = t.NextRunAt,
+                lastRunAt = t.LastRunAt,
+                createdAt = t.CreatedAt,
+                updatedAt = t.UpdatedAt,
+                completedAt = t.CompletedAt,
+                blocked = view.Blocked,
+                blockedBy = view.BlockedBy,
+                dispatchedTo = view.DispatchedTo,
+                hasWaiters = view.HasWaiters
+            };
         }
 
         private object ProjectAgents()

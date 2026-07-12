@@ -12,9 +12,41 @@ namespace Saturn.Web
 
     public record HandOffRequest(string Task, Dictionary<string, object>? Context);
 
-    public record TodoCreateRequest(string Title, string? Notes, string? Priority);
+    public record TaskCreateRequest(
+        string Title,
+        string? Notes,
+        string? Scope,
+        string? Board,
+        string? Priority,
+        List<string>? BlockedBy,
+        string? RecurrenceKind,
+        int? RecurrenceIntervalSeconds,
+        string? RecurrenceCron,
+        string? CatchUpPolicy,
+        bool? AgentAvailable,
+        bool? RequiresApproval,
+        bool? UserHandoffOnly);
 
-    public record TodoUpdateRequest(string? Title, string? Notes, string? Status, string? Priority, int? Order);
+    public record TaskUpdateRequest(
+        string? Title,
+        string? Notes,
+        string? Status,
+        string? Priority,
+        string? Scope,
+        string? Board,
+        int? SortOrder,
+        List<string>? BlockedBy,
+        string? RecurrenceKind,
+        int? RecurrenceIntervalSeconds,
+        string? RecurrenceCron,
+        string? CatchUpPolicy,
+        bool? AgentAvailable,
+        bool? RequiresApproval,
+        bool? UserHandoffOnly);
+
+    public record TaskCompleteRequest(bool? Success, string? Note);
+
+    public record TaskDispatchRequest(string? AgentId);
 
     public record OrchestratorMessageRequest(string Message);
 

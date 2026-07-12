@@ -167,28 +167,40 @@
         </div>
       </section>
 
-      <!-- TODOS -->
+      <!-- TODOS / TASK MANAGER -->
       <section class="view" id="view-todos">
+        <div class="toolbar">
+          <div class="seg" id="todo-scope">
+            <button class="seg-item active" data-scope="all">all</button>
+            <button class="seg-item" data-scope="global">global</button>
+            <button class="seg-item" data-scope="project">project</button>
+            <button class="seg-item" data-scope="agent">agents</button>
+          </div>
+          <select class="input select" id="todo-board" hidden></select>
+          <div class="toolbar-spacer"></div>
+          <div class="seg" id="todo-filter">
+            <button class="seg-item active" data-filter="all">all</button>
+            <button class="seg-item" data-filter="open">open</button>
+            <button class="seg-item" data-filter="done">done</button>
+          </div>
+          <button class="btn" id="btn-clear-todos">Clear completed</button>
+        </div>
         <form class="todo-add" id="todo-form">
-          <input class="input" id="todo-title" type="text" placeholder="Add a todo…">
+          <input class="input" id="todo-title" type="text" placeholder="Add a task…">
+          <select class="input select" id="todo-add-scope">
+            <option value="project">project</option>
+            <option value="global">global</option>
+          </select>
           <select class="input select" id="todo-priority">
             <option value="normal">normal</option>
             <option value="high">high</option>
             <option value="low">low</option>
           </select>
           <button type="submit" class="btn primary">Add</button>
+          <button type="button" class="btn" id="btn-task-detail-add" title="create with full options">⋯</button>
         </form>
-        <div class="toolbar">
-          <div class="seg" id="todo-filter">
-            <button class="seg-item active" data-filter="all">all</button>
-            <button class="seg-item" data-filter="open">open</button>
-            <button class="seg-item" data-filter="done">done</button>
-          </div>
-          <div class="toolbar-spacer"></div>
-          <button class="btn" id="btn-clear-todos">Clear completed</button>
-        </div>
         <ul class="todo-list" id="todo-list"></ul>
-        <div class="empty" id="todos-empty">Nothing here. Add your first todo above.</div>
+        <div class="empty" id="todos-empty">Nothing here. Add your first task above.</div>
       </section>
 
       <!-- SESSIONS -->

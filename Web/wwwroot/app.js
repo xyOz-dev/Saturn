@@ -151,6 +151,8 @@ const state = {
   tasks: { running: [], completed: [] },
   todos: [],
   todoFilter: "all",
+  todoScope: "all",
+  todoBoard: null,
   sessions: [],
   approvals: [],
   transcript: [],
@@ -674,17 +676,60 @@ $("#chat-text").addEventListener("keydown", (e) => {
 
 $("#chat-cancel").addEventListener("click", () => api.post("/orchestrator/cancel").catch(() => {}));
 
-/* ---------- todos ---------- */
+/* ---------- todos / task manager ---------- */
+
+const TERMINAL_STATUSES = ["done", "failed", "cancelled"];
+const isTerminal = (status) => TERMINAL_STATUSES.includes(status);
 
 async function loadTodos() {
-  state.todos = await api.get("/todos");
+  const params = new URLSearchParams();
+  if (state.todoScope !== "all") params.set("scope", state.todoScope);
+  if (state.todoBoard) params.set("board", state.todoBoard);
+  state.todos = await api.get(`/todos?${params}`);
+  await loadBoards();
   renderTodos();
+}
+
+async function loadBoards() {
+  const showBoards = state.todoScope === "project" || state.todoScope === "agent";
+  const select = $("#todo-board");
+  select.hidden = !showBoards;
+  if (!showBoards) {
+    state.todoBoard = null;
+    return;
+  }
+  try {
+    const boards = await api.get("/todos/boards");
+    const list = state.todoScope === "project" ? boards.project : boards.agent;
+    select.innerHTML =
+      `<option value="">all boards</option>` +
+      list.map((b) => `<option value="${esc(b)}" ${b === state.todoBoard ? "selected" : ""}>${esc(b)}</option>`).join("");
+  } catch {
+    select.innerHTML = `<option value="">all boards</option>`;
+  }
+}
+
+function taskBadges(t) {
+  const badges = [];
+  if (t.blocked) {
+    const blockers = t.blockedBy.filter((b) => !TERMINAL_STATUSES.includes(b.status) || b.missing);
+    badges.push(`<button class="task-badge alert" data-blockers="${esc(t.id)}" title="${esc(blockers.map((b) => b.title).join(", "))}">blocked (${blockers.length})</button>`);
+  }
+  if (t.dispatchedTo) badges.push(`<span class="task-badge live">→ ${esc(t.dispatchedTo)}</span>`);
+  if (t.hasWaiters) badges.push(`<span class="task-badge">waiting</span>`);
+  if (t.claimStatus === "pending_approval") badges.push(`<span class="task-badge alert">claim pending</span>`);
+  if (t.recurrenceDescription) badges.push(`<span class="task-badge">${esc(t.recurrenceDescription)}</span>`);
+  const flags = [];
+  if (t.agentAvailable) flags.push(`<span class="task-flag" title="agents may take this task">A</span>`);
+  if (t.requiresApproval) flags.push(`<span class="task-flag" title="requires your approval to claim">⚿</span>`);
+  if (t.userHandoffOnly) flags.push(`<span class="task-flag" title="only you can hand this off">✋</span>`);
+  return badges.join("") + flags.join("");
 }
 
 function renderTodos() {
   const filtered = state.todos.filter((t) => {
-    if (state.todoFilter === "open") return t.status !== "done";
-    if (state.todoFilter === "done") return t.status === "done";
+    if (state.todoFilter === "open") return !isTerminal(t.status);
+    if (state.todoFilter === "done") return isTerminal(t.status);
     return true;
   });
 
@@ -693,23 +738,31 @@ function renderTodos() {
   $("#todo-list").innerHTML = filtered
     .map(
       (t, i) => `
-      <li class="todo-item ${t.status === "done" ? "done" : ""}" style="animation-delay:${Math.min(i * 0.02, 0.3)}s">
-        <input type="checkbox" class="todo-check" data-id="${esc(t.id)}" ${t.status === "done" ? "checked" : ""}>
+      <li class="todo-item ${isTerminal(t.status) ? "done" : ""} ${t.blocked ? "blocked" : ""}" style="animation-delay:${Math.min(i * 0.02, 0.3)}s">
+        <input type="checkbox" class="todo-check" data-id="${esc(t.id)}" ${isTerminal(t.status) ? "checked" : ""} ${t.blocked ? "disabled" : ""}>
         <span class="todo-title" contenteditable="true" spellcheck="false" data-id="${esc(t.id)}">${esc(t.title)}</span>
+        <span class="task-badges">${taskBadges(t)}</span>
+        ${state.todoScope === "all" ? `<span class="task-scope">${esc(t.scope)}${t.board !== "default" ? `/${esc(t.board)}` : ""}</span>` : ""}
         <button class="todo-pri ${esc(t.priority)}" data-id="${esc(t.id)}" data-pri="${esc(t.priority)}" title="cycle priority">${esc(t.priority)}</button>
-        <span class="todo-move">
-          <button data-move-up="${esc(t.id)}" title="move up">▲</button>
-          <button data-move-down="${esc(t.id)}" title="move down">▼</button>
-        </span>
+        <button class="btn ghost sm" data-edit="${esc(t.id)}" title="edit">✎</button>
         <button class="todo-del" data-del="${esc(t.id)}" title="delete">✕</button>
       </li>`
     )
     .join("");
 
   $$(".todo-check").forEach((c) =>
-    c.addEventListener("change", () =>
-      updateTodo(c.dataset.id, { status: c.checked ? "done" : "pending" })
-    )
+    c.addEventListener("change", async () => {
+      try {
+        if (c.checked) {
+          await api.post(`/todos/${c.dataset.id}/complete`, {});
+        } else {
+          await api.patch(`/todos/${c.dataset.id}`, { status: "pending" });
+        }
+        await Promise.all([loadTodos(), loadOverview()]);
+      } catch (err) {
+        toast(`<b>Error:</b> ${esc(err.message)}`);
+      }
+    })
   );
 
   $$(".todo-title[contenteditable]").forEach((el) => {
@@ -734,8 +787,26 @@ function renderTodos() {
     })
   );
 
-  $$("[data-move-up]").forEach((b) => b.addEventListener("click", () => moveTodo(b.dataset.moveUp, -1)));
-  $$("[data-move-down]").forEach((b) => b.addEventListener("click", () => moveTodo(b.dataset.moveDown, 1)));
+  $$("[data-blockers]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const t = state.todos.find((x) => x.id === b.dataset.blockers);
+      if (!t) return;
+      openModal(
+        `Blocked: ${t.title}`,
+        `<div class="msg-view">${t.blockedBy
+          .map(
+            (blocker) => `
+            <div class="msg-row">
+              <div class="msg-role">${esc(blocker.status)}${blocker.missing ? " · deleted" : ""}</div>
+              <div class="msg-content">${esc(blocker.title)} <span class="hint">(${esc(blocker.id)})</span></div>
+            </div>`
+          )
+          .join("")}</div>`
+      );
+    })
+  );
+
+  $$("[data-edit]").forEach((b) => b.addEventListener("click", () => openTaskModal(b.dataset.edit)));
 
   $$("[data-del]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -754,22 +825,141 @@ async function updateTodo(id, patch) {
   }
 }
 
-function moveTodo(id, delta) {
-  const ordered = [...state.todos].sort((a, b) => a.order - b.order);
-  const index = ordered.findIndex((t) => t.id === id);
-  if (index < 0) return;
-  const target = index + delta;
-  if (target < 0 || target >= ordered.length) return;
-  updateTodo(id, { order: target });
+function openTaskModal(taskId) {
+  const t = taskId ? state.todos.find((x) => x.id === taskId) : null;
+  const openTasks = state.todos.filter((x) => !isTerminal(x.status) && x.id !== taskId);
+  const currentDeps = t ? t.blockedBy.map((b) => b.id) : [];
+
+  openModal(
+    t ? `Edit task` : "New task",
+    `
+    <label class="field"><span>Title</span><input class="input" id="tm-title" style="width:100%" value="${esc(t?.title || "")}"></label>
+    <label class="field"><span>Notes</span><textarea class="input" id="tm-notes" rows="2" style="width:100%">${esc(t?.notes || "")}</textarea></label>
+    <div class="field-row" style="margin-bottom:14px">
+      <label class="field" style="flex:1;margin:0"><span>Scope</span>
+        <select class="input select" id="tm-scope" style="width:100%">
+          ${["project", "global", "agent"].map((s) => `<option value="${s}" ${(t?.scope || "project") === s ? "selected" : ""}>${s}</option>`).join("")}
+        </select></label>
+      <label class="field" style="flex:1;margin:0"><span>Board</span><input class="input" id="tm-board" style="width:100%" value="${esc(t?.board || "default")}"></label>
+      <label class="field" style="flex:1;margin:0"><span>Priority</span>
+        <select class="input select" id="tm-priority" style="width:100%">
+          ${["normal", "high", "low"].map((p) => `<option value="${p}" ${(t?.priority || "normal") === p ? "selected" : ""}>${p}</option>`).join("")}
+        </select></label>
+    </div>
+    <div class="field"><span style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Flags</span>
+      <label class="check-row"><input type="checkbox" id="tm-agent-available" ${t?.agentAvailable ? "checked" : ""}> agent available — orchestrator may dispatch this to agents</label>
+      <label class="check-row"><input type="checkbox" id="tm-requires-approval" ${t?.requiresApproval ? "checked" : ""}> requires my approval before the orchestrator takes it</label>
+      <label class="check-row"><input type="checkbox" id="tm-user-handoff" ${t?.userHandoffOnly ? "checked" : ""}> wait for me to hand off — never auto-taken</label>
+    </div>
+    <div class="field"><span style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">Blocked by</span>
+      <div class="dep-picker" id="tm-deps">
+        ${openTasks.length === 0 ? '<span class="hint">no open tasks to depend on</span>' : openTasks
+          .map(
+            (x) => `<label class="check-row"><input type="checkbox" data-dep="${esc(x.id)}" ${currentDeps.includes(x.id) ? "checked" : ""}> ${esc(x.title)} <span class="hint">${esc(x.scope)}</span></label>`
+          )
+          .join("")}
+      </div>
+    </div>
+    <div class="field-row" style="margin-bottom:14px">
+      <label class="field" style="flex:1;margin:0"><span>Recurrence</span>
+        <select class="input select" id="tm-recur-kind" style="width:100%">
+          ${["none", "interval", "cron"].map((k) => `<option value="${k}" ${(t?.recurrenceKind || "none") === k ? "selected" : ""}>${k}</option>`).join("")}
+        </select></label>
+      <label class="field" style="flex:1;margin:0"><span>Every N minutes</span><input class="input" id="tm-recur-interval" type="number" min="1" style="width:100%" value="${t?.recurrenceIntervalSeconds ? Math.round(t.recurrenceIntervalSeconds / 60) : ""}"></label>
+    </div>
+    <label class="field"><span>Cron expression (advanced)</span><input class="input" id="tm-recur-cron" style="width:100%" placeholder="0 9 * * 1-5" value="${esc(t?.recurrenceCron || "")}"><span class="hint" id="tm-cron-preview"></span></label>
+    <div class="modal-actions">
+      <button class="btn" id="tm-cancel">Cancel</button>
+      <button class="btn primary" id="tm-save">${t ? "Save" : "Create"}</button>
+    </div>`
+  );
+
+  const cronInput = $("#tm-recur-cron");
+  cronInput.addEventListener("input", async () => {
+    const expr = cronInput.value.trim();
+    if (!expr) {
+      $("#tm-cron-preview").textContent = "";
+      return;
+    }
+    try {
+      const r = await api.get(`/todos/validate-cron?expr=${encodeURIComponent(expr)}`);
+      $("#tm-cron-preview").textContent = r.valid
+        ? `next: ${r.nextRuns.map((d) => new Date(d).toLocaleString()).join(" · ")}`
+        : r.error;
+    } catch {
+      $("#tm-cron-preview").textContent = "";
+    }
+  });
+
+  $("#tm-cancel").addEventListener("click", closeModal);
+  $("#tm-save").addEventListener("click", async () => {
+    const kind = $("#tm-recur-kind").value;
+    const intervalMinutes = parseInt($("#tm-recur-interval").value, 10);
+    const payload = {
+      title: $("#tm-title").value.trim(),
+      notes: $("#tm-notes").value,
+      scope: $("#tm-scope").value,
+      board: $("#tm-board").value.trim() || "default",
+      priority: $("#tm-priority").value,
+      agentAvailable: $("#tm-agent-available").checked,
+      requiresApproval: $("#tm-requires-approval").checked,
+      userHandoffOnly: $("#tm-user-handoff").checked,
+      blockedBy: $$("#tm-deps [data-dep]").filter((c) => c.checked).map((c) => c.dataset.dep),
+      recurrenceKind: kind,
+      recurrenceIntervalSeconds: kind === "interval" && intervalMinutes ? intervalMinutes * 60 : null,
+      recurrenceCron: kind === "cron" ? cronInput.value.trim() : null,
+    };
+    if (!payload.title) {
+      toast("<b>Title is required</b>");
+      return;
+    }
+    $("#tm-save").disabled = true;
+    try {
+      if (t) {
+        await api.patch(`/todos/${t.id}`, payload);
+      } else {
+        await api.post("/todos", payload);
+      }
+      closeModal();
+      await Promise.all([loadTodos(), loadOverview()]);
+    } catch (err) {
+      toast(`<b>Error:</b> ${esc(err.message)}`);
+      $("#tm-save").disabled = false;
+    }
+  });
 }
 
 $("#todo-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const title = $("#todo-title").value.trim();
   if (!title) return;
-  await api.post("/todos", { title, priority: $("#todo-priority").value });
-  $("#todo-title").value = "";
-  await Promise.all([loadTodos(), loadOverview()]);
+  try {
+    await api.post("/todos", {
+      title,
+      priority: $("#todo-priority").value,
+      scope: $("#todo-add-scope").value,
+    });
+    $("#todo-title").value = "";
+    await Promise.all([loadTodos(), loadOverview()]);
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+$("#btn-task-detail-add").addEventListener("click", () => openTaskModal(null));
+
+$("#todo-scope").addEventListener("click", (e) => {
+  const btn = e.target.closest(".seg-item");
+  if (!btn) return;
+  state.todoScope = btn.dataset.scope;
+  state.todoBoard = null;
+  $$("#todo-scope .seg-item").forEach((b) => b.classList.toggle("active", b === btn));
+  loadTodos().catch(() => {});
+});
+
+$("#todo-board").addEventListener("change", (e) => {
+  state.todoBoard = e.target.value || null;
+  loadTodos().catch(() => {});
 });
 
 $("#todo-filter").addEventListener("click", (e) => {
@@ -781,8 +971,10 @@ $("#todo-filter").addEventListener("click", (e) => {
 });
 
 $("#btn-clear-todos").addEventListener("click", async () => {
-  const r = await api.post("/todos/clear-completed");
-  toast(`Removed <b>${r.removed}</b> completed todos`);
+  const params = new URLSearchParams();
+  if (state.todoScope !== "all") params.set("scope", state.todoScope);
+  const r = await api.post(`/todos/clear-completed?${params}`);
+  toast(`Removed <b>${r.removed}</b> completed tasks`);
   await Promise.all([loadTodos(), loadOverview()]);
 });
 
