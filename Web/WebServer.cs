@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Saturn.Agents;
 using Saturn.Agents.MultiAgent;
+using Saturn.Core.Approvals;
 using Saturn.Core.Tasks;
 using Saturn.Data;
 using Saturn.Data.Tasks;
@@ -37,6 +38,8 @@ namespace Saturn.Web
         private readonly Saturn.Config.TaskSystemSettings _taskSettings = Saturn.Config.TaskSystemSettings.Load();
         private readonly TaskCoordinator _coordinator;
         private readonly TaskSchedulerService _scheduler;
+        private readonly CommandJudge _judge;
+        private readonly ApprovalCoordinator _approvalCoordinator;
 
         public WebServer(Agent rootAgent, ILlmClientSource clientSource, int port)
         {
@@ -44,16 +47,24 @@ namespace Saturn.Web
             _clientSource = clientSource;
             _port = port;
             _orchestrator = new OrchestratorService(rootAgent, _hub);
-            _approvals = new WebCommandApprovalService(_hub);
+            _approvals = new WebCommandApprovalService(_hub, _taskSettings);
             _coordinator = new TaskCoordinator(_tasks, _orchestrator, _hub, _taskSettings);
             _scheduler = new TaskSchedulerService(_coordinator, _taskSettings);
+            _judge = new CommandJudge(clientSource, () => _rootAgent.Configuration.Model);
+            _approvalCoordinator = new ApprovalCoordinator(_approvals, _judge, _taskSettings, _hub, _tasks);
+            _coordinator.OnClaimApprovalNeeded = task =>
+            {
+                _approvalCoordinator.RequestTaskClaimApproval(task,
+                    approved => _ = _coordinator.ResolveClaimAsync(task.Id, approved));
+                return Task.CompletedTask;
+            };
         }
 
         public string Url => $"http://localhost:{_port}";
 
         public async Task RunAsync(CancellationToken cancellationToken = default)
         {
-            CommandApprovalService.GlobalOverride = _approvals;
+            CommandApprovalService.GlobalOverride = _approvalCoordinator;
             TaskSystem.Store = _tasks;
             TaskSystem.Coordinator = _coordinator;
             _tasks.OnTaskChanged += (change, task) =>
@@ -522,13 +533,20 @@ namespace Saturn.Web
                 }));
             });
 
-            api.MapGet("/settings", () => Results.Ok(new
+            object CurrentSettings() => new
             {
                 maxConcurrentAgents = manager.GetMaxConcurrentAgents(),
                 requireCommandApproval = _rootAgent.Configuration.RequireCommandApproval,
+                trustMode = _taskSettings.TrustMode,
+                judgeEnabled = _taskSettings.JudgeEnabled,
+                approvalTimeoutMinutes = _taskSettings.ApprovalTimeoutMinutes,
+                schedulerIntervalSeconds = _taskSettings.SchedulerIntervalSeconds,
+                maxWakesPerHour = _taskSettings.MaxWakesPerHour,
                 provider = _clientSource.ActiveProviderName,
                 model = _rootAgent.Configuration.Model
-            }));
+            };
+
+            api.MapGet("/settings", () => Results.Ok(CurrentSettings()));
 
             api.MapPut("/settings", (SettingsUpdateRequest request) =>
             {
@@ -540,16 +558,20 @@ namespace Saturn.Web
                 {
                     _rootAgent.Configuration.RequireCommandApproval = request.RequireCommandApproval.Value;
                 }
-                _hub.Publish("settings.changed", new
+
+                var taskSettingsChanged = false;
+                if (request.TrustMode.HasValue) { _taskSettings.TrustMode = request.TrustMode.Value; taskSettingsChanged = true; }
+                if (request.JudgeEnabled.HasValue) { _taskSettings.JudgeEnabled = request.JudgeEnabled.Value; taskSettingsChanged = true; }
+                if (request.ApprovalTimeoutMinutes.HasValue) { _taskSettings.ApprovalTimeoutMinutes = Math.Max(0, request.ApprovalTimeoutMinutes.Value); taskSettingsChanged = true; }
+                if (request.SchedulerIntervalSeconds.HasValue) { _taskSettings.SchedulerIntervalSeconds = Math.Max(5, request.SchedulerIntervalSeconds.Value); taskSettingsChanged = true; }
+                if (request.MaxWakesPerHour.HasValue) { _taskSettings.MaxWakesPerHour = Math.Max(1, request.MaxWakesPerHour.Value); taskSettingsChanged = true; }
+                if (taskSettingsChanged)
                 {
-                    maxConcurrentAgents = manager.GetMaxConcurrentAgents(),
-                    requireCommandApproval = _rootAgent.Configuration.RequireCommandApproval
-                });
-                return Results.Ok(new
-                {
-                    maxConcurrentAgents = manager.GetMaxConcurrentAgents(),
-                    requireCommandApproval = _rootAgent.Configuration.RequireCommandApproval
-                });
+                    _taskSettings.Save();
+                }
+
+                _hub.Publish("settings.changed", CurrentSettings());
+                return Results.Ok(CurrentSettings());
             });
         }
 

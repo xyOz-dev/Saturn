@@ -52,5 +52,12 @@ namespace Saturn.Web
 
     public record ApprovalDecisionRequest(bool Approved);
 
-    public record SettingsUpdateRequest(int? MaxConcurrentAgents, bool? RequireCommandApproval);
+    public record SettingsUpdateRequest(
+        int? MaxConcurrentAgents,
+        bool? RequireCommandApproval,
+        bool? TrustMode,
+        bool? JudgeEnabled,
+        int? ApprovalTimeoutMinutes,
+        int? SchedulerIntervalSeconds,
+        int? MaxWakesPerHour);
 }

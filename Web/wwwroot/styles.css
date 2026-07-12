@@ -213,6 +213,7 @@ textarea.input { resize: vertical; font-family: inherit; }
 .field-row .input { flex: 1; }
 
 .switch-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; cursor: pointer; }
+.switch-row.danger-row span::before { content: "⚠ "; color: var(--white); }
 .switch {
   appearance: none;
   width: 40px; height: 22px;

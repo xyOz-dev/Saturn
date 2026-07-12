@@ -4,69 +4,101 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Saturn.Tools.Core;
+using Saturn.Config;
 
 namespace Saturn.Web
 {
-    public class PendingCommandApproval
+    public class PendingApprovalItem
     {
         public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
-        public string Command { get; init; } = "";
-        public string WorkingDirectory { get; init; } = "";
+        public string Type { get; init; } = "command";
+        public string Title { get; init; } = "";
+        public string? Detail { get; init; }
+        public string? Command { get; init; }
+        public string? WorkingDirectory { get; init; }
+        public string? TaskId { get; init; }
+        public string? AgentName { get; init; }
         public DateTime RequestedAt { get; init; } = DateTime.UtcNow;
     }
 
-    public class WebCommandApprovalService : ICommandApprovalService
+    // User-facing approval queue (web UI Approvals tab): blocking command
+    // approvals and non-blocking decision requests (e.g. task claims).
+    public class WebCommandApprovalService
     {
-        private static readonly TimeSpan ApprovalTimeout = TimeSpan.FromMinutes(10);
-
         private readonly EventHub _hub;
-        private readonly ConcurrentDictionary<string, (PendingCommandApproval Request, TaskCompletionSource<bool> Completion)> _pending = new();
+        private readonly TaskSystemSettings _settings;
+        private readonly ConcurrentDictionary<string, (PendingApprovalItem Item, TaskCompletionSource<bool>? Completion, Action<bool>? OnResolved)> _pending = new();
 
-        public WebCommandApprovalService(EventHub hub)
+        public WebCommandApprovalService(EventHub hub, TaskSystemSettings settings)
         {
             _hub = hub;
+            _settings = settings;
         }
 
-        public List<PendingCommandApproval> GetPending()
+        public List<PendingApprovalItem> GetPending()
         {
-            return _pending.Values.Select(p => p.Request).OrderBy(r => r.RequestedAt).ToList();
+            return _pending.Values.Select(p => p.Item).OrderBy(i => i.RequestedAt).ToList();
         }
 
-        public async Task<bool> RequestApprovalAsync(string command, string workingDirectory)
+        public async Task<bool> RequestCommandApprovalAsync(string command, string workingDirectory, string? agentName, string? detail)
         {
-            var request = new PendingCommandApproval
+            var item = new PendingApprovalItem
             {
+                Type = "command",
+                Title = agentName != null ? $"Shell command from {agentName}" : "Shell command",
+                Detail = detail,
                 Command = command,
-                WorkingDirectory = workingDirectory
+                WorkingDirectory = workingDirectory,
+                AgentName = agentName
             };
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pending[request.Id] = (request, completion);
+            _pending[item.Id] = (item, completion, null);
+            _hub.Publish("approval.requested", item);
 
-            _hub.Publish("approval.requested", request);
+            var timeoutMinutes = _settings.ApprovalTimeoutMinutes;
+            if (timeoutMinutes <= 0)
+            {
+                // Long-horizon mode: wait for the user indefinitely.
+                return await completion.Task;
+            }
 
-            using var cts = new CancellationTokenSource(ApprovalTimeout);
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(timeoutMinutes));
             await using var registration = cts.Token.Register(() =>
             {
-                if (_pending.TryRemove(request.Id, out var entry))
+                if (_pending.TryRemove(item.Id, out var entry))
                 {
-                    entry.Completion.TrySetResult(false);
-                    _hub.Publish("approval.resolved", new { id = request.Id, approved = false, reason = "timeout" });
+                    entry.Completion?.TrySetResult(false);
+                    _hub.Publish("approval.resolved", new { id = item.Id, approved = false, resolvedBy = "timeout" });
                 }
             });
-
             return await completion.Task;
+        }
+
+        public string RequestDecision(PendingApprovalItem item, Action<bool> onResolved)
+        {
+            _pending[item.Id] = (item, null, onResolved);
+            _hub.Publish("approval.requested", item);
+            return item.Id;
         }
 
         public bool Resolve(string id, bool approved)
         {
-            if (_pending.TryRemove(id, out var entry))
+            if (!_pending.TryRemove(id, out var entry))
             {
-                entry.Completion.TrySetResult(approved);
-                _hub.Publish("approval.resolved", new { id, approved, reason = "user" });
-                return true;
+                return false;
             }
-            return false;
+
+            entry.Completion?.TrySetResult(approved);
+            try
+            {
+                entry.OnResolved?.Invoke(approved);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Approval callback error: {ex.Message}");
+            }
+            _hub.Publish("approval.resolved", new { id, approved, resolvedBy = "user" });
+            return true;
         }
     }
 }

@@ -221,6 +221,18 @@ $("#clear-activity").addEventListener("click", () => {
   renderActivity();
 });
 
+const decisionLog = [];
+function logDecision(html) {
+  decisionLog.unshift({ time: new Date(), html });
+  if (decisionLog.length > 50) decisionLog.pop();
+  const el = $("#decision-log");
+  if (el) {
+    el.innerHTML = decisionLog
+      .map((d) => `<li><span class="activity-time">${d.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span><span class="activity-text">${d.html}</span></li>`)
+      .join("");
+  }
+}
+
 /* ---------- overview ---------- */
 
 async function loadOverview() {
@@ -1049,8 +1061,11 @@ function renderApprovals() {
     .map(
       (a) => `
       <div class="approval-card">
-        <div class="approval-meta">requested ${fmtTime(a.requestedAt)} · in ${esc(a.workingDirectory)}</div>
-        <div class="approval-command">${esc(a.command)}</div>
+        <div class="approval-meta">${a.type === "task_claim" ? "TASK CLAIM" : "COMMAND"} · requested ${fmtTime(a.requestedAt)}${a.agentName ? ` · ${esc(a.agentName)}` : ""}${a.workingDirectory ? ` · in ${esc(a.workingDirectory)}` : ""}</div>
+        <div style="margin-top:8px;font-weight:600">${esc(a.title)}</div>
+        ${a.detail ? `<div class="hint" style="margin-top:4px">${esc(a.detail)}</div>` : ""}
+        ${a.command ? `<div class="approval-command">${esc(a.command)}</div>` : ""}
+        ${a.taskId ? `<div class="approval-meta" style="margin-top:6px">task: ${esc(a.taskId)}</div>` : ""}
         <div class="approval-actions">
           <button class="btn primary" data-approve="${esc(a.id)}">Approve</button>
           <button class="btn danger" data-deny="${esc(a.id)}">Deny</button>
@@ -1083,21 +1098,74 @@ async function loadSettings() {
   state.settings = s;
   $("#setting-max-agents").value = s.maxConcurrentAgents;
   $("#setting-approval").checked = s.requireCommandApproval;
+  $("#setting-trust").checked = s.trustMode;
+  $("#setting-judge").checked = s.judgeEnabled;
+  $("#setting-judge").disabled = s.trustMode;
+  $("#setting-approval-timeout").value = s.approvalTimeoutMinutes;
+  $("#setting-scheduler-interval").value = s.schedulerIntervalSeconds;
+  $("#setting-max-wakes").value = s.maxWakesPerHour;
   $("#setting-provider").textContent = s.provider;
   $("#setting-model").textContent = s.model || "—";
+}
+
+async function putSetting(patch, message) {
+  try {
+    const r = await api.put("/settings", patch);
+    state.settings = r;
+    if (message) toast(message);
+    return r;
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+    await loadSettings();
+    return null;
+  }
 }
 
 $("#save-max-agents").addEventListener("click", async () => {
   const value = parseInt($("#setting-max-agents").value, 10);
   if (!value || value < 1) return;
-  const r = await api.put("/settings", { maxConcurrentAgents: value });
-  toast(`Max concurrent agents set to <b>${r.maxConcurrentAgents}</b>`);
+  const r = await putSetting({ maxConcurrentAgents: value });
+  if (r) toast(`Max concurrent agents set to <b>${r.maxConcurrentAgents}</b>`);
   await loadOverview();
 });
 
-$("#setting-approval").addEventListener("change", async (e) => {
-  const r = await api.put("/settings", { requireCommandApproval: e.target.checked });
-  toast(`Command approval ${r.requireCommandApproval ? "<b>enabled</b>" : "<b>disabled</b>"}`);
+$("#setting-approval").addEventListener("change", (e) =>
+  putSetting({ requireCommandApproval: e.target.checked },
+    `Command approval ${e.target.checked ? "<b>enabled</b>" : "<b>disabled</b>"}`)
+);
+
+$("#setting-trust").addEventListener("change", async (e) => {
+  if (e.target.checked && !confirm("Trust mode auto-approves EVERY shell command from every agent. Enable?")) {
+    e.target.checked = false;
+    return;
+  }
+  await putSetting({ trustMode: e.target.checked },
+    e.target.checked ? "<b>Trust mode ON</b> — all commands auto-approve" : "Trust mode off");
+  $("#setting-judge").disabled = e.target.checked;
+});
+
+$("#setting-judge").addEventListener("change", (e) =>
+  putSetting({ judgeEnabled: e.target.checked },
+    `Command judge ${e.target.checked ? "<b>enabled</b>" : "<b>disabled</b>"}`)
+);
+
+$("#save-approval-timeout").addEventListener("click", () => {
+  const v = parseInt($("#setting-approval-timeout").value, 10);
+  if (isNaN(v) || v < 0) return;
+  putSetting({ approvalTimeoutMinutes: v },
+    v === 0 ? "Approvals now <b>wait forever</b>" : `Approval timeout set to <b>${v}m</b>`);
+});
+
+$("#save-scheduler-interval").addEventListener("click", () => {
+  const v = parseInt($("#setting-scheduler-interval").value, 10);
+  if (!v || v < 5) return;
+  putSetting({ schedulerIntervalSeconds: v }, `Scheduler interval saved (<b>${v}s</b> after restart)`);
+});
+
+$("#save-max-wakes").addEventListener("click", () => {
+  const v = parseInt($("#setting-max-wakes").value, 10);
+  if (!v || v < 1) return;
+  putSetting({ maxWakesPerHour: v }, `Max wakes per hour set to <b>${v}</b>`);
 });
 
 /* ---------- SSE ---------- */
@@ -1163,12 +1231,22 @@ function connectEvents() {
 
   es.addEventListener("approval.requested", (e) => {
     const d = JSON.parse(e.data);
-    logActivity(`approval requested: <b>${esc(d.command.slice(0, 60))}</b>`);
-    toast(`<b>Approval needed:</b> ${esc(d.command.slice(0, 80))}`, 6000);
+    const what = d.command || d.title || "decision";
+    logActivity(`approval requested: <b>${esc(what.slice(0, 60))}</b>`);
+    toast(`<b>Approval needed:</b> ${esc(what.slice(0, 80))}`, 6000);
     refreshIf(["approvals"], [loadApprovals]);
   });
 
-  es.addEventListener("approval.resolved", () => refreshIf(["approvals"], [loadApprovals]));
+  es.addEventListener("approval.resolved", (e) => {
+    const d = JSON.parse(e.data);
+    logDecision(`${d.approved ? "approved" : "denied"} by <b>${esc(d.resolvedBy || "user")}</b>${d.command ? `: ${esc(d.command.slice(0, 70))}` : ""}${d.reason ? ` — ${esc(d.reason.slice(0, 80))}` : ""}`);
+    refreshIf(["approvals"], [loadApprovals]);
+  });
+
+  es.addEventListener("approval.judged", (e) => {
+    const d = JSON.parse(e.data);
+    logActivity(`judge ${esc(d.decision)}: <b>${esc((d.command || "").slice(0, 50))}</b> (${esc(d.agentName || "?")})`);
+  });
 
   es.addEventListener("orchestrator.state", (e) => {
     const d = JSON.parse(e.data);

@@ -288,11 +288,19 @@ Operating Principles
                 },
             };
 
+            var defaultToolNames = agentConfig.ToolNames.ToList();
+
             if (persistedConfig != null)
             {
                 ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
 
                 agentConfig.Model = model;
+
+                // Persisted configs can predate newly added built-in tools; make
+                // sure the root agent always sees the current default set.
+                agentConfig.ToolNames = agentConfig.ToolNames
+                    .Union(defaultToolNames, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
             }
             else
             {

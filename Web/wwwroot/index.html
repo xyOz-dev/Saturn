@@ -217,7 +217,11 @@
       <!-- APPROVALS -->
       <section class="view" id="view-approvals">
         <div class="approval-list" id="approval-list"></div>
-        <div class="empty" id="approvals-empty">No commands waiting for approval.</div>
+        <div class="empty" id="approvals-empty">Nothing waiting for approval.</div>
+        <div class="toolbar" style="margin-top:26px">
+          <span class="toolbar-title">Recent decisions</span>
+        </div>
+        <ul class="activity-feed" id="decision-log"></ul>
       </section>
 
       <!-- SETTINGS -->
@@ -233,12 +237,44 @@
           </label>
         </div>
         <div class="panel narrow">
-          <div class="panel-head"><h2>Safety</h2></div>
+          <div class="panel-head"><h2>Safety &amp; Autonomy</h2></div>
           <label class="switch-row">
             <span>Require command approval</span>
             <input type="checkbox" id="setting-approval" class="switch">
           </label>
-          <p class="hint">When enabled, shell commands run by agents wait in the Approvals tab until you allow them.</p>
+          <label class="switch-row danger-row">
+            <span>Trust mode — auto-approve everything</span>
+            <input type="checkbox" id="setting-trust" class="switch">
+          </label>
+          <label class="switch-row">
+            <span>Orchestrator judges sub-agent commands</span>
+            <input type="checkbox" id="setting-judge" class="switch">
+          </label>
+          <p class="hint">With trust mode off and the judge on, sub-agent shell commands are approved or denied by an LLM judge; anything ambiguous escalates to your Approvals tab. Your own orchestrator's commands always come to you.</p>
+          <label class="field" style="margin-top:12px">
+            <span>Approval timeout (minutes, 0 = wait forever)</span>
+            <div class="field-row">
+              <input class="input" id="setting-approval-timeout" type="number" min="0">
+              <button class="btn primary" id="save-approval-timeout">Apply</button>
+            </div>
+          </label>
+        </div>
+        <div class="panel narrow">
+          <div class="panel-head"><h2>Scheduler</h2></div>
+          <label class="field">
+            <span>Sweep interval (seconds, restart required)</span>
+            <div class="field-row">
+              <input class="input" id="setting-scheduler-interval" type="number" min="5">
+              <button class="btn primary" id="save-scheduler-interval">Apply</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>Max orchestrator wakes per hour</span>
+            <div class="field-row">
+              <input class="input" id="setting-max-wakes" type="number" min="1">
+              <button class="btn primary" id="save-max-wakes">Apply</button>
+            </div>
+          </label>
         </div>
         <div class="panel narrow">
           <div class="panel-head"><h2>Provider</h2></div>
