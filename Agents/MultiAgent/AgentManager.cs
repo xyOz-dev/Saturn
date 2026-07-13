@@ -147,15 +147,15 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
             return (true, agentId, null);
         }
         
-        public Task<string> HandOffTask(string agentId, string task, Dictionary<string, object>? context = null)
+        public async Task<string> HandOffTask(string agentId, string task, Dictionary<string, object>? context = null, Func<string, Task>? onBeforeStart = null)
         {
             if (!_runningAgents.TryGetValue(agentId, out var agentContext))
             {
                 throw new InvalidOperationException($"Agent {agentId} not found");
             }
-            
+
             var taskId = $"task_{Guid.NewGuid():N}".Substring(0, 12);
-            
+
             agentContext.Status = AgentStatus.Working;
             agentContext.CurrentTask = new AgentTask
             {
@@ -165,9 +165,16 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                 StartedAt = DateTime.Now,
                 Status = TaskStatus.Running
             };
-            
+
             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Working");
-            
+
+            // Callers persist bookkeeping keyed on the task id here, before the
+            // agent runs; a fast-completing agent would otherwise race past it.
+            if (onBeforeStart != null)
+            {
+                await onBeforeStart(taskId);
+            }
+
             _ = Task.Run(async () =>
             {
                 try
@@ -247,8 +254,8 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     CompleteTask(taskId, agentId, agentContext, false, $"Error: {ex.Message}");
                 }
             });
-            
-            return Task.FromResult(taskId);
+
+            return taskId;
         }
         
         public AgentStatusInfo GetAgentStatus(string agentId)

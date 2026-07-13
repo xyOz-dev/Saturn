@@ -380,7 +380,16 @@ namespace Saturn.Core.Tasks
             string mgrTaskId;
             try
             {
-                mgrTaskId = await AgentManager.Instance.HandOffTask(agentId, taskPrompt);
+                // Persist the manager task id and in-progress status before the
+                // agent starts: a fast-failing agent completes concurrently and
+                // its completion handler must find the dispatch row ready.
+                mgrTaskId = await AgentManager.Instance.HandOffTask(agentId, taskPrompt, onBeforeStart: async id =>
+                {
+                    await _store.Project.SetDispatchManagerTaskIdAsync(dispatch.Id, id);
+                    task.Status = TaskStatuses.InProgress;
+                    task.ClaimedBy = agentName;
+                    await _store.RepoOf(task).UpdateTaskAsync(task);
+                });
             }
             catch (InvalidOperationException ex)
             {
@@ -388,11 +397,6 @@ namespace Saturn.Core.Tasks
                 return (false, ex.Message, null);
             }
 
-            await _store.Project.SetDispatchManagerTaskIdAsync(dispatch.Id, mgrTaskId);
-
-            task.Status = TaskStatuses.InProgress;
-            task.ClaimedBy = agentName;
-            await _store.RepoOf(task).UpdateTaskAsync(task);
             _hub.Publish("task.dispatched", new { taskId, agentId, agentName });
 
             return (true, $"Task {taskId} dispatched to {agentName} ({agentId}); manager task {mgrTaskId}", dispatch.Id);
