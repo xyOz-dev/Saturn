@@ -163,7 +163,9 @@ namespace Saturn.Core.Tasks
                     (task.RequiresApproval
                         ? "It requires user approval: call claim_task first and wait for the approval result."
                         : "Use claim_task then dispatch_task to hand it to a sub-agent, or do it yourself."),
-                    $"ready:{task.Id}");
+                    // Bucketed by hour: delivered wake rows are never deleted, so a
+                    // bare task id would allow exactly one nudge per task, ever.
+                    $"ready:{task.Id}:{DateTime.UtcNow:yyyyMMddHH}");
             }
         }
 
@@ -343,7 +345,7 @@ namespace Saturn.Core.Tasks
 
         // ---------- Dispatch lifecycle ----------
 
-        public async Task<(bool ok, string message, string? dispatchId)> DispatchTaskAsync(string taskId, string agentId, string agentName)
+        public async Task<(bool ok, string message, string? dispatchId)> DispatchTaskAsync(string taskId, string agentId, string agentName, bool userInitiated = false)
         {
             var task = await _store.FindAsync(taskId);
             if (task == null)
@@ -353,6 +355,29 @@ namespace Saturn.Core.Tasks
             if (TaskStatuses.IsTerminal(task.Status))
             {
                 return (false, $"Task {taskId} is already {task.Status}", null);
+            }
+
+            // Policy gates live here, not just in the tool precheck, so no caller
+            // can bypass them. A dispatch the user performs directly is exempt:
+            // the gates exist to keep decisions in the user's hands.
+            if (!userInitiated)
+            {
+                if (task.UserHandoffOnly)
+                {
+                    return (false, $"Task {taskId} is user-handoff-only; the user must dispatch it from the web UI.", null);
+                }
+                if (task.ClaimStatus == ClaimStatuses.PendingApproval)
+                {
+                    return (false, $"Task {taskId} is awaiting the user's claim approval.", null);
+                }
+                if (task.ClaimStatus == ClaimStatuses.Denied)
+                {
+                    return (false, $"Task {taskId} claim was denied by the user; do not work on it.", null);
+                }
+                if (task.RequiresApproval && task.ClaimStatus != ClaimStatuses.Approved)
+                {
+                    return (false, $"Task {taskId} requires approval — claim it and wait for the user's decision first.", null);
+                }
             }
             if (await _store.IsBlockedAsync(taskId))
             {

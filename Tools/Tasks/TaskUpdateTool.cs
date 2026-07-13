@@ -82,6 +82,19 @@ Only pass the fields you want to change. To finish a task prefer complete_task."
                 return CreateErrorResult("Sub-agents cannot mark tasks agent-available.");
             }
 
+            bool? requiresApproval = parameters.ContainsKey("requires_approval")
+                ? GetParameter<bool>(parameters, "requires_approval", false)
+                : null;
+            bool? userHandoffOnly = parameters.ContainsKey("user_handoff_only")
+                ? GetParameter<bool>(parameters, "user_handoff_only", false)
+                : null;
+            // Approval and handoff gates keep decisions with the user; a sub-agent
+            // clearing them would bypass the whole claim/approval flow.
+            if (isSubAgent && (requiresApproval == false || userHandoffOnly == false))
+            {
+                return CreateErrorResult("Sub-agents cannot clear requires_approval or user_handoff_only.");
+            }
+
             try
             {
                 var task = await Store.UpdateAsync(id, new TaskUpdateSpec
@@ -97,8 +110,8 @@ Only pass the fields you want to change. To finish a task prefer complete_task."
                     RecurrenceIntervalSeconds = intervalSeconds,
                     RecurrenceCron = cron,
                     AgentAvailable = agentAvailable,
-                    RequiresApproval = parameters.ContainsKey("requires_approval") ? GetParameter<bool>(parameters, "requires_approval", false) : null,
-                    UserHandoffOnly = parameters.ContainsKey("user_handoff_only") ? GetParameter<bool>(parameters, "user_handoff_only", false) : null
+                    RequiresApproval = requiresApproval,
+                    UserHandoffOnly = userHandoffOnly
                 });
 
                 if (task == null)

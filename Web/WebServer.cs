@@ -597,7 +597,7 @@ namespace Saturn.Web
                     return Results.Conflict(new { error = $"Agent {status.Name} is busy" });
                 }
                 // Manual user handoff bypasses the userHandoffOnly restriction by design.
-                var (ok, message, _) = await _coordinator.DispatchTaskAsync(id, request.AgentId, status.Name);
+                var (ok, message, _) = await _coordinator.DispatchTaskAsync(id, request.AgentId, status.Name, userInitiated: true);
                 return ok ? Results.Ok(new { message }) : Results.BadRequest(new { error = message });
             });
 

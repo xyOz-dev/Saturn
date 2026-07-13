@@ -37,7 +37,9 @@ tasks pending claim approval, and undelivered scheduler wakes. Use this to plan 
 
             var ready = views.Where(v => v.Task.AgentAvailable && !v.Task.UserHandoffOnly && !v.Blocked
                 && v.Task.Status == TaskStatuses.Pending && v.DispatchedTo == null
-                && v.Task.ClaimStatus is ClaimStatuses.None or ClaimStatuses.Approved).ToList();
+                && v.Task.ClaimStatus is ClaimStatuses.None or ClaimStatuses.Approved
+                // Unclaimed approval-gated tasks are not dispatchable yet.
+                && (!v.Task.RequiresApproval || v.Task.ClaimStatus == ClaimStatuses.Approved)).ToList();
             var pendingClaims = views.Where(v => v.Task.ClaimStatus == ClaimStatuses.PendingApproval).ToList();
             var dueSoon = views.Where(v => v.Task.NextRunAt.HasValue && v.Task.NextRunAt.Value <= DateTime.UtcNow.AddHours(1)).ToList();
             var dispatched = views.Where(v => v.DispatchedTo != null).ToList();
