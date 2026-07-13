@@ -12,7 +12,7 @@
   --dim: #5c5c5c;
   --white: #ffffff;
   --radius: 10px;
-  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", "Menlo", "Consolas", monospace;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -461,7 +461,7 @@ textarea.input { resize: vertical; font-family: inherit; }
   border-radius: 12px;
   font-size: 13.5px;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
   animation: rise-in 0.25s var(--ease);
 }
 .chat-msg.user { align-self: flex-end; background: var(--white); color: #000; border-bottom-right-radius: 4px; }
@@ -761,7 +761,7 @@ button.task-badge:hover { background: var(--panel-3); }
 .msg-view { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow-y: auto; }
 .msg-row { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--panel-2); }
 .msg-role { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin-bottom: 4px; }
-.msg-content { font-size: 12.5px; white-space: pre-wrap; word-break: break-word; color: var(--muted); max-height: 200px; overflow-y: auto; }
+.msg-content { font-size: 12.5px; white-space: pre-wrap; overflow-wrap: break-word; color: var(--muted); max-height: 200px; overflow-y: auto; }
 
 /* ---------- approvals ---------- */
 
@@ -819,7 +819,7 @@ button.task-badge:hover { background: var(--panel-3); }
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -855,7 +855,7 @@ button.task-badge:hover { background: var(--panel-3); }
 
 /* ---------- markdown ---------- */
 
-.md { line-height: 1.6; word-break: break-word; }
+.md { line-height: 1.6; overflow-wrap: break-word; }
 .md > *:first-child { margin-top: 0; }
 .md > *:last-child { margin-bottom: 0; }
 
