@@ -10,16 +10,20 @@ using Saturn.Tools.Core;
 
 namespace Saturn.Tests.Tools
 {
+    [Collection("WorkingDirectory")]
     public class ReadFileToolTests : IDisposable
     {
         private readonly string _testDirectory;
         private readonly List<string> _createdFiles;
+        private readonly string _originalDirectory;
 
         public ReadFileToolTests()
         {
             _testDirectory = Path.Combine(Path.GetTempPath(), $"SaturnTests_{Guid.NewGuid()}");
             Directory.CreateDirectory(_testDirectory);
             _createdFiles = new List<string>();
+            _originalDirectory = Directory.GetCurrentDirectory();
+            Directory.SetCurrentDirectory(_testDirectory);
         }
 
         [Fact]
@@ -134,6 +138,31 @@ namespace Saturn.Tests.Tools
         }
 
         [Fact]
+        public async Task Execute_OutsideWorkingDirectory_ReturnsSecurityError()
+        {
+            var tool = new ReadFileTool();
+            var outsideFile = Path.Combine(Path.GetTempPath(), $"SaturnOutside_{Guid.NewGuid()}.txt");
+            File.WriteAllText(outsideFile, "secret");
+            try
+            {
+                var parameters = new Dictionary<string, object>
+                {
+                    { "path", outsideFile }
+                };
+
+                var result = await tool.ExecuteAsync(parameters);
+
+                result.Should().NotBeNull();
+                result.Success.Should().BeFalse();
+                result.Error.Should().Contain("outside the working directory");
+            }
+            finally
+            {
+                File.Delete(outsideFile);
+            }
+        }
+
+        [Fact]
         public async Task Execute_WithMissingPath_ReturnsError()
         {
             var tool = new ReadFileTool();
@@ -179,6 +208,8 @@ namespace Saturn.Tests.Tools
 
         public void Dispose()
         {
+            Directory.SetCurrentDirectory(_originalDirectory);
+
             foreach (var file in _createdFiles)
             {
                 if (File.Exists(file))

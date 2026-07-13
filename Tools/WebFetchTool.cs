@@ -11,6 +11,7 @@ using HtmlAgilityPack;
 using ReverseMarkdown;
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Sockets;
 
 namespace Saturn.Tools
 {
@@ -27,28 +28,61 @@ When to use:
 - Gathering context from external sources
 - Analyzing web page content or structure";
 
-        private static readonly HttpClient _httpClient = new HttpClient(new HttpClientHandler
-        {
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 5,
-            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
-        })
-        {
-            Timeout = TimeSpan.FromSeconds(30)
-        };
+        private const int MaxRedirects = 5;
+
+        private static readonly HttpClient _httpClient = CreateHttpClient();
 
         private static readonly ConcurrentDictionary<string, CachedContent> _cache = new();
         private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
-        private static readonly HashSet<string> BlockedSchemes = new() { "file", "ftp", "mailto", "javascript", "data" };
+        private static readonly HashSet<string> AllowedSchemes = new() { "http", "https" };
         private static readonly HashSet<string> BlockedHosts = new() { "localhost", "127.0.0.1", "0.0.0.0", "::1" };
 
-        static WebFetchTool()
+        private static HttpClient CreateHttpClient()
         {
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Saturn/1.0 (+https://github.com/xyOz-dev/Saturn)");
-            _httpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-            _httpClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
-            _httpClient.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
-            _httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
+            var handler = new SocketsHttpHandler
+            {
+                // Redirects are followed manually so each hop can be re-validated.
+                AllowAutoRedirect = false,
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                // Resolving and filtering addresses at connect time closes the DNS-rebinding
+                // window between a pre-check and the actual connection.
+                ConnectCallback = async (context, cancellationToken) =>
+                {
+                    var host = context.DnsEndPoint.Host;
+                    var addresses = IPAddress.TryParse(host, out var literal)
+                        ? new[] { literal }
+                        : await Dns.GetHostAddressesAsync(host, cancellationToken);
+
+                    var allowed = addresses.Where(ip => !IsBlockedAddress(ip)).ToArray();
+                    if (allowed.Length == 0)
+                    {
+                        throw new HttpRequestException($"Access to local/private hosts is not allowed: {host}");
+                    }
+
+                    var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                    try
+                    {
+                        await socket.ConnectAsync(allowed, context.DnsEndPoint.Port, cancellationToken);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                        throw;
+                    }
+                }
+            };
+
+            var client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(30)
+            };
+            client.DefaultRequestHeaders.Add("User-Agent", "Saturn/1.0 (+https://github.com/xyOz-dev/Saturn)");
+            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
+            client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+            client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
+            return client;
         }
 
         protected override Dictionary<string, object> GetParameterProperties()
@@ -151,14 +185,10 @@ When to use:
                     return CreateErrorResult($"Invalid URL format: {url}");
                 }
 
-                if (BlockedSchemes.Contains(uri.Scheme.ToLower()))
+                var validationError = ValidateUri(uri);
+                if (validationError != null)
                 {
-                    return CreateErrorResult($"Blocked URL scheme: {uri.Scheme}");
-                }
-
-                if (BlockedHosts.Contains(uri.Host.ToLower()) || IsPrivateIP(uri.Host))
-                {
-                    return CreateErrorResult($"Access to local/private hosts is not allowed: {uri.Host}");
+                    return CreateErrorResult(validationError);
                 }
 
                 var cacheKey = $"{url}|{extractionMode}|{selector}";
@@ -171,21 +201,56 @@ When to use:
                     _cache.TryRemove(cacheKey, out _);
                 }
 
-                var request = new HttpRequestMessage(HttpMethod.Get, uri);
-                
-                if (headers != null)
+                var currentUri = uri;
+                HttpResponseMessage response;
+                var redirects = 0;
+
+                while (true)
                 {
-                    foreach (var header in headers)
+                    var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
+
+                    // Only forward caller-supplied headers to the original host so a redirect
+                    // can't siphon them off to another origin.
+                    if (headers != null && string.Equals(currentUri.Host, uri.Host, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (header.Value != null)
+                        foreach (var header in headers)
                         {
-                            request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToString());
+                            if (header.Value != null)
+                            {
+                                request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToString());
+                            }
                         }
                     }
+
+                    response = await _httpClient.SendAsync(request);
+
+                    var statusCode = (int)response.StatusCode;
+                    if (statusCode >= 300 && statusCode < 400 && response.Headers.Location != null)
+                    {
+                        var location = response.Headers.Location;
+                        var nextUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
+                        response.Dispose();
+
+                        if (++redirects > MaxRedirects)
+                        {
+                            return CreateErrorResult($"Too many redirects (more than {MaxRedirects})");
+                        }
+
+                        var redirectError = ValidateUri(nextUri);
+                        if (redirectError != null)
+                        {
+                            return CreateErrorResult($"Redirect blocked: {redirectError}");
+                        }
+
+                        currentUri = nextUri;
+                        continue;
+                    }
+
+                    break;
                 }
 
-                var response = await _httpClient.SendAsync(request);
-                
+                using var responseToDispose = response;
+
                 if (!response.IsSuccessStatusCode)
                 {
                     return CreateErrorResult($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
@@ -423,23 +488,45 @@ When to use:
             return metadata;
         }
 
-        private bool IsPrivateIP(string host)
+        private static string? ValidateUri(Uri uri)
         {
-            if (!IPAddress.TryParse(host, out var ip))
+            if (!AllowedSchemes.Contains(uri.Scheme.ToLowerInvariant()))
             {
-                return false;
+                return $"Blocked URL scheme: {uri.Scheme}";
+            }
+
+            if (BlockedHosts.Contains(uri.Host.ToLowerInvariant()) ||
+                (IPAddress.TryParse(uri.Host, out var literal) && IsBlockedAddress(literal)))
+            {
+                return $"Access to local/private hosts is not allowed: {uri.Host}";
+            }
+
+            return null;
+        }
+
+        private static bool IsBlockedAddress(IPAddress ip)
+        {
+            if (ip.IsIPv4MappedToIPv6)
+            {
+                ip = ip.MapToIPv4();
+            }
+
+            if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any))
+            {
+                return true;
             }
 
             byte[] bytes = ip.GetAddressBytes();
-            
+
             if (bytes.Length == 4)
             {
                 return (bytes[0] == 10) ||
                        (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
                        (bytes[0] == 192 && bytes[1] == 168) ||
-                       (bytes[0] == 169 && bytes[1] == 254);
+                       (bytes[0] == 169 && bytes[1] == 254) ||
+                       (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127);
             }
-            
+
             if (bytes.Length == 16)
             {
                 return (bytes[0] == 0xfc || bytes[0] == 0xfd) ||

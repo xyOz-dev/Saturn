@@ -128,18 +128,21 @@ Examples:
             {
                 return CreateErrorResult("Path CANNOT be empty");
             }
-            
-            if (!File.Exists(path))
-            {
-                return CreateErrorResult($"File NOT found: {path}");
-            }
-            
+
             try
             {
+                ValidatePathSecurity(path);
+                var fullPath = Path.GetFullPath(path);
+
+                if (!File.Exists(fullPath))
+                {
+                    return CreateErrorResult($"File NOT found: {path}");
+                }
+
                 var encoding = GetEncoding(encodingName);
-                var fileInfo = new FileInfo(path);
-                var result = await ReadFileContent(path, encoding, startLine, endLine, includeLineNumbers);
-                
+                var fileInfo = new FileInfo(fullPath);
+                var result = await ReadFileContent(fullPath, encoding, startLine, endLine, includeLineNumbers);
+
                 return FormatResults(result, fileInfo, encoding, includeMetadata);
             }
             catch (UnauthorizedAccessException)
@@ -156,6 +159,21 @@ Examples:
             }
         }
         
+        private void ValidatePathSecurity(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
+
+            var relative = Path.GetRelativePath(currentDirectory, fullPath);
+            if (Path.IsPathRooted(relative) ||
+                relative == ".." ||
+                relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+                relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                throw new System.Security.SecurityException($"Access denied: Path '{path}' is outside the working directory");
+            }
+        }
+
         private async Task<FileContent> ReadFileContent(string path, Encoding encoding, int? startLine, int? endLine, bool includeLineNumbers)
         {
             var content = new FileContent

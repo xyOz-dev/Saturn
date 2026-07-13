@@ -14,6 +14,7 @@ using Xunit;
 
 namespace Saturn.Tests.Tools
 {
+    [Collection("WorkingDirectory")]
     public class ApplyDiffToolTests : IDisposable
     {
         private readonly FileTestHelper _fileHelper;
@@ -365,8 +366,13 @@ Content C");
             var result = await _tool.ExecuteAsync(parameters);
 
             result.Success.Should().BeTrue();
-            result.FormattedOutput.Should().Contain("3 additions");
-            result.FormattedOutput.Should().Contain("2 removal");
+            result.FormattedOutput.Should().Contain("2 additions");
+            result.FormattedOutput.Should().Contain("1 removal");
+
+            var content = _fileHelper.ReadFile("stats.txt");
+            content.Should().Contain("Line 2");
+            content.Should().Contain("Line 3 Modified");
+            content.Should().NotContain("Line 3\n");
         }
 
         [Fact]
