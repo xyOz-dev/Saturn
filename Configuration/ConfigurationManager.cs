@@ -144,7 +144,7 @@ namespace Saturn.Configuration
                     Directory.CreateDirectory(AppDataPath);
                 }
 
-                var json = JsonSerializer.Serialize(config, JsonOptions);
+                var json = JsonSerializer.Serialize(WithProtectedSecrets(config), JsonOptions);
                 var tempPath = ConfigFilePath + ".tmp";
                 await File.WriteAllTextAsync(tempPath, json);
                 File.Move(tempPath, ConfigFilePath, overwrite: true);
@@ -220,10 +220,83 @@ namespace Saturn.Configuration
             {
                 foreach (var kvp in providerConfig.Settings)
                 {
-                    settings.Values[kvp.Key] = kvp.Value;
+                    settings.Values[kvp.Key] = SecretProtector.Unprotect(kvp.Value, AppDataPath);
                 }
             }
             return settings;
+        }
+
+        /// <summary>
+        /// Returns a copy of the configuration with secret-kind provider settings encrypted,
+        /// leaving the caller's in-memory configuration in plaintext.
+        /// </summary>
+        private static PersistedAgentConfiguration WithProtectedSecrets(PersistedAgentConfiguration config)
+        {
+            if (config.Providers == null)
+            {
+                return config;
+            }
+
+            Dictionary<string, PersistedProviderConfiguration>? protectedProviders = null;
+
+            foreach (var (providerName, providerConfig) in config.Providers)
+            {
+                var settings = providerConfig.Settings;
+                if (settings == null || !ProviderRegistry.TryGet(providerName, out var provider))
+                {
+                    continue;
+                }
+
+                Dictionary<string, string?>? protectedSettings = null;
+                foreach (var descriptor in provider.SettingDescriptors)
+                {
+                    if (descriptor.Kind != ProviderSettingKind.Secret)
+                    {
+                        continue;
+                    }
+
+                    if (settings.TryGetValue(descriptor.Key, out var value) &&
+                        !string.IsNullOrEmpty(value) &&
+                        !SecretProtector.IsProtected(value))
+                    {
+                        protectedSettings ??= new Dictionary<string, string?>(settings, StringComparer.OrdinalIgnoreCase);
+                        protectedSettings[descriptor.Key] = SecretProtector.Protect(value, AppDataPath);
+                    }
+                }
+
+                if (protectedSettings != null)
+                {
+                    protectedProviders ??= new Dictionary<string, PersistedProviderConfiguration>(config.Providers, StringComparer.OrdinalIgnoreCase);
+                    protectedProviders[providerName] = new PersistedProviderConfiguration
+                    {
+                        Settings = protectedSettings,
+                        Model = providerConfig.Model
+                    };
+                }
+            }
+
+            if (protectedProviders == null)
+            {
+                return config;
+            }
+
+            return new PersistedAgentConfiguration
+            {
+                Name = config.Name,
+                Model = config.Model,
+                Temperature = config.Temperature,
+                MaxTokens = config.MaxTokens,
+                TopP = config.TopP,
+                EnableStreaming = config.EnableStreaming,
+                MaintainHistory = config.MaintainHistory,
+                MaxHistoryMessages = config.MaxHistoryMessages,
+                EnableTools = config.EnableTools,
+                ToolNames = config.ToolNames,
+                RequireCommandApproval = config.RequireCommandApproval,
+                EnableUserRules = config.EnableUserRules,
+                ActiveProvider = config.ActiveProvider,
+                Providers = protectedProviders
+            };
         }
 
         public static string? GetProviderModel(PersistedAgentConfiguration? config, string providerName)
