@@ -58,6 +58,20 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public void Validate_CronThatNeverFires_IsRejected()
+        {
+            // February 30th never exists; syntax is fine but no occurrence can ever fire.
+            RecurrenceCalculator.Validate(RecurrenceKinds.Cron, null, "0 0 30 2 *").Should().NotBeNull();
+        }
+
+        [Fact]
+        public void GetNextOccurrenceUtc_CronThatNeverFires_ReturnsNullInsteadOfThrowing()
+        {
+            var next = RecurrenceCalculator.GetNextOccurrenceUtc(RecurrenceKinds.Cron, null, "0 0 30 2 *", DateTime.UtcNow);
+            next.Should().BeNull();
+        }
+
+        [Fact]
         public void GetNextOccurrenceUtc_Interval_AddsTheInterval()
         {
             var after = new DateTime(2026, 7, 13, 10, 0, 0, DateTimeKind.Utc);

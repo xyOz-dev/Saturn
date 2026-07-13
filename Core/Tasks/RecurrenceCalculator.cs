@@ -23,7 +23,17 @@ namespace Saturn.Core.Tasks
                     {
                         return "Cron recurrence requires a cron expression";
                     }
-                    return TryParseCron(cron, out _) ? null : $"Invalid cron expression: '{cron}'";
+                    if (!TryParseCron(cron, out _))
+                    {
+                        return $"Invalid cron expression: '{cron}'";
+                    }
+                    // Syntactically valid expressions can still describe a date that
+                    // never exists (e.g. '0 0 30 2 *'); reject those up front.
+                    if (GetNextOccurrenceUtc(RecurrenceKinds.Cron, null, cron, DateTime.UtcNow) == null)
+                    {
+                        return $"Cron expression '{cron}' never produces a future occurrence";
+                    }
+                    return null;
                 default:
                     return $"Unknown recurrence kind '{kind}'";
             }
@@ -36,10 +46,25 @@ namespace Saturn.Core.Tasks
                 case RecurrenceKinds.Interval when intervalSeconds.HasValue:
                     return afterUtc.AddSeconds(intervalSeconds.Value);
                 case RecurrenceKinds.Cron when !string.IsNullOrWhiteSpace(cron) && TryParseCron(cron, out var schedule):
-                    // Cron expresses local wall-clock intent ("9am daily"); compute locally, store UTC.
-                    var afterLocal = afterUtc.ToLocalTime();
-                    var nextLocal = schedule!.GetNextOccurrence(afterLocal);
-                    return DateTime.SpecifyKind(nextLocal, DateTimeKind.Local).ToUniversalTime();
+                    try
+                    {
+                        // Cron expresses local wall-clock intent ("9am daily"); compute locally, store UTC.
+                        // Impossible schedules (e.g. Feb 30) make NCrontab return the end bound
+                        // (or throw, depending on version); ten years comfortably covers the
+                        // longest real gap, leap-day schedules included.
+                        var afterLocal = afterUtc.ToLocalTime();
+                        var limitLocal = afterLocal.AddYears(10);
+                        var nextLocal = schedule!.GetNextOccurrence(afterLocal, limitLocal);
+                        if (nextLocal >= limitLocal)
+                        {
+                            return null;
+                        }
+                        return DateTime.SpecifyKind(nextLocal, DateTimeKind.Local).ToUniversalTime();
+                    }
+                    catch (ArgumentOutOfRangeException)
+                    {
+                        return null;
+                    }
                 default:
                     return null;
             }
