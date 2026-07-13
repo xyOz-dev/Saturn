@@ -7,6 +7,7 @@ namespace Saturn.Tools.Core
     {
         public required AgentConfiguration Configuration { get; init; }
         public string AgentInstanceId { get; init; } = "";
+        public string? SessionId { get; init; }
         public string? ManagerAgentId { get; init; }
         public string AgentName { get; init; } = "";
         public bool IsOrchestrator { get; init; }
