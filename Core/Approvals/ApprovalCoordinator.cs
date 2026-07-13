@@ -57,46 +57,55 @@ namespace Saturn.Core.Approvals
 
             if (caller?.ManagerAgentId != null && _settings.JudgeEnabled)
             {
-                var taskDescription = await FindCurrentTaskDescriptionAsync(caller.ManagerAgentId);
-                var verdict = await _judge.JudgeAsync(new JudgeRequest(
-                    command, workingDirectory, caller.AgentName,
-                    AgentPurpose: null, TaskDescription: taskDescription));
-
-                _hub.Publish("approval.judged", new
+                // JudgeAsync catches its own failures, but the fail-closed
+                // guarantee lives here: any surprise still routes to the user.
+                try
                 {
-                    command,
-                    agentName,
-                    decision = verdict.Decision.ToString().ToLowerInvariant(),
-                    reason = verdict.Reason
-                });
+                    var taskDescription = await FindCurrentTaskDescriptionAsync(caller.ManagerAgentId);
+                    var verdict = await _judge.JudgeAsync(new JudgeRequest(
+                        command, workingDirectory, caller.AgentName,
+                        AgentPurpose: null, TaskDescription: taskDescription));
 
-                switch (verdict.Decision)
+                    _hub.Publish("approval.judged", new
+                    {
+                        command,
+                        agentName,
+                        decision = verdict.Decision.ToString().ToLowerInvariant(),
+                        reason = verdict.Reason
+                    });
+
+                    switch (verdict.Decision)
+                    {
+                        case JudgeDecision.Approve:
+                            _hub.Publish("approval.resolved", new
+                            {
+                                id = Guid.NewGuid().ToString("N")[..12],
+                                approved = true,
+                                resolvedBy = "judge",
+                                command,
+                                agentName,
+                                reason = verdict.Reason
+                            });
+                            return true;
+                        case JudgeDecision.Deny:
+                            _hub.Publish("approval.resolved", new
+                            {
+                                id = Guid.NewGuid().ToString("N")[..12],
+                                approved = false,
+                                resolvedBy = "judge",
+                                command,
+                                agentName,
+                                reason = verdict.Reason
+                            });
+                            return false;
+                        default:
+                            escalationDetail = $"Escalated by judge: {verdict.Reason}";
+                            break;
+                    }
+                }
+                catch (Exception ex)
                 {
-                    case JudgeDecision.Approve:
-                        _hub.Publish("approval.resolved", new
-                        {
-                            id = Guid.NewGuid().ToString("N")[..12],
-                            approved = true,
-                            resolvedBy = "judge",
-                            command,
-                            agentName,
-                            reason = verdict.Reason
-                        });
-                        return true;
-                    case JudgeDecision.Deny:
-                        _hub.Publish("approval.resolved", new
-                        {
-                            id = Guid.NewGuid().ToString("N")[..12],
-                            approved = false,
-                            resolvedBy = "judge",
-                            command,
-                            agentName,
-                            reason = verdict.Reason
-                        });
-                        return false;
-                    default:
-                        escalationDetail = $"Escalated by judge: {verdict.Reason}";
-                        break;
+                    escalationDetail = $"Judge error: {ex.Message}";
                 }
             }
 
