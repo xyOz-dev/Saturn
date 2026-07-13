@@ -558,6 +558,18 @@ namespace Saturn.Core.Tasks
                     $"orphan:{dispatch.Id}",
                     critical: true);
             }
+
+            // Claim approvals live only in the in-memory web queue, so any claim
+            // that was pending when the process died must be raised again or the
+            // task stays in pending_approval with nothing for the user to act on.
+            if (OnClaimApprovalNeeded != null)
+            {
+                var views = await _store.ListAsync(includeDone: false);
+                foreach (var view in views.Where(v => v.Task.ClaimStatus == ClaimStatuses.PendingApproval))
+                {
+                    await OnClaimApprovalNeeded(view.Task);
+                }
+            }
         }
 
         private static string Truncate(string value, int max)
