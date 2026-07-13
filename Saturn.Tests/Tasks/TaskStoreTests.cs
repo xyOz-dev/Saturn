@@ -200,6 +200,21 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public async Task UpdateAsync_ScopeChange_PreservesDependentsOfTheMovedTask()
+        {
+            var blocker = await CreateTaskAsync("mover blocker");
+            var dependent = await CreateTaskAsync("stays behind", s => s.BlockedBy = new List<string> { blocker.Id });
+
+            await _store.UpdateAsync(blocker.Id, new TaskUpdateSpec { Scope = TaskScopes.Global });
+
+            // The dependent's edge lives in the source database and must survive the move.
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeTrue();
+
+            await _store.CompleteAsync(blocker.Id);
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+        }
+
+        [Fact]
         public async Task TryEnqueueWakeAsync_DeduplicatesByKey()
         {
             var first = await _store.Project.TryEnqueueWakeAsync(new WakeItem { Kind = "test", Prompt = "p", DedupeKey = "dup:1" });

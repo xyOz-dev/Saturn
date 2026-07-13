@@ -178,11 +178,26 @@ namespace Saturn.Data.Tasks
             // Scope moves migrate the row between databases.
             if (spec.Scope != null && TaskScopes.All.Contains(spec.Scope) && spec.Scope != originalScope)
             {
-                var deps = await RepoFor(originalScope).GetDependenciesAsync(task.Id);
-                await RepoFor(originalScope).DeleteTaskAsync(task.Id);
+                var sourceRepo = RepoFor(originalScope);
+                var deps = await sourceRepo.GetDependenciesAsync(task.Id);
+
+                // DeleteTaskAsync also wipes edges where this task is the blocker;
+                // snapshot the dependents' edge lists so they can be restored.
+                var dependentEdges = new Dictionary<string, List<string>>();
+                foreach (var dependentId in await sourceRepo.GetDependentsAsync(task.Id))
+                {
+                    dependentEdges[dependentId] = await sourceRepo.GetDependenciesAsync(dependentId);
+                }
+
+                await sourceRepo.DeleteTaskAsync(task.Id);
                 task.Scope = spec.Scope;
                 await RepoOf(task).InsertTaskAsync(task);
                 await RepoOf(task).SetDependenciesAsync(task.Id, deps);
+
+                foreach (var (dependentId, edges) in dependentEdges)
+                {
+                    await sourceRepo.SetDependenciesAsync(dependentId, edges);
+                }
             }
             else
             {
