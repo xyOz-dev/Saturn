@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Saturn.Core
@@ -183,7 +184,7 @@ namespace Saturn.Core
         {
             try
             {
-                var process = new Process
+                using var process = new Process
                 {
                     StartInfo = new ProcessStartInfo
                     {
@@ -198,11 +199,25 @@ namespace Saturn.Core
                 };
 
                 process.Start();
-                
-                var output = await process.StandardOutput.ReadToEndAsync();
-                var error = await process.StandardError.ReadToEndAsync();
-                
-                await Task.Run(() => process.WaitForExit(10000));
+
+                // Drain both pipes concurrently; reading them sequentially can deadlock
+                // when the process fills the other pipe's buffer and blocks.
+                var outputTask = process.StandardOutput.ReadToEndAsync();
+                var errorTask = process.StandardError.ReadToEndAsync();
+
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                try
+                {
+                    await process.WaitForExitAsync(timeout.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                    return (false, "git command timed out after 10 seconds");
+                }
+
+                var output = await outputTask;
+                var error = await errorTask;
 
                 if (process.ExitCode == 0)
                 {

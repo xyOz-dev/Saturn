@@ -19,17 +19,7 @@ namespace Saturn.Providers
                 return new List<ModelInfo>();
             }
 
-            string providerKey;
-            ILlmClient client;
-            while (true)
-            {
-                providerKey = clientSource.ActiveProviderName;
-                client = clientSource.Current;
-                if (clientSource.ActiveProviderName == providerKey)
-                {
-                    break;
-                }
-            }
+            var (providerKey, client) = clientSource.Snapshot();
 
             lock (_lock)
             {

@@ -10,6 +10,11 @@ namespace Saturn.Providers
 
         string ActiveProviderName { get; }
 
+        /// <summary>
+        /// Returns a consistent (provider name, client) pair even while a provider swap is in flight.
+        /// </summary>
+        (string ProviderName, ILlmClient Client) Snapshot() => (ActiveProviderName, Current);
+
         event EventHandler<ProviderChangedEventArgs>? ProviderChanged;
     }
 

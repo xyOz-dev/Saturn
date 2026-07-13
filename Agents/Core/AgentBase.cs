@@ -28,6 +28,7 @@ namespace Saturn.Agents.Core
         public bool IsOrchestrator { get; set; }
         protected ChatHistoryRepository? Repository { get; set; }
         private readonly List<Message> _pendingMessages = new List<Message>();
+        private readonly object _pendingMessagesLock = new object();
         
         public event Action<string, string>? OnToolCall;
 
@@ -159,9 +160,12 @@ namespace Saturn.Agents.Core
             {
                 ChatHistory.Add(userMessage);
                 TrimHistory();
-                
-                _pendingMessages.Add(userMessage);
-                
+
+                lock (_pendingMessagesLock)
+                {
+                    _pendingMessages.Add(userMessage);
+                }
+
                 return new List<Message>(ChatHistory);
             }
 
@@ -192,9 +196,13 @@ namespace Saturn.Agents.Core
             if (Configuration.MaintainHistory)
             {
                 ChatHistory.Add(finalMessage);
-                
-                _pendingMessages.Add(finalMessage);
-                Task.Run(async () => await FlushPendingMessagesAsync());
+
+                lock (_pendingMessagesLock)
+                {
+                    _pendingMessages.Add(finalMessage);
+                }
+                var sessionId = CurrentSessionId;
+                Task.Run(async () => await FlushPendingMessagesAsync(sessionId, CancellationToken.None));
             }
 
             return finalMessage;
@@ -204,15 +212,18 @@ namespace Saturn.Agents.Core
         {
             ChatHistory.Clear();
             InitializeSystemPrompt();
-            
-            if (CurrentSessionId != null && Repository != null)
+
+            var sessionId = CurrentSessionId;
+            CurrentSessionId = null;
+
+            if (sessionId != null && Repository != null)
             {
-                Task.Run(async () => 
+                var repository = Repository;
+                Task.Run(async () =>
                 {
-                    await FlushPendingMessagesAsync();
-                    await Repository.SetSessionInactiveAsync(CurrentSessionId);
+                    await FlushPendingMessagesAsync(sessionId, CancellationToken.None);
+                    await repository.SetSessionInactiveAsync(sessionId);
                 });
-                CurrentSessionId = null;
             }
         }
 
@@ -232,16 +243,26 @@ namespace Saturn.Agents.Core
             }
         }
         
-        protected async Task FlushPendingMessagesAsync(CancellationToken cancellationToken = default)
+        protected Task FlushPendingMessagesAsync(CancellationToken cancellationToken = default)
         {
-            if (Repository == null || CurrentSessionId == null || _pendingMessages.Count == 0) return;
-            
+            return FlushPendingMessagesAsync(CurrentSessionId, cancellationToken);
+        }
+
+        private async Task FlushPendingMessagesAsync(string? sessionId, CancellationToken cancellationToken)
+        {
+            if (Repository == null || sessionId == null) return;
+
+            List<Message> messagesToSave;
+            lock (_pendingMessagesLock)
+            {
+                if (_pendingMessages.Count == 0) return;
+                messagesToSave = new List<Message>(_pendingMessages);
+                _pendingMessages.Clear();
+            }
+
             try
             {
-                var messagesToSave = new List<Message>(_pendingMessages);
-                _pendingMessages.Clear();
-                
-                await Repository.SaveMessageBatchAsync(CurrentSessionId, messagesToSave, Configuration.Name, cancellationToken);
+                await Repository.SaveMessageBatchAsync(sessionId, messagesToSave, Configuration.Name, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -434,7 +455,10 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
-                            _pendingMessages.Add(toolMessage);
+                            lock (_pendingMessagesLock)
+                            {
+                                _pendingMessages.Add(toolMessage);
+                            }
                         }
                         else
                         {
@@ -988,7 +1012,10 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
-                            _pendingMessages.Add(toolMessage);
+                            lock (_pendingMessagesLock)
+                            {
+                                _pendingMessages.Add(toolMessage);
+                            }
                         }
                         else
                         {

@@ -1193,43 +1193,64 @@ namespace Saturn.UI
 
         private async void ToggleStreaming()
         {
-            currentConfig.EnableStreaming = !currentConfig.EnableStreaming;
-            await UpdateConfiguration();
-            var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
-            if (menu != null)
+            try
             {
-                var agentMenu = menu.Menus[1];
-                var streamingItem = agentMenu.Children.FirstOrDefault(m => m?.Title.ToString().Contains("Streaming") == true);
-                if (streamingItem != null)
-                    streamingItem.Checked = currentConfig.EnableStreaming;
+                currentConfig.EnableStreaming = !currentConfig.EnableStreaming;
+                await UpdateConfiguration();
+                var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
+                if (menu != null)
+                {
+                    var agentMenu = menu.Menus[1];
+                    var streamingItem = agentMenu.Children.FirstOrDefault(m => m?.Title.ToString().Contains("Streaming") == true);
+                    if (streamingItem != null)
+                        streamingItem.Checked = currentConfig.EnableStreaming;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Settings", $"Failed to toggle streaming: {ex.Message}", "OK");
             }
         }
 
         private async void ToggleMaintainHistory()
         {
-            currentConfig.MaintainHistory = !currentConfig.MaintainHistory;
-            await UpdateConfiguration();
-            var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
-            if (menu != null)
+            try
             {
-                var agentMenu = menu.Menus[1];
-                var historyItem = agentMenu.Children.FirstOrDefault(m => m?.Title.ToString().Contains("History") == true);
-                if (historyItem != null)
-                    historyItem.Checked = currentConfig.MaintainHistory;
+                currentConfig.MaintainHistory = !currentConfig.MaintainHistory;
+                await UpdateConfiguration();
+                var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
+                if (menu != null)
+                {
+                    var agentMenu = menu.Menus[1];
+                    var historyItem = agentMenu.Children.FirstOrDefault(m => m?.Title.ToString().Contains("History") == true);
+                    if (historyItem != null)
+                        historyItem.Checked = currentConfig.MaintainHistory;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Settings", $"Failed to toggle history: {ex.Message}", "OK");
             }
         }
 
         private async void ToggleCommandApproval()
         {
-            currentConfig.RequireCommandApproval = !currentConfig.RequireCommandApproval;
-            await UpdateConfiguration();
-            var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
-            if (menu != null)
+            try
             {
-                var agentMenu = menu.Menus[1];
-                var commandApprovalItem = agentMenu.Children?.FirstOrDefault(m => m?.Title?.ToString()?.Contains("Command Approval") == true);
-                if (commandApprovalItem != null)
-                    commandApprovalItem.Checked = currentConfig.RequireCommandApproval;
+                currentConfig.RequireCommandApproval = !currentConfig.RequireCommandApproval;
+                await UpdateConfiguration();
+                var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
+                if (menu != null)
+                {
+                    var agentMenu = menu.Menus[1];
+                    var commandApprovalItem = agentMenu.Children?.FirstOrDefault(m => m?.Title?.ToString()?.Contains("Command Approval") == true);
+                    if (commandApprovalItem != null)
+                        commandApprovalItem.Checked = currentConfig.RequireCommandApproval;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Settings", $"Failed to toggle command approval: {ex.Message}", "OK");
             }
         }
 

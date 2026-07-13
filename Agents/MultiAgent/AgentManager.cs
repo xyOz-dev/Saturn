@@ -26,6 +26,7 @@ namespace Saturn.Agents.MultiAgent
         private const int DefaultMaxConcurrentAgents = 50;
         private const int AbsoluteMaxConcurrentAgents = 200;
         private int _maxConcurrentAgents = DefaultMaxConcurrentAgents;
+        private readonly object _agentRegistrationLock = new object();
         private string? _parentSessionId;
         private string? _parentModel;
         private bool _parentEnableUserRules = true;
@@ -82,21 +83,39 @@ namespace Saturn.Agents.MultiAgent
             string? systemPromptOverride = null,
             bool? includeUserRules = null)
         {
-            if (_runningAgents.Count >= _maxConcurrentAgents)
-            {
-                var runningTasks = _runningAgents
-                    .Where(kvp => kvp.Value.CurrentTask != null)
-                    .Select(kvp => kvp.Value.CurrentTask!.Id)
-                    .ToList();
-
-                return (false, $"Maximum concurrent agent limit ({_maxConcurrentAgents}) reached", runningTasks);
-            }
-            
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
 
-            model = await ModelCatalog.ResolveModelAsync(_clientSource, model, _parentModel);
+            var context = new SubAgentContext
+            {
+                Id = agentId,
+                Name = name,
+                Purpose = purpose,
+                Status = AgentStatus.Idle,
+                CreatedAt = DateTime.Now,
+                CurrentTask = null
+            };
 
-            var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
+            // Reserve the slot atomically so a burst of concurrent creates can't exceed the cap.
+            lock (_agentRegistrationLock)
+            {
+                if (_runningAgents.Count >= _maxConcurrentAgents)
+                {
+                    var runningTasks = _runningAgents
+                        .Where(kvp => kvp.Value.CurrentTask != null)
+                        .Select(kvp => kvp.Value.CurrentTask!.Id)
+                        .ToList();
+
+                    return (false, $"Maximum concurrent agent limit ({_maxConcurrentAgents}) reached", runningTasks);
+                }
+
+                _runningAgents[agentId] = context;
+            }
+
+            try
+            {
+                model = await ModelCatalog.ResolveModelAsync(_clientSource, model, _parentModel);
+
+                var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
 Your purpose: {purpose}
 
 You work as part of a larger multi-agent system. Focus only on the task you are given; do not expand its scope.
@@ -106,44 +125,40 @@ When the task is complete, report back concisely:
 - Files you created or changed, if any (list the paths)
 - Anything you could not complete, and why
 Your report is consumed by an orchestrator agent, so keep it factual and free of filler.";
-            
-            var config = new AgentConfiguration
-            {
-                Name = name,
-                SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
-                ClientSource = _clientSource,
-                Model = model,
-                Temperature = temperature ?? 0.3,
-                MaxTokens = maxTokens ?? 4096,
-                TopP = topP ?? 0.95,
-                EnableTools = enableTools,
-                MaintainHistory = true,
-                MaxHistoryMessages = 20
-            };
-            
-            var agent = new Agent(config);
-            agent.ManagerAgentId = agentId;
 
-            if (_parentSessionId != null)
-            {
-                await agent.InitializeSessionAsync("agent", _parentSessionId);
+                var config = new AgentConfiguration
+                {
+                    Name = name,
+                    SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
+                    ClientSource = _clientSource,
+                    Model = model,
+                    Temperature = temperature ?? 0.3,
+                    MaxTokens = maxTokens ?? 4096,
+                    TopP = topP ?? 0.95,
+                    EnableTools = enableTools,
+                    MaintainHistory = true,
+                    MaxHistoryMessages = 20
+                };
+
+                var agent = new Agent(config);
+                agent.ManagerAgentId = agentId;
+
+                if (_parentSessionId != null)
+                {
+                    await agent.InitializeSessionAsync("agent", _parentSessionId);
+                }
+
+                context.Agent = agent;
             }
-            
-            var context = new SubAgentContext
+            catch
             {
-                Id = agentId,
-                Agent = agent,
-                Name = name,
-                Purpose = purpose,
-                Status = AgentStatus.Idle,
-                CreatedAt = DateTime.Now,
-                CurrentTask = null
-            };
-            
-            _runningAgents[agentId] = context;
+                _runningAgents.TryRemove(agentId, out _);
+                throw;
+            }
+
             OnAgentCreated?.Invoke(agentId, name);
             OnAgentStatusChanged?.Invoke(agentId, name, "Idle");
-            
+
             return (true, agentId, null);
         }
         
