@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,6 +31,11 @@ namespace Saturn.Web
         private readonly ILlmClientSource _clientSource;
         private readonly int _port;
         private readonly DateTime _startedAt = DateTime.UtcNow;
+
+        // Per-process API token: injected into index.html and required on every
+        // /api request, so pages on other origins (and other local users) cannot
+        // drive the agent API even if they can reach the port.
+        private readonly string _apiToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
 
         private readonly EventHub _hub = new();
         private readonly TaskStore _tasks = new();
@@ -95,10 +102,64 @@ namespace Saturn.Web
 
             var app = builder.Build();
 
+            app.Use(async (context, next) =>
+            {
+                // A non-loopback Host header means the browser resolved some public
+                // DNS name to 127.0.0.1 (DNS rebinding); such requests bypass CORS,
+                // so reject them outright.
+                if (!IsLoopbackHost(context.Request.Host.Host))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { error = "Forbidden host" });
+                    return;
+                }
+
+                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                context.Response.Headers["Referrer-Policy"] = "no-referrer";
+
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    // EventSource cannot set headers, so the SSE stream passes the
+                    // token as a query parameter instead.
+                    var token = context.Request.Headers["X-Saturn-Token"].ToString();
+                    if (string.IsNullOrEmpty(token))
+                    {
+                        token = context.Request.Query["token"].ToString();
+                    }
+                    if (!TokenMatches(token))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(new { error = "Missing or invalid API token" });
+                        return;
+                    }
+                }
+
+                await next();
+            });
+
             MapStaticAssets(app);
             MapApi(app);
 
             await app.RunAsync(cancellationToken);
+        }
+
+        private static bool IsLoopbackHost(string host)
+        {
+            return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || host == "127.0.0.1"
+                || host == "::1"
+                || host == "[::1]";
+        }
+
+        private bool TokenMatches(string provided)
+        {
+            if (string.IsNullOrEmpty(provided))
+            {
+                return false;
+            }
+            var a = Encoding.UTF8.GetBytes(provided);
+            var b = Encoding.UTF8.GetBytes(_apiToken);
+            return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
         }
 
         private void WireAgentManagerEvents()
@@ -898,7 +959,12 @@ namespace Saturn.Web
                 .ToList();
         }
 
-        private static void MapStaticAssets(WebApplication app)
+        private const string ContentSecurityPolicy =
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+            "img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
+            "base-uri 'none'; frame-ancestors 'none'";
+
+        private void MapStaticAssets(WebApplication app)
         {
             var assembly = Assembly.GetExecutingAssembly();
             const string prefix = "wwwroot/";
@@ -913,7 +979,7 @@ namespace Saturn.Web
             app.MapGet("/{**path}", (string path) => ServeAsset(assembly, assets, path));
         }
 
-        private static IResult ServeAsset(Assembly assembly, Dictionary<string, string> assets, string name)
+        private IResult ServeAsset(Assembly assembly, Dictionary<string, string> assets, string name)
         {
             if (!assets.TryGetValue(name, out var resourceName))
             {
@@ -932,23 +998,36 @@ namespace Saturn.Web
                 ? "public, max-age=604800, immutable"
                 : "no-cache";
 
-            return new CacheHeaderResult(Results.Stream(stream, GetContentType(name)), cacheControl);
+            if (name.EndsWith(".html", StringComparison.Ordinal))
+            {
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+                var html = reader.ReadToEnd().Replace("__SATURN_TOKEN__", _apiToken);
+                return new HeaderResult(Results.Content(html, GetContentType(name)), cacheControl, ContentSecurityPolicy);
+            }
+
+            return new HeaderResult(Results.Stream(stream, GetContentType(name)), cacheControl);
         }
 
-        private sealed class CacheHeaderResult : IResult
+        private sealed class HeaderResult : IResult
         {
             private readonly IResult _inner;
             private readonly string _cacheControl;
+            private readonly string? _csp;
 
-            public CacheHeaderResult(IResult inner, string cacheControl)
+            public HeaderResult(IResult inner, string cacheControl, string? csp = null)
             {
                 _inner = inner;
                 _cacheControl = cacheControl;
+                _csp = csp;
             }
 
             public Task ExecuteAsync(HttpContext httpContext)
             {
                 httpContext.Response.Headers.CacheControl = _cacheControl;
+                if (_csp != null)
+                {
+                    httpContext.Response.Headers.ContentSecurityPolicy = _csp;
+                }
                 return _inner.ExecuteAsync(httpContext);
             }
         }

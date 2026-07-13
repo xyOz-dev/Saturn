@@ -6,17 +6,28 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+// Injected by the server when it renders index.html; every API call must carry it.
+const API_TOKEN = document.querySelector('meta[name="saturn-token"]')?.content ?? "";
+
 const api = {
   async request(method, path, body) {
     let res;
     try {
       res = await fetch(`/api${path}`, {
         method,
-        headers: body ? { "Content-Type": "application/json" } : undefined,
+        headers: {
+          "X-Saturn-Token": API_TOKEN,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch {
       throw new Error("can't reach the Saturn server — it may be restarting");
+    }
+    if (res.status === 401) {
+      // The server restarted and minted a new token; reload to pick it up.
+      window.location.reload();
+      throw new Error("session expired — reloading");
     }
     if (!res.ok) {
       let message = `${res.status} ${res.statusText}`;
@@ -1652,7 +1663,8 @@ $("#save-max-wakes").addEventListener("click", () => {
 /* ---------- SSE ---------- */
 
 function connectEvents() {
-  const es = new EventSource("/api/events");
+  // EventSource cannot send headers, so the token rides in the query string.
+  const es = new EventSource(`/api/events?token=${encodeURIComponent(API_TOKEN)}`);
   let wasDown = false;
 
   es.onopen = () => {
