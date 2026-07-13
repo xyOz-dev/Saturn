@@ -44,13 +44,19 @@ namespace Saturn.Core.Tasks
             await PumpWakeQueueAsync();
         }
 
-        public async Task<bool> EnqueueWakeAsync(string kind, string? taskId, string prompt, string? dedupeKey)
+        public async Task<bool> EnqueueWakeAsync(string kind, string? taskId, string prompt, string? dedupeKey, bool critical = false)
         {
-            var recentCount = await _store.Project.CountRecentWakesAsync(DateTime.UtcNow.AddHours(-1));
-            if (recentCount >= _settings.MaxWakesPerHour)
+            // The hourly cap only throttles proactive nudges (recurrences, ready
+            // tasks). Completions, claim results and recovery notices must always
+            // land or their continuations are lost.
+            if (!critical)
             {
-                _hub.Publish("wake.suppressed", new { kind, taskId, reason = $"MaxWakesPerHour ({_settings.MaxWakesPerHour}) reached" });
-                return false;
+                var recentCount = await _store.Project.CountRecentWakesAsync(DateTime.UtcNow.AddHours(-1));
+                if (recentCount >= _settings.MaxWakesPerHour)
+                {
+                    _hub.Publish("wake.suppressed", new { kind, taskId, reason = $"MaxWakesPerHour ({_settings.MaxWakesPerHour}) reached" });
+                    return false;
+                }
             }
 
             var enqueued = await _store.Project.TryEnqueueWakeAsync(new WakeItem
@@ -251,7 +257,8 @@ namespace Saturn.Core.Tasks
                         waiter.WaitTargetId.StartsWith("tk_") ? waiter.WaitTargetId : null,
                         $"Agent '{waiter.WaiterAgentName ?? waiter.WaiterAgentId}' was waiting on {waiter.WaitTargetId}, which completed (success={success}), " +
                         $"but that agent no longer exists. Result:\n{resultText}\n\nDecide how to proceed with its work.",
-                        $"waiterfb:{waiter.Id}");
+                        $"waiterfb:{waiter.Id}",
+                        critical: true);
                 }
                 return;
             }
@@ -263,7 +270,8 @@ namespace Saturn.Core.Tasks
                     WakeKinds.TaskCompleted,
                     waiter.WaitTargetId.StartsWith("tk_") ? waiter.WaitTargetId : null,
                     $"The task you were waiting on ({waiter.WaitTargetId}) completed (success={success}). Result:\n{resultText}",
-                    $"waiter:{waiter.Id}");
+                    $"waiter:{waiter.Id}",
+                    critical: true);
             }
         }
 
@@ -396,7 +404,8 @@ namespace Saturn.Core.Tasks
                     dispatch.TaskId,
                     $"Dispatched task '{task?.Title ?? dispatch.TaskId}' ({dispatch.TaskId}) was completed by {result.AgentName} (success={result.Success}). " +
                     $"Result:\n{Truncate(result.Result, 2000)}",
-                    $"complete:{dispatch.Id}");
+                    $"complete:{dispatch.Id}",
+                    critical: true);
             }
 
             // Deliver waiters watching either the Saturn task or the raw manager task id.
@@ -488,7 +497,8 @@ namespace Saturn.Core.Tasks
                 approved
                     ? $"Your claim on task '{task.Title}' ({task.Id}) was APPROVED by the user. You may now work on it or dispatch it."
                     : $"Your claim on task '{task.Title}' ({task.Id}) was DENIED by the user. Do not work on it.",
-                $"claim:{task.Id}:{DateTime.UtcNow:yyyyMMddHHmmss}");
+                $"claim:{task.Id}:{DateTime.UtcNow:yyyyMMddHHmmss}",
+                critical: true);
         }
 
         // ---------- Recovery ----------
@@ -516,7 +526,8 @@ namespace Saturn.Core.Tasks
                     dispatch.TaskId,
                     $"Dispatch of task '{task?.Title ?? dispatch.TaskId}' ({dispatch.TaskId}) to agent '{dispatch.AgentName}' was interrupted " +
                     "(the process restarted before it finished). The task is back in pending; re-dispatch it if appropriate.",
-                    $"orphan:{dispatch.Id}");
+                    $"orphan:{dispatch.Id}",
+                    critical: true);
             }
         }
 
