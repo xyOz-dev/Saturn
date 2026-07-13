@@ -460,6 +460,19 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
+        public Task ResetWaiterDeliveryAsync(string waiterId, CancellationToken ct = default)
+        {
+            return WithWriteLockAsync<object?>(async () =>
+            {
+                using var connection = CreateConnection();
+                using var cmd = new SqliteCommand(
+                    "UPDATE TaskWaiters SET DeliveredAt = NULL, DeliveryAttempts = DeliveryAttempts + 1 WHERE Id = @Id", connection);
+                cmd.Parameters.AddWithValue("@Id", waiterId);
+                await cmd.ExecuteNonQueryAsync(ct);
+                return null;
+            }, ct);
+        }
+
         public Task IncrementWaiterAttemptsAsync(string waiterId, CancellationToken ct = default)
         {
             return WithWriteLockAsync<object?>(async () =>

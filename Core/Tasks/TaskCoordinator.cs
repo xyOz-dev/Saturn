@@ -235,10 +235,21 @@ namespace Saturn.Core.Tasks
                 var status = AgentManager.Instance.GetAgentStatus(waiter.WaiterAgentId);
                 if (status.Exists && status.IsIdle)
                 {
+                    // Claim the waiter first so concurrent sweeps deliver at most once,
+                    // but put it back if the delivery itself fails.
                     if (await _store.Project.MarkWaiterDeliveredAsync(waiter.Id))
                     {
-                        await AgentManager.Instance.HandOffTask(waiter.WaiterAgentId, prompt);
-                        _hub.Publish("waiter.delivered", new { waiterId = waiter.Id, to = waiter.WaiterAgentName });
+                        try
+                        {
+                            await AgentManager.Instance.HandOffTask(waiter.WaiterAgentId, prompt);
+                            _hub.Publish("waiter.delivered", new { waiterId = waiter.Id, to = waiter.WaiterAgentName });
+                        }
+                        catch (Exception)
+                        {
+                            // Agent vanished between the status check and the handoff;
+                            // the next sweep re-resolves it (and falls back if gone).
+                            await _store.Project.ResetWaiterDeliveryAsync(waiter.Id);
+                        }
                     }
                     return;
                 }
@@ -252,13 +263,20 @@ namespace Saturn.Core.Tasks
                 // Agent is gone (terminated or process restarted): route to the orchestrator.
                 if (await _store.Project.MarkWaiterDeliveredAsync(waiter.Id))
                 {
-                    await EnqueueWakeAsync(
-                        WakeKinds.WaiterFallback,
-                        waiter.WaitTargetId.StartsWith("tk_") ? waiter.WaitTargetId : null,
-                        $"Agent '{waiter.WaiterAgentName ?? waiter.WaiterAgentId}' was waiting on {waiter.WaitTargetId}, which completed (success={success}), " +
-                        $"but that agent no longer exists. Result:\n{resultText}\n\nDecide how to proceed with its work.",
-                        $"waiterfb:{waiter.Id}",
-                        critical: true);
+                    try
+                    {
+                        await EnqueueWakeAsync(
+                            WakeKinds.WaiterFallback,
+                            waiter.WaitTargetId.StartsWith("tk_") ? waiter.WaitTargetId : null,
+                            $"Agent '{waiter.WaiterAgentName ?? waiter.WaiterAgentId}' was waiting on {waiter.WaitTargetId}, which completed (success={success}), " +
+                            $"but that agent no longer exists. Result:\n{resultText}\n\nDecide how to proceed with its work.",
+                            $"waiterfb:{waiter.Id}",
+                            critical: true);
+                    }
+                    catch (Exception)
+                    {
+                        await _store.Project.ResetWaiterDeliveryAsync(waiter.Id);
+                    }
                 }
                 return;
             }
@@ -266,12 +284,19 @@ namespace Saturn.Core.Tasks
             // Orchestrator waiter.
             if (await _store.Project.MarkWaiterDeliveredAsync(waiter.Id))
             {
-                await EnqueueWakeAsync(
-                    WakeKinds.TaskCompleted,
-                    waiter.WaitTargetId.StartsWith("tk_") ? waiter.WaitTargetId : null,
-                    $"The task you were waiting on ({waiter.WaitTargetId}) completed (success={success}). Result:\n{resultText}",
-                    $"waiter:{waiter.Id}",
-                    critical: true);
+                try
+                {
+                    await EnqueueWakeAsync(
+                        WakeKinds.TaskCompleted,
+                        waiter.WaitTargetId.StartsWith("tk_") ? waiter.WaitTargetId : null,
+                        $"The task you were waiting on ({waiter.WaitTargetId}) completed (success={success}). Result:\n{resultText}",
+                        $"waiter:{waiter.Id}",
+                        critical: true);
+                }
+                catch (Exception)
+                {
+                    await _store.Project.ResetWaiterDeliveryAsync(waiter.Id);
+                }
             }
         }
 
