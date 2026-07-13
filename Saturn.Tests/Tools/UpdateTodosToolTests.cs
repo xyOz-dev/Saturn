@@ -18,7 +18,7 @@ namespace Saturn.Tests.Tools
             AgentContext.Current = null;
         }
 
-        private static void SetSession(string? sessionId)
+        private static void SetSession(string? sessionId, string agentInstanceId = "")
         {
             AgentContext.Current = new AgentExecutionContext
             {
@@ -29,6 +29,7 @@ namespace Saturn.Tests.Tools
                     ClientSource = new FakeClientSource()
                 },
                 AgentName = "TestAgent",
+                AgentInstanceId = agentInstanceId,
                 SessionId = sessionId
             };
         }
@@ -190,10 +191,49 @@ namespace Saturn.Tests.Tools
             var result = await tool.ExecuteAsync(Params(Item("Contextless step", "pending")));
 
             result.Success.Should().BeTrue();
+            result.FormattedOutput.Should().NotContain("Warning");
             TodoStore.CurrentKey().Should().Be(TodoStore.NoSessionKey);
             (await TodoStore.GetAsync(TodoStore.NoSessionKey)).Should().Contain(t => t.Content == "Contextless step");
 
             await TodoStore.SetAsync(TodoStore.NoSessionKey, Array.Empty<TodoItem>());
+        }
+
+        [Fact]
+        public async Task Execute_SessionlessAgents_DoNotShareLists()
+        {
+            var agentA = $"agent-a-{Guid.NewGuid():N}";
+            var agentB = $"agent-b-{Guid.NewGuid():N}";
+            var tool = new UpdateTodosTool();
+
+            SetSession(null, agentA);
+            var keyA = TodoStore.CurrentKey();
+            await tool.ExecuteAsync(Params(Item("Agent A step", "pending")));
+
+            SetSession(null, agentB);
+            var keyB = TodoStore.CurrentKey();
+            await tool.ExecuteAsync(Params(Item("Agent B step", "pending")));
+
+            keyA.Should().NotBe(keyB);
+            keyA.Should().NotBe(TodoStore.NoSessionKey);
+            (await TodoStore.GetAsync(keyA)).Single().Content.Should().Be("Agent A step");
+            (await TodoStore.GetAsync(keyB)).Single().Content.Should().Be("Agent B step");
+        }
+
+        [Fact]
+        public async Task Cache_EvictsLeastRecentlyUsedEntriesOverCap()
+        {
+            var prefix = $"evict-{Guid.NewGuid():N}";
+            var oldestKey = $"(agent:{prefix}-0)";
+            var items = new[] { new TodoItem("Step", TodoStatus.Pending) };
+
+            await TodoStore.SetAsync(oldestKey, items);
+            for (var i = 1; i <= 300; i++)
+            {
+                await TodoStore.SetAsync($"(agent:{prefix}-{i})", items);
+            }
+
+            (await TodoStore.GetAsync(oldestKey)).Should().BeEmpty();
+            (await TodoStore.GetAsync($"(agent:{prefix}-300)")).Should().HaveCount(1);
         }
 
         [Fact]

@@ -126,11 +126,17 @@ Important rules:
                 items.Add(new TodoItem(content.Trim(), status));
             }
 
-            await TodoStore.SetAsync(TodoStore.CurrentKey(), items);
+            var persisted = await TodoStore.SetAsync(TodoStore.CurrentKey(), items);
+            var persistenceWarning = persisted
+                ? null
+                : "Warning: the todo list could not be persisted and may not survive a restart.";
 
             if (items.Count == 0)
             {
-                return CreateSuccessResult(new { count = 0, todos = Array.Empty<object>() }, "Todo list cleared.");
+                var clearedOutput = persistenceWarning == null
+                    ? "Todo list cleared."
+                    : $"Todo list cleared.\n{persistenceWarning}";
+                return CreateSuccessResult(new { count = 0, persisted, todos = Array.Empty<object>() }, clearedOutput);
             }
 
             var completed = items.Count(t => t.Status == TodoStatus.Completed);
@@ -149,12 +155,18 @@ Important rules:
                 output.AppendLine($"{marker} {item.Content}");
             }
 
+            if (persistenceWarning != null)
+            {
+                output.AppendLine(persistenceWarning);
+            }
+
             var rawData = new
             {
                 count = items.Count,
                 completed,
                 inProgress = inProgressCount,
                 pending,
+                persisted,
                 todos = items.Select(t => new { content = t.Content, status = TodoStore.StatusToString(t.Status) }).ToList()
             };
 

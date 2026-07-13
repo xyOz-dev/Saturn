@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Saturn.Data;
 using Saturn.Tools.Core;
@@ -22,7 +23,11 @@ namespace Saturn.Tools.Todo
     {
         public const string NoSessionKey = "(no-session)";
 
+        private const int MaxCacheEntries = 256;
+
         private static readonly ConcurrentDictionary<string, IReadOnlyList<TodoItem>> _lists = new();
+        private static readonly ConcurrentDictionary<string, long> _lastAccess = new();
+        private static long _accessCounter;
 
         // Own repository instance on the shared chats.db; per-agent repositories
         // already coexist on the same file (WAL + busy_timeout).
@@ -41,18 +46,33 @@ namespace Saturn.Tools.Todo
 
         public static string CurrentKey()
         {
-            var sessionId = AgentContext.Current?.SessionId;
-            return string.IsNullOrEmpty(sessionId) ? NoSessionKey : sessionId;
+            var context = AgentContext.Current;
+            if (!string.IsNullOrEmpty(context?.SessionId))
+            {
+                return context!.SessionId!;
+            }
+
+            if (!string.IsNullOrEmpty(context?.AgentInstanceId))
+            {
+                return $"(agent:{context!.AgentInstanceId})";
+            }
+
+            return NoSessionKey;
         }
+
+        // Parenthesized keys are agent-instance fallbacks with no session to
+        // persist under; they live in memory only.
+        private static bool IsPersistable(string key) => !key.StartsWith("(");
 
         public static async Task<IReadOnlyList<TodoItem>> GetAsync(string key)
         {
             if (_lists.TryGetValue(key, out var cached))
             {
+                Touch(key);
                 return cached;
             }
 
-            if (key != NoSessionKey && _repository.Value != null)
+            if (IsPersistable(key) && _repository.Value != null)
             {
                 try
                 {
@@ -61,6 +81,8 @@ namespace Saturn.Tools.Todo
                     {
                         var items = Deserialize(json);
                         _lists[key] = items;
+                        Touch(key);
+                        EvictIfOverCap(key);
                         return items;
                     }
                 }
@@ -73,29 +95,74 @@ namespace Saturn.Tools.Todo
             return Array.Empty<TodoItem>();
         }
 
-        public static async Task SetAsync(string key, IReadOnlyList<TodoItem> items)
+        /// <summary>
+        /// Updates the list for the given key. Returns false when the list should
+        /// have been persisted but the write failed, so callers can warn that it
+        /// may not survive a restart.
+        /// </summary>
+        public static async Task<bool> SetAsync(string key, IReadOnlyList<TodoItem> items)
         {
             if (items.Count == 0)
             {
                 _lists.TryRemove(key, out _);
+                _lastAccess.TryRemove(key, out _);
             }
             else
             {
                 _lists[key] = items;
+                Touch(key);
+                EvictIfOverCap(key);
             }
 
-            if (key == NoSessionKey || _repository.Value == null)
+            if (!IsPersistable(key))
             {
-                return;
+                return true;
+            }
+
+            if (_repository.Value == null)
+            {
+                return false;
             }
 
             try
             {
                 await _repository.Value.SaveSessionTodosAsync(key, items.Count == 0 ? null : Serialize(items));
+                return true;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to persist todos for session {key}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static void Touch(string key)
+        {
+            _lastAccess[key] = Interlocked.Increment(ref _accessCounter);
+        }
+
+        // Sessions are unbounded over a long-lived web process; persisted entries
+        // reload from the DB on the next access, so evicting them only costs a read.
+        // Non-persistable entries can be lost, which is acceptable for the rare
+        // sessionless caller once the cache holds hundreds of lists.
+        private static void EvictIfOverCap(string currentKey)
+        {
+            if (_lists.Count <= MaxCacheEntries)
+            {
+                return;
+            }
+
+            var evictable = _lastAccess
+                .Where(kv => kv.Key != currentKey)
+                .OrderBy(kv => kv.Value)
+                .Select(kv => kv.Key)
+                .Take(_lists.Count - MaxCacheEntries)
+                .ToList();
+
+            foreach (var key in evictable)
+            {
+                _lists.TryRemove(key, out _);
+                _lastAccess.TryRemove(key, out _);
             }
         }
 
