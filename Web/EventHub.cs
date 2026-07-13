@@ -44,14 +44,19 @@ namespace Saturn.Web
                 await response.WriteAsync(": connected\n\n", cancellationToken);
                 await response.Body.FlushAsync(cancellationToken);
 
+                // The pending read must survive keep-alive rounds: starting a new
+                // ReadAsync each loop would leave abandoned readers racing on the
+                // channel and frames could vanish into a task nobody awaits.
+                Task<string>? readTask = null;
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    var readTask = channel.Reader.ReadAsync(cancellationToken).AsTask();
+                    readTask ??= channel.Reader.ReadAsync(cancellationToken).AsTask();
                     var completed = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(20), cancellationToken));
 
                     if (completed == readTask)
                     {
                         await response.WriteAsync(await readTask, cancellationToken);
+                        readTask = null;
                     }
                     else
                     {
