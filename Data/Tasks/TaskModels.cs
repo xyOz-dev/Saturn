@@ -93,6 +93,10 @@ namespace Saturn.Data.Tasks
         public string Title { get; set; } = "";
         public string Status { get; set; } = "";
         public bool Missing { get; set; }
+
+        // True when this blocker no longer holds its dependents: it is terminal,
+        // was deleted, or is a recurring task that has completed at least one run.
+        public bool Satisfied { get; set; }
     }
 
     public class TaskView

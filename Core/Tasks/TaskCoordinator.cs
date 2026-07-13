@@ -357,7 +357,7 @@ namespace Saturn.Core.Tasks
             if (await _store.IsBlockedAsync(taskId))
             {
                 var blockers = await _store.GetBlockersAsync(taskId);
-                return (false, $"Task {taskId} is blocked by: {string.Join(", ", blockers.Where(b => !TaskStatuses.IsTerminal(b.Status)).Select(b => $"{b.Title} ({b.Id})"))}", null);
+                return (false, $"Task {taskId} is blocked by: {string.Join(", ", blockers.Where(b => !b.Satisfied).Select(b => $"{b.Title} ({b.Id})"))}", null);
             }
             var openDispatches = (await _store.Project.GetDispatchesForTaskAsync(taskId)).Where(d => d.CompletedAt == null && !d.Orphaned).ToList();
             if (openDispatches.Count > 0)

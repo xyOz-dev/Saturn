@@ -46,7 +46,7 @@ namespace Saturn.Tools.Tasks
             sb.Append($"[{t.Id}] {t.Title} — {t.Status}");
             if (view.Blocked)
             {
-                var blockers = view.BlockedBy.Where(b => !TaskStatuses.IsTerminal(b.Status)).Select(b => b.Id);
+                var blockers = view.BlockedBy.Where(b => !b.Satisfied).Select(b => b.Id);
                 sb.Append($" (BLOCKED by {string.Join(", ", blockers)})");
             }
             sb.Append($" | scope={t.Scope}/{t.Board} priority={t.Priority}");

@@ -244,7 +244,7 @@ namespace Saturn.Data.Tasks
             return new TaskView
             {
                 Task = task,
-                Blocked = blockers.Any(b => !b.Missing && !TaskStatuses.IsTerminal(b.Status)),
+                Blocked = blockers.Any(b => !b.Satisfied),
                 BlockedBy = blockers,
                 RecurrenceDescription = task.IsRecurring
                     ? RecurrenceCalculator.Describe(task.RecurrenceKind, task.RecurrenceIntervalSeconds, task.RecurrenceCron)
@@ -262,7 +262,7 @@ namespace Saturn.Data.Tasks
                 return false;
             }
             var blockers = await GetBlockersAsync(id, RepoOf(task));
-            return blockers.Any(b => !b.Missing && !TaskStatuses.IsTerminal(b.Status));
+            return blockers.Any(b => !b.Satisfied);
         }
 
         public async Task<List<TaskBlockerInfo>> GetBlockersAsync(string id, TaskRepository? repo = null)
@@ -273,11 +273,27 @@ namespace Saturn.Data.Tasks
             foreach (var blockerId in blockerIds)
             {
                 var blocker = await FindAsync(blockerId);
-                infos.Add(blocker == null
-                    ? new TaskBlockerInfo { Id = blockerId, Title = "(deleted)", Status = TaskStatuses.Done, Missing = true }
-                    : new TaskBlockerInfo { Id = blocker.Id, Title = blocker.Title, Status = blocker.Status });
+                if (blocker == null)
+                {
+                    infos.Add(new TaskBlockerInfo { Id = blockerId, Title = "(deleted)", Status = TaskStatuses.Done, Missing = true, Satisfied = true });
+                    continue;
+                }
+
+                // Recurring tasks reset to pending after every occurrence, so they
+                // never reach a terminal status; dependents are satisfied once the
+                // recurring task has completed at least one run.
+                var satisfied = TaskStatuses.IsTerminal(blocker.Status)
+                    || (blocker.IsRecurring && await HasCompletedRunAsync(blocker));
+
+                infos.Add(new TaskBlockerInfo { Id = blocker.Id, Title = blocker.Title, Status = blocker.Status, Satisfied = satisfied });
             }
             return infos;
+        }
+
+        private async Task<bool> HasCompletedRunAsync(SaturnTask task)
+        {
+            var runs = await RepoOf(task).GetRunsAsync(task.Id);
+            return runs.Any(r => r.Outcome != null);
         }
 
         public async Task<SaturnTask?> CompleteAsync(string id, bool success = true, string? note = null)

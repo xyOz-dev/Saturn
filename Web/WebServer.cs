@@ -77,7 +77,9 @@ namespace Saturn.Web
             _tasks.OnTaskChanged += (change, task) =>
             {
                 _hub.Publish("tasks.changed", new { taskId = task.Id, scope = task.Scope, board = task.Board, change });
-                if (change == "completed" && TaskStatuses.IsTerminal(task.Status))
+                // Recurring tasks reset to pending on completion (non-terminal),
+                // but their dependents still need the unblock sweep.
+                if (change == "completed")
                 {
                     _ = _coordinator.HandleSaturnTaskCompletedAsync(task);
                 }

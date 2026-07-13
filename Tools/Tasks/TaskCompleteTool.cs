@@ -46,7 +46,7 @@ Reports any tasks that became unblocked as a result.";
             {
                 var blockers = await Store.GetBlockersAsync(id);
                 return CreateErrorResult(
-                    $"Task {id} is still blocked by: {string.Join(", ", blockers.Where(b => !TaskStatuses.IsTerminal(b.Status)).Select(b => $"{b.Title} ({b.Id})"))}. " +
+                    $"Task {id} is still blocked by: {string.Join(", ", blockers.Where(b => !b.Satisfied).Select(b => $"{b.Title} ({b.Id})"))}. " +
                     "Complete the blockers first or remove the dependency with update_task.");
             }
 
