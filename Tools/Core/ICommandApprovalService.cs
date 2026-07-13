@@ -12,19 +12,27 @@ namespace Saturn.Tools.Core
     public class CommandApprovalService : ICommandApprovalService
     {
         private readonly bool _requireApproval;
-        
+
+        public static ICommandApprovalService? GlobalOverride { get; set; }
+
         public CommandApprovalService(bool requireApproval = true)
         {
             _requireApproval = requireApproval;
         }
-        
+
         public async Task<bool> RequestApprovalAsync(string command, string workingDirectory)
         {
             if (!_requireApproval)
             {
                 return true;
             }
-            
+
+            var overrideService = GlobalOverride;
+            if (overrideService != null)
+            {
+                return await overrideService.RequestApprovalAsync(command, workingDirectory);
+            }
+
             if (Terminal.Gui.Application.MainLoop == null)
             {
                 return false;

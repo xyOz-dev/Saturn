@@ -38,7 +38,9 @@ namespace Saturn.Agents.Core
             PresencePenalty = 0;
             EnableStreaming = true;
             MaintainHistory = true;
-            RequireCommandApproval = false;
+            // Approval is the safety net for shell commands; every other default
+            // (CreateDefault, AgentConfiguration) is true, so match them here.
+            RequireCommandApproval = true;
             EnableUserRules = true;
             Model = "anthropic/claude-sonnet-4";
         }

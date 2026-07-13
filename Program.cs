@@ -35,6 +35,20 @@ namespace Saturn
                 }
 
                 var (agent, client) = await CreateAgent();
+
+                if (TryParseWebOptions(args, out var port))
+                {
+                    agent.IsOrchestrator = true;
+                    // Long-horizon web sessions benefit from a deeper context window.
+                    agent.Configuration.MaxHistoryMessages = 50;
+                    var server = new Saturn.Web.WebServer(agent, client, port);
+                    Console.WriteLine($"Saturn web UI running at {server.Url}");
+                    Console.WriteLine("Press Ctrl+C to stop.");
+                    TryOpenBrowser(server.Url);
+                    await server.RunAsync();
+                    return;
+                }
+
                 using var chatInterface = new ChatInterface(agent, client);
                 chatInterface.Initialize();
                 chatInterface.Run();
@@ -52,6 +66,43 @@ namespace Saturn
             }
         }
         
+
+        static bool TryParseWebOptions(string[] args, out int port)
+        {
+            port = 5225;
+            var webRequested = false;
+
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (args[i] is "--web" or "-w")
+                {
+                    webRequested = true;
+                }
+                else if (args[i] == "--port" && i + 1 < args.Length && int.TryParse(args[i + 1], out var parsed))
+                {
+                    port = parsed;
+                    i++;
+                }
+            }
+
+            return webRequested;
+        }
+
+        static void TryOpenBrowser(string url)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // Opening the browser is best-effort; the URL is printed either way.
+            }
+        }
 
         static async Task<(Agent, ILlmClientSource)> CreateAgent()
         {
@@ -124,6 +175,14 @@ Prime Directive
    - Documentation: **ALWAYS** review the code provided before writing documentation. The documentation written should always be validated in code.
 2) Output Rules:
    - **NEVER** Use emojis.
+
+Task System (web mode)
+- The user maintains durable todo lists via the task tools: list_tasks, create_task, update_task, complete_task, wait_for_task, claim_task, dispatch_task, list_due_tasks.
+- Scopes: 'global' (machine-wide), 'project' (this repository, named boards), 'agent' (per-agent lists).
+- [Saturn Scheduler] messages are automated wake-ups: a recurring task fired, a task unblocked, a dispatched task completed, or an agent-available task is ready. Act on them using the task tools, then report concisely.
+- Tasks flagged requires-approval: call claim_task and WAIT for the user's decision (you will be woken). Never work on user-handoff-only tasks.
+- For long-running dependencies prefer wait_for_task over polling: register, end your turn, and you will be re-prompted with the result when it completes.
+- Keep the task list accurate: complete_task when work finishes, create_task for follow-ups you discover.
 
 Multi-Agent Orchestration
 1) When to use sub-agents:
@@ -218,13 +277,24 @@ Operating Principles
                 EnableStreaming = true,
                 RequireCommandApproval = true,
                 EnableUserRules = enableUserRules,
-                ToolNames = new List<string>() { 
-                    "apply_diff", "grep", "glob", "read_file", "list_files", 
+                ToolNames = new List<string>() {
+                    "apply_diff", "grep", "glob", "read_file", "list_files",
                     "write_file", "search_and_replace", "delete_file",
-                    "create_agent", "hand_off_to_agent", "get_agent_status", 
+                    "create_agent", "hand_off_to_agent", "get_agent_status",
                     "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
-                    "get_command_output", "kill_command", "web_fetch"
+                    "get_command_output", "kill_command", "web_fetch",
+                    "list_tasks", "create_task", "update_task", "complete_task",
+                    "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks"
                 },
+            };
+
+            // Persisted configs predate the task system; backfill only those
+            // tools. Re-adding the full default set would silently restore
+            // tools the user deliberately removed (e.g. execute_command).
+            var taskSystemTools = new[]
+            {
+                "list_tasks", "create_task", "update_task", "complete_task",
+                "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks"
             };
 
             if (persistedConfig != null)
@@ -232,6 +302,10 @@ Operating Principles
                 ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
 
                 agentConfig.Model = model;
+
+                agentConfig.ToolNames = agentConfig.ToolNames
+                    .Union(taskSystemTools, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
             }
             else
             {
