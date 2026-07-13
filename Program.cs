@@ -288,7 +288,14 @@ Operating Principles
                 },
             };
 
-            var defaultToolNames = agentConfig.ToolNames.ToList();
+            // Persisted configs predate the task system; backfill only those
+            // tools. Re-adding the full default set would silently restore
+            // tools the user deliberately removed (e.g. execute_command).
+            var taskSystemTools = new[]
+            {
+                "list_tasks", "create_task", "update_task", "complete_task",
+                "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks"
+            };
 
             if (persistedConfig != null)
             {
@@ -296,10 +303,8 @@ Operating Principles
 
                 agentConfig.Model = model;
 
-                // Persisted configs can predate newly added built-in tools; make
-                // sure the root agent always sees the current default set.
                 agentConfig.ToolNames = agentConfig.ToolNames
-                    .Union(defaultToolNames, StringComparer.OrdinalIgnoreCase)
+                    .Union(taskSystemTools, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
             else
