@@ -489,6 +489,7 @@ namespace Saturn.Agents.Core
                             {
                                 Configuration = Configuration,
                                 AgentInstanceId = Id,
+                                SessionId = CurrentSessionId,
                                 ManagerAgentId = ManagerAgentId,
                                 AgentName = Name,
                                 IsOrchestrator = IsOrchestrator

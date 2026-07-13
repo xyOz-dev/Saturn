@@ -230,6 +230,8 @@ Operating Principles
 
 2) Planning
    - Make a brief plan before edits or commands. Keep the plan to 3–7 bullets.
+   - Track multi-step work with update_todos: write the step list up front, keep exactly one item in_progress, and mark steps completed immediately.
+   - The update_todos list is your private, session-scoped scratchpad; use the task tools for the user's durable todo lists.
    - Identify opportunities for parallel execution with sub-agents.
    - Track delegated work to avoid duplication - mark tasks as delegated.
    - If requirements are ambiguous, ask targeted clarifying questions.
@@ -284,17 +286,19 @@ Operating Principles
                     "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
                     "get_command_output", "kill_command", "web_fetch",
                     "list_tasks", "create_task", "update_task", "complete_task",
-                    "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks"
+                    "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks",
+                    "update_todos"
                 },
             };
 
-            // Persisted configs predate the task system; backfill only those
-            // tools. Re-adding the full default set would silently restore
-            // tools the user deliberately removed (e.g. execute_command).
-            var taskSystemTools = new[]
+            // Persisted configs predate newer tools; backfill only those.
+            // Re-adding the full default set would silently restore tools
+            // the user deliberately removed (e.g. execute_command).
+            var backfillTools = new[]
             {
                 "list_tasks", "create_task", "update_task", "complete_task",
-                "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks"
+                "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks",
+                "update_todos"
             };
 
             if (persistedConfig != null)
@@ -304,7 +308,7 @@ Operating Principles
                 agentConfig.Model = model;
 
                 agentConfig.ToolNames = agentConfig.ToolNames
-                    .Union(taskSystemTools, StringComparer.OrdinalIgnoreCase)
+                    .Union(backfillTools, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
             else

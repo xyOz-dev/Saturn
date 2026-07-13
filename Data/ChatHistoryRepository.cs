@@ -95,6 +95,13 @@ public class ChatHistoryRepository : IDisposable
                 FOREIGN KEY (SessionId) REFERENCES ChatSessions(Id)
             )";
 
+        var createSessionTodosTable = @"
+            CREATE TABLE IF NOT EXISTS SessionTodos (
+                SessionId TEXT PRIMARY KEY,
+                TodosJson TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            )";
+
         var createIndices = @"
             CREATE INDEX IF NOT EXISTS idx_messages_session ON ChatMessages(SessionId);
             CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON ChatMessages(Timestamp);
@@ -108,6 +115,8 @@ public class ChatHistoryRepository : IDisposable
         using (var cmd = new SqliteCommand(createMessagesTable, connection))
             cmd.ExecuteNonQuery();
         using (var cmd = new SqliteCommand(createToolCallsTable, connection))
+            cmd.ExecuteNonQuery();
+        using (var cmd = new SqliteCommand(createSessionTodosTable, connection))
             cmd.ExecuteNonQuery();
         using (var cmd = new SqliteCommand(createIndices, connection))
             cmd.ExecuteNonQuery();
@@ -611,6 +620,52 @@ public class ChatHistoryRepository : IDisposable
             cmd.Parameters.AddWithValue("@Id", sessionId);
 
             await cmd.ExecuteNonQueryAsync();
+        });
+    }
+
+    public async Task SaveSessionTodosAsync(string sessionId, string? todosJson)
+    {
+        await WithDbLockAsync(async () =>
+        {
+            using var connection = CreateConnection();
+
+            if (string.IsNullOrEmpty(todosJson))
+            {
+                var deleteSql = "DELETE FROM SessionTodos WHERE SessionId = @SessionId";
+                using var deleteCmd = new SqliteCommand(deleteSql, connection);
+                deleteCmd.Parameters.AddWithValue("@SessionId", sessionId);
+                await deleteCmd.ExecuteNonQueryAsync();
+                return;
+            }
+
+            var sql = @"
+                INSERT INTO SessionTodos (SessionId, TodosJson, UpdatedAt)
+                VALUES (@SessionId, @TodosJson, @UpdatedAt)
+                ON CONFLICT(SessionId) DO UPDATE SET
+                    TodosJson = @TodosJson,
+                    UpdatedAt = @UpdatedAt";
+
+            using var cmd = new SqliteCommand(sql, connection);
+            cmd.Parameters.AddWithValue("@SessionId", sessionId);
+            cmd.Parameters.AddWithValue("@TodosJson", todosJson);
+            cmd.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow.ToString("O"));
+
+            await cmd.ExecuteNonQueryAsync();
+        });
+    }
+
+    public async Task<string?> GetSessionTodosAsync(string sessionId)
+    {
+        return await WithReadLockAsync(async () =>
+        {
+            using var connection = CreateConnection();
+
+            var sql = "SELECT TodosJson FROM SessionTodos WHERE SessionId = @SessionId";
+            using var cmd = new SqliteCommand(sql, connection);
+            cmd.Parameters.AddWithValue("@SessionId", sessionId);
+
+            var result = await cmd.ExecuteScalarAsync();
+            return result as string;
         });
     }
 

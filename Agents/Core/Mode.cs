@@ -59,7 +59,8 @@ namespace Saturn.Agents.Core
                     "write_file", "search_and_replace", "delete_file",
                     "create_agent", "hand_off_to_agent", "get_agent_status", 
                     "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
-                    "get_command_output", "kill_command", "web_fetch"
+                    "get_command_output", "kill_command", "web_fetch",
+                    "update_todos"
                 },
                 SystemPromptOverride = null,
                 Model = "anthropic/claude-sonnet-4",
