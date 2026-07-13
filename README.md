@@ -99,8 +99,8 @@ From inside the Git repository you want to work on:
 # If installed as a global tool
 saturn
 
-# If running from source
-dotnet run --project Saturn
+# If running from source (repository root)
+dotnet run
 ```
 
 ### What to expect
