@@ -13,8 +13,34 @@ using Xunit;
 
 namespace Saturn.Tests.Search
 {
-    public class SearchProviderTests
+    [Collection("Configuration")]
+    public class SearchProviderTests : IDisposable
     {
+        private static readonly string[] ProviderEnvVars =
+            { "TAVILY_API_KEY", "BRAVE_API_KEY", "SERPER_API_KEY", "SERPAPI_API_KEY", "EXA_API_KEY" };
+
+        private readonly Dictionary<string, string?> _savedEnv = new();
+
+        public SearchProviderTests()
+        {
+            // ResolveApiKey falls back to these env vars, so clear them for determinism
+            // regardless of the host environment; the collection serializes us against
+            // other tests that set them.
+            foreach (var name in ProviderEnvVars)
+            {
+                _savedEnv[name] = Environment.GetEnvironmentVariable(name);
+                Environment.SetEnvironmentVariable(name, null);
+            }
+        }
+
+        public void Dispose()
+        {
+            foreach (var kvp in _savedEnv)
+            {
+                Environment.SetEnvironmentVariable(kvp.Key, kvp.Value);
+            }
+        }
+
         private static (HttpClient http, List<(HttpRequestMessage Request, string Body)> log) Stub(
             string responseBody, HttpStatusCode status = HttpStatusCode.OK)
         {

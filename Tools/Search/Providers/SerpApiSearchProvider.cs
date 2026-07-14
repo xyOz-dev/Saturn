@@ -19,6 +19,7 @@ namespace Saturn.Tools.Search.Providers
         {
             var apiKey = ResolveApiKey(settings);
 
+            // SerpAPI only accepts the key as a query parameter; it has no header-based auth.
             var url = $"https://serpapi.com/search.json?engine=google&q={Uri.EscapeDataString(query)}&num={maxResults}&api_key={Uri.EscapeDataString(apiKey)}";
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
