@@ -58,6 +58,10 @@ namespace Saturn.OpenRouter.Services
                 if (data == "[DONE]")
                     yield break;
 
+                var streamError = TryParseStreamError(data);
+                if (streamError != null)
+                    throw streamError;
+
                 ChatCompletionChunk? parsed;
                 try
                 {
@@ -76,6 +80,28 @@ namespace Saturn.OpenRouter.Services
                 {
                     yield return parsed;
                 }
+            }
+        }
+
+        private Errors.OpenRouterException? TryParseStreamError(string data)
+        {
+            try
+            {
+                var parsed = Json.Deserialize<Models.Api.ErrorResponse>(data, _jsonOptions);
+                if (parsed?.Error == null || (parsed.Error.Code == null && string.IsNullOrWhiteSpace(parsed.Error.Message)))
+                {
+                    return null;
+                }
+
+                var status = parsed.Error.Code is >= 400 and <= 599
+                    ? (System.Net.HttpStatusCode)parsed.Error.Code.Value
+                    : System.Net.HttpStatusCode.BadGateway;
+
+                return Errors.OpenRouterException.FromErrorBody(status, parsed.Error);
+            }
+            catch (JsonException)
+            {
+                return null;
             }
         }
     }
