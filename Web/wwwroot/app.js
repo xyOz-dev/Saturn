@@ -1373,6 +1373,7 @@ async function loadSettings() {
 
   await Promise.all([
     withPanelFallback(loadProviderPanel, "#prov-settings"),
+    withPanelFallback(loadSearchProviderPanel, "#search-prov-settings"),
     withPanelFallback(loadGenerationPanel, null),
     withPanelFallback(loadToolsPanel, "#tool-grid"),
     withPanelFallback(loadSubAgentPanel, null),
@@ -1465,6 +1466,57 @@ $("#model-apply").addEventListener("click", async () => {
     await Promise.all([loadSettings(), loadOverview()]);
   } catch (err) {
     toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---- search provider panel ---- */
+
+let searchProviderData = [];
+
+async function loadSearchProviderPanel() {
+  searchProviderData = await api.get("/search-providers");
+  const select = $("#search-prov-select");
+  select.innerHTML = searchProviderData
+    .map((p) => `<option value="${esc(p.name)}" ${p.active ? "selected" : ""}>${esc(p.displayName)}</option>`)
+    .join("");
+  renderSearchProviderSettings(select.value);
+}
+
+function renderSearchProviderSettings(providerName) {
+  const provider = searchProviderData.find((p) => p.name === providerName);
+  if (!provider) return;
+  $("#search-prov-settings").innerHTML = provider.settings
+    .map(
+      (d) => `
+      <label class="field"><span>${esc(d.label)}${d.required ? " *" : ""}${d.configured ? " · configured" : ""}${d.environmentVariable ? ` (env: ${esc(d.environmentVariable)})` : ""}</span>
+        <input class="input search-prov-setting" data-key="${esc(d.key)}" type="${d.kind === "secret" ? "password" : d.kind === "number" ? "number" : "text"}"
+          style="width:100%" placeholder="${esc(d.kind === "secret" && d.configured ? "(unchanged)" : d.defaultValue || "")}"
+          value="${esc(d.value || "")}">
+      </label>`
+    )
+    .join("");
+}
+
+$("#search-prov-select").addEventListener("change", (e) => renderSearchProviderSettings(e.target.value));
+
+$("#search-prov-apply").addEventListener("click", async () => {
+  const settings = {};
+  $$(".search-prov-setting").forEach((i) => {
+    if (i.value.trim() !== "") settings[i.dataset.key] = i.value.trim();
+  });
+  $("#search-prov-status").textContent = "Saving…";
+  $("#search-prov-apply").disabled = true;
+  try {
+    const r = await api.post("/search-providers/switch", {
+      provider: $("#search-prov-select").value,
+      settings,
+    });
+    $("#search-prov-status").textContent = `Search provider set to ${r.provider}`;
+    await loadSearchProviderPanel();
+  } catch (err) {
+    $("#search-prov-status").textContent = `Failed: ${err.message}`;
+  } finally {
+    $("#search-prov-apply").disabled = false;
   }
 });
 
