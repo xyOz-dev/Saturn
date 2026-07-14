@@ -40,6 +40,14 @@ namespace Saturn.Providers
 
         public string ActiveProviderName => _activeProviderName;
 
+        public (string ProviderName, ILlmClient Client) Snapshot()
+        {
+            lock (_swapLock)
+            {
+                return (_activeProviderName, Current);
+            }
+        }
+
         public ProviderSettings ActiveSettings => _activeSettings.Clone();
 
         public event EventHandler<ProviderChangedEventArgs>? ProviderChanged;

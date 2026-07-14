@@ -12,6 +12,7 @@ namespace Saturn.Agents.Core
         private static readonly Lazy<ModeManager> _instance = new Lazy<ModeManager>(() => new ModeManager());
         private readonly string _modesDirectory;
         private readonly Mode _defaultMode;
+        private readonly object _modesLock = new object();
         private List<Mode> _modes;
 
         public static ModeManager Instance => _instance.Value;
@@ -33,26 +34,35 @@ namespace Saturn.Agents.Core
 
         public IReadOnlyList<Mode> GetAllModes()
         {
-            var allModes = new List<Mode> { _defaultMode };
-            allModes.AddRange(_modes.OrderBy(m => m.Name));
-            return allModes;
+            lock (_modesLock)
+            {
+                var allModes = new List<Mode> { _defaultMode };
+                allModes.AddRange(_modes.OrderBy(m => m.Name));
+                return allModes;
+            }
         }
 
         public Mode? GetMode(Guid modeId)
         {
             if (modeId == Guid.Empty)
                 return _defaultMode;
-                
-            return _modes.FirstOrDefault(m => m.Id == modeId);
+
+            lock (_modesLock)
+            {
+                return _modes.FirstOrDefault(m => m.Id == modeId);
+            }
         }
 
         public Mode? GetModeByName(string name)
         {
             if (string.Equals(name, "Default", StringComparison.OrdinalIgnoreCase))
                 return _defaultMode;
-                
-            return _modes.FirstOrDefault(m => 
-                string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+
+            lock (_modesLock)
+            {
+                return _modes.FirstOrDefault(m =>
+                    string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+            }
         }
 
         public async Task<Mode> CreateModeAsync(Mode mode)
@@ -63,17 +73,21 @@ namespace Saturn.Agents.Core
             if (string.IsNullOrWhiteSpace(mode.Name))
                 throw new ArgumentException("Mode name cannot be empty");
 
-            if (GetModeByName(mode.Name) != null)
-                throw new ArgumentException($"A mode with the name '{mode.Name}' already exists");
+            lock (_modesLock)
+            {
+                if (GetModeByName(mode.Name) != null)
+                    throw new ArgumentException($"A mode with the name '{mode.Name}' already exists");
 
-            mode.Id = Guid.NewGuid();
-            mode.CreatedDate = DateTime.UtcNow;
-            mode.ModifiedDate = DateTime.UtcNow;
-            mode.IsDefault = false;
+                mode.Id = Guid.NewGuid();
+                mode.CreatedDate = DateTime.UtcNow;
+                mode.ModifiedDate = DateTime.UtcNow;
+                mode.IsDefault = false;
 
-            _modes.Add(mode);
+                _modes.Add(mode);
+            }
+
             await SaveModeAsync(mode);
-            
+
             return mode;
         }
 
@@ -91,24 +105,27 @@ namespace Saturn.Agents.Core
             if (string.Equals(mode.Name, "Default", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Cannot rename a mode to the reserved 'Default' name");
 
-            var existingMode = _modes.FirstOrDefault(m => m.Id == mode.Id);
-            if (existingMode == null)
-                throw new ArgumentException($"Mode with ID {mode.Id} not found");
+            lock (_modesLock)
+            {
+                var existingMode = _modes.FirstOrDefault(m => m.Id == mode.Id);
+                if (existingMode == null)
+                    throw new ArgumentException($"Mode with ID {mode.Id} not found");
 
-            var duplicateName = _modes.FirstOrDefault(m => 
-                m.Id != mode.Id && 
-                string.Equals(m.Name, mode.Name, StringComparison.OrdinalIgnoreCase));
-                
-            if (duplicateName != null)
-                throw new ArgumentException($"A mode with the name '{mode.Name}' already exists");
+                var duplicateName = _modes.FirstOrDefault(m =>
+                    m.Id != mode.Id &&
+                    string.Equals(m.Name, mode.Name, StringComparison.OrdinalIgnoreCase));
 
-            mode.ModifiedDate = DateTime.UtcNow;
-            
-            var index = _modes.IndexOf(existingMode);
-            _modes[index] = mode;
-            
+                if (duplicateName != null)
+                    throw new ArgumentException($"A mode with the name '{mode.Name}' already exists");
+
+                mode.ModifiedDate = DateTime.UtcNow;
+
+                var index = _modes.IndexOf(existingMode);
+                _modes[index] = mode;
+            }
+
             await SaveModeAsync(mode);
-            
+
             return mode;
         }
 
@@ -117,12 +134,16 @@ namespace Saturn.Agents.Core
             if (modeId == Guid.Empty)
                 throw new InvalidOperationException("Cannot delete the default mode");
 
-            var mode = _modes.FirstOrDefault(m => m.Id == modeId);
-            if (mode == null)
-                throw new ArgumentException($"Mode with ID {modeId} not found");
+            Mode? mode;
+            lock (_modesLock)
+            {
+                mode = _modes.FirstOrDefault(m => m.Id == modeId);
+                if (mode == null)
+                    throw new ArgumentException($"Mode with ID {modeId} not found");
 
-            _modes.Remove(mode);
-            
+                _modes.Remove(mode);
+            }
+
             var filePath = GetModeFilePath(mode.Id);
             if (File.Exists(filePath))
             {
@@ -212,30 +233,35 @@ namespace Saturn.Agents.Core
 
         private void LoadModes()
         {
-            _modes.Clear();
-            
-            if (!Directory.Exists(_modesDirectory))
-                return;
+            var loaded = new List<Mode>();
 
-            var modeFiles = Directory.GetFiles(_modesDirectory, "*.json");
-            
-            foreach (var file in modeFiles)
+            if (Directory.Exists(_modesDirectory))
             {
-                try
-                {
-                    var json = File.ReadAllText(file);
-                    var mode = JsonSerializer.Deserialize<Mode>(json);
-                    
-                    if (mode != null && mode.Id != Guid.Empty)
-                    {
-                        mode.IsDefault = false;
-                        _modes.Add(mode);
-                    } 
-                }
-                catch (Exception ex)
-                {
+                var modeFiles = Directory.GetFiles(_modesDirectory, "*.json");
 
+                foreach (var file in modeFiles)
+                {
+                    try
+                    {
+                        var json = File.ReadAllText(file);
+                        var mode = JsonSerializer.Deserialize<Mode>(json);
+
+                        if (mode != null && mode.Id != Guid.Empty)
+                        {
+                            mode.IsDefault = false;
+                            loaded.Add(mode);
+                        }
+                    }
+                    catch (Exception)
+                    {
+
+                    }
                 }
+            }
+
+            lock (_modesLock)
+            {
+                _modes = loaded;
             }
         }
 

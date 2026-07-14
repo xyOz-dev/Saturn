@@ -144,7 +144,13 @@ namespace Saturn.Tests.Providers
                 await ConfigurationManager.SaveProviderSelectionAsync(providerName, custom);
 
                 config = await ConfigurationManager.LoadConfigurationAsync();
-                config!.Providers![providerName].Settings!["apiKey"].Should().Be("sk-custom");
+                var stored = config!.Providers![providerName].Settings!["apiKey"];
+                stored.Should().NotBe("sk-custom", "secrets must not be persisted in plaintext");
+                stored.Should().StartWith("enc:v1:");
+                ConfigurationManager.GetProviderSettings(config, providerName).Get("apiKey").Should().Be("sk-custom");
+
+                var rawJson = await File.ReadAllTextAsync(ConfigFile);
+                rawJson.Should().NotContain("sk-custom");
             }
             finally
             {

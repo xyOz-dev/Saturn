@@ -114,7 +114,16 @@ Examples:
             {
                 return CreateErrorResult("Path CANNOT be empty");
             }
-            
+
+            try
+            {
+                ValidatePathSecurity(path);
+            }
+            catch (Exception ex)
+            {
+                return CreateErrorResult(ex.Message);
+            }
+
             var results = new List<GrepResult>();
             var regexOptions = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
             Regex regex;
@@ -132,31 +141,65 @@ Examples:
                 return CreateErrorResult($"Path NOT found: {path}");
             }
             
+            var skippedFiles = new List<string>();
             await Task.Run(() =>
             {
                 if (File.Exists(path))
                 {
-                    SearchFile(path, regex, results, maxResults);
+                    SearchFile(path, regex, results, maxResults, skippedFiles);
                 }
                 else if (Directory.Exists(path))
                 {
-                    var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-                    var files = Directory.GetFiles(path, filePattern, searchOption);
-                    
+                    // IgnoreInaccessible keeps one unreadable subdirectory from aborting the
+                    // whole enumeration; AttributesToSkip is cleared so hidden/system files
+                    // are still searched as before.
+                    var enumerationOptions = new EnumerationOptions
+                    {
+                        RecurseSubdirectories = recursive,
+                        IgnoreInaccessible = true,
+                        AttributesToSkip = FileAttributes.None
+                    };
+
+                    IEnumerable<string> files;
+                    try
+                    {
+                        files = Directory.EnumerateFiles(path, filePattern, enumerationOptions);
+                    }
+                    catch (Exception ex)
+                    {
+                        skippedFiles.Add($"{path}: {ex.Message}");
+                        files = Enumerable.Empty<string>();
+                    }
+
                     foreach (var file in files)
                     {
                         if (results.Count >= maxResults)
                             break;
-                        
-                        SearchFile(file, regex, results, maxResults - results.Count);
+
+                        SearchFile(file, regex, results, maxResults - results.Count, skippedFiles);
                     }
                 }
             });
-            
-            return FormatResults(results);
+
+            return FormatResults(results, skippedFiles);
         }
-        
-        private void SearchFile(string filePath, Regex regex, List<GrepResult> results, int maxResults)
+
+        private void ValidatePathSecurity(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
+
+            var relative = Path.GetRelativePath(currentDirectory, fullPath);
+            if (Path.IsPathRooted(relative) ||
+                relative == ".." ||
+                relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+                relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                throw new System.Security.SecurityException($"Access denied: Path '{path}' is outside the working directory");
+            }
+        }
+
+        private void SearchFile(string filePath, Regex regex, List<GrepResult> results, int maxResults, List<string> skippedFiles)
         {
             try
             {
@@ -183,17 +226,22 @@ Examples:
             }
             catch (Exception ex)
             {
-
+                skippedFiles.Add($"{filePath}: {ex.Message}");
             }
         }
-        
-        private ToolResult FormatResults(List<GrepResult> results)
+
+        private ToolResult FormatResults(List<GrepResult> results, List<string> skippedFiles)
         {
             if (results.Count == 0)
             {
-                return CreateSuccessResult(results, "No matches found.");
+                var message = "No matches found.";
+                if (skippedFiles.Count > 0)
+                {
+                    message += $" {skippedFiles.Count} file(s) could not be read: {string.Join("; ", skippedFiles.Take(5))}";
+                }
+                return CreateSuccessResult(results, message);
             }
-            
+
             var lines = new List<string>();
             lines.Add($"Found {results.Count} match{(results.Count == 1 ? "" : "es")}:");
             lines.Add("");
@@ -210,7 +258,12 @@ Examples:
                 }
                 lines.Add("");
             }
-            
+
+            if (skippedFiles.Count > 0)
+            {
+                lines.Add($"Note: {skippedFiles.Count} file(s) could not be read: {string.Join("; ", skippedFiles.Take(5))}");
+            }
+
             return CreateSuccessResult(results, string.Join(Environment.NewLine, lines));
         }
     }

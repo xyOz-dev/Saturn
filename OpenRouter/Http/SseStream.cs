@@ -14,18 +14,36 @@ namespace Saturn.OpenRouter.Http
             using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 8192, leaveOpen: true);
 
             string? currentEventName = null;
+            StringBuilder? dataBuffer = null;
 
-            while (!reader.EndOfStream)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                if (cancellationToken.IsCancellationRequested)
+                string? line;
+                try
+                {
+                    line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
                     yield break;
+                }
 
-                var line = await reader.ReadLineAsync().ConfigureAwait(false);
                 if (line is null)
                     break;
 
                 if (line.Length == 0)
                 {
+                    // A blank line terminates the event; multi-line data fields are joined with '\n'.
+                    if (dataBuffer != null)
+                    {
+                        yield return new SseEvent
+                        {
+                            Event = currentEventName,
+                            Data = dataBuffer.ToString(),
+                            IsComment = false
+                        };
+                        dataBuffer = null;
+                    }
                     currentEventName = null;
                     continue;
                 }
@@ -42,15 +60,20 @@ namespace Saturn.OpenRouter.Http
                 if (line.StartsWith("data:", StringComparison.Ordinal))
                 {
                     var data = line.Substring("data:".Length).TrimStart();
-                    yield return new SseEvent
+                    if (dataBuffer == null)
                     {
-                        Event = currentEventName,
-                        Data = data,
-                        IsComment = false
-                    };
-                    continue;
+                        dataBuffer = new StringBuilder(data);
+                    }
+                    else
+                    {
+                        dataBuffer.Append('\n').Append(data);
+                    }
                 }
             }
+
+            // Per the SSE spec, an event that was not terminated by a blank line before
+            // EOF is incomplete (e.g. a dropped connection) and must be discarded rather
+            // than surfaced as a truncated payload.
         }
     }
 }

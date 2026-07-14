@@ -12,24 +12,19 @@ namespace Saturn.Providers
         private static readonly Dictionary<string, (List<ModelInfo> Models, DateTime FetchedAt)> _cache =
             new(StringComparer.OrdinalIgnoreCase);
 
-        public static async Task<List<ModelInfo>> GetAsync(ILlmClientSource clientSource, CancellationToken cancellationToken = default)
+        public static Task<List<ModelInfo>> GetAsync(ILlmClientSource clientSource, CancellationToken cancellationToken = default)
         {
             if (clientSource == null || !clientSource.IsConnected)
             {
-                return new List<ModelInfo>();
+                return Task.FromResult(new List<ModelInfo>());
             }
 
-            string providerKey;
-            ILlmClient client;
-            while (true)
-            {
-                providerKey = clientSource.ActiveProviderName;
-                client = clientSource.Current;
-                if (clientSource.ActiveProviderName == providerKey)
-                {
-                    break;
-                }
-            }
+            var (providerKey, client) = clientSource.Snapshot();
+            return GetAsync(providerKey, client, cancellationToken);
+        }
+
+        private static async Task<List<ModelInfo>> GetAsync(string providerKey, ILlmClient client, CancellationToken cancellationToken)
+        {
 
             lock (_lock)
             {
@@ -67,7 +62,16 @@ namespace Saturn.Providers
         {
             try
             {
-                var models = await GetAsync(clientSource);
+                if (clientSource == null || !clientSource.IsConnected)
+                {
+                    return requestedModel;
+                }
+
+                // One snapshot for both the model list and the capability lookup below,
+                // so a concurrent provider swap can't mix data from two providers.
+                var (providerKey, client) = clientSource.Snapshot();
+
+                var models = await GetAsync(providerKey, client, CancellationToken.None);
                 if (models.Count == 0)
                 {
                     return requestedModel;
@@ -94,7 +98,7 @@ namespace Saturn.Providers
                     return preferredFallback!;
                 }
 
-                var defaultModel = clientSource.Current.Capabilities.DefaultModel;
+                var defaultModel = client.Capabilities.DefaultModel;
                 if (!string.IsNullOrWhiteSpace(defaultModel) &&
                     models.Any(m => string.Equals(m.Id, defaultModel, StringComparison.OrdinalIgnoreCase)))
                 {

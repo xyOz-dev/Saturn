@@ -11,6 +11,8 @@ namespace Saturn.Config
     public class SubAgentPreferences
     {
         private static SubAgentPreferences? _instance;
+        private static readonly object InstanceLock = new object();
+        private static readonly object SaveFileLock = new object();
         private static readonly string PreferencesPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Saturn",
@@ -47,7 +49,10 @@ namespace Saturn.Config
             {
                 if (_instance == null)
                 {
-                    _instance = Load();
+                    lock (InstanceLock)
+                    {
+                        _instance ??= Load();
+                    }
                 }
                 return _instance;
             }
@@ -103,9 +108,14 @@ namespace Saturn.Config
                 {
                     WriteIndented = true
                 };
-                
-                var json = JsonSerializer.Serialize(this, saveOptions);
-                File.WriteAllText(PreferencesPath, json);
+
+                lock (SaveFileLock)
+                {
+                    var json = JsonSerializer.Serialize(this, saveOptions);
+                    var tempPath = PreferencesPath + ".tmp";
+                    File.WriteAllText(tempPath, json);
+                    File.Move(tempPath, PreferencesPath, overwrite: true);
+                }
             }
             catch (Exception ex)
             {
@@ -147,7 +157,10 @@ namespace Saturn.Config
                 throw new ArgumentNullException(nameof(config), "Configuration cannot be null.");
             }
             
-            PurposeConfigurations[purpose] = config;
+            lock (SaveFileLock)
+            {
+                PurposeConfigurations[purpose] = config;
+            }
             Save();
         }
     }

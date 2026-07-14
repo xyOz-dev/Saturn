@@ -471,33 +471,8 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                         {
                             throw new InvalidOperationException("Context line cannot be null");
                         }
-                        
-                        var contextIndex = lines.FindIndex(line => line.Trim() == hunk.ContextLine.Trim());
-                        if (contextIndex == -1)
-                        {
-                            throw new InvalidOperationException($"Context line not found: {hunk.ContextLine}");
-                        }
-                        
-                        var currentIndex = contextIndex;
-                        foreach (var change in hunk.Changes)
-                        {
-                            if (change.Type == ChangeType.Keep)
-                            {
-                                currentIndex++;
-                            }
-                            else if (change.Type == ChangeType.Remove)
-                            {
-                                if (currentIndex < lines.Count)
-                                {
-                                    lines.RemoveAt(currentIndex);
-                                }
-                            }
-                            else if (change.Type == ChangeType.Add)
-                            {
-                                lines.Insert(currentIndex, change.Content ?? "");
-                                currentIndex++;
-                            }
-                        }
+
+                        ApplyHunk(lines, hunk, op.FilePath);
                     }
                     
                     changes[op.FilePath] = new FileChange
@@ -511,7 +486,107 @@ The format also supports '*** Add File: path' (every content line prefixed with 
             
             return new Commit { Changes = changes };
         }
-        
+
+        private static void ApplyHunk(List<string> lines, PatchHunk hunk, string filePath)
+        {
+            var contextIndexes = new List<int>();
+            for (int idx = 0; idx < lines.Count; idx++)
+            {
+                if (lines[idx].Trim() == hunk.ContextLine.Trim())
+                {
+                    contextIndexes.Add(idx);
+                }
+            }
+
+            if (contextIndexes.Count == 0)
+            {
+                throw new InvalidOperationException($"Context line not found in {filePath}: {hunk.ContextLine}");
+            }
+
+            // Pure-insertion hunks have no lines to anchor against, so the context line must be unique.
+            if (!hunk.Changes.Any(c => c.Type != ChangeType.Add))
+            {
+                if (contextIndexes.Count > 1)
+                {
+                    throw new InvalidOperationException($"Context line appears {contextIndexes.Count} times in {filePath} and the hunk has no context/removal lines to disambiguate: {hunk.ContextLine}");
+                }
+
+                var insertAt = Math.Min(contextIndexes[0] + 1, lines.Count);
+                foreach (var change in hunk.Changes)
+                {
+                    lines.Insert(insertAt++, change.Content ?? "");
+                }
+                return;
+            }
+
+            // The hunk body may start at the context line itself or on the line after it;
+            // both styles are in use, so match the body content to pick the alignment.
+            var matchStarts = new List<int>();
+            foreach (var contextIndex in contextIndexes)
+            {
+                for (var start = contextIndex; start <= contextIndex + 1; start++)
+                {
+                    if (HunkMatchesAt(lines, hunk, start) && !matchStarts.Contains(start))
+                    {
+                        matchStarts.Add(start);
+                    }
+                }
+            }
+
+            if (matchStarts.Count == 0)
+            {
+                throw new InvalidOperationException($"Hunk does not match the current content of {filePath} near context line: {hunk.ContextLine}. The file may have changed since it was read; re-read it and regenerate the patch.");
+            }
+
+            if (matchStarts.Count > 1)
+            {
+                throw new InvalidOperationException($"Hunk matches {matchStarts.Count} locations in {filePath}; use a more unique context line: {hunk.ContextLine}");
+            }
+
+            var cursor = matchStarts[0];
+            foreach (var change in hunk.Changes)
+            {
+                if (change.Type == ChangeType.Keep)
+                {
+                    cursor++;
+                }
+                else if (change.Type == ChangeType.Remove)
+                {
+                    lines.RemoveAt(cursor);
+                }
+                else if (change.Type == ChangeType.Add)
+                {
+                    lines.Insert(cursor, change.Content ?? "");
+                    cursor++;
+                }
+            }
+        }
+
+        private static bool HunkMatchesAt(List<string> lines, PatchHunk hunk, int start)
+        {
+            var offset = 0;
+            foreach (var change in hunk.Changes)
+            {
+                if (change.Type == ChangeType.Add)
+                {
+                    continue;
+                }
+
+                var index = start + offset;
+                if (index >= lines.Count || !PatchLinesEqual(lines[index], change.Content ?? ""))
+                {
+                    return false;
+                }
+                offset++;
+            }
+            return true;
+        }
+
+        private static bool PatchLinesEqual(string fileLine, string patchLine)
+        {
+            return fileLine == patchLine || fileLine.TrimEnd() == patchLine.TrimEnd();
+        }
+
         private async Task ApplyCommit(Commit commit)
         {
             foreach (var kvp in commit.Changes)

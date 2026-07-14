@@ -121,12 +121,10 @@ Safety features:
                     return CreateErrorResult($"Content too large ({bytes.Length} bytes). Maximum size is {MaxFileSize} bytes");
                 }
                 
-                if (File.Exists(fullPath))
+                var fileExisted = File.Exists(fullPath);
+                if (fileExisted && !overwrite)
                 {
-                    if (!overwrite)
-                    {
-                        return CreateErrorResult($"File already exists: {fullPath}. Set overwrite=true to replace it");
-                    }
+                    return CreateErrorResult($"File already exists: {fullPath}. Set overwrite=true to replace it");
                 }
                 
                 var directory = Path.GetDirectoryName(fullPath);
@@ -149,13 +147,10 @@ Safety features:
                 try
                 {
                     await File.WriteAllBytesAsync(tempPath, bytes);
-                    
-                    if (File.Exists(fullPath))
-                    {
-                        File.Delete(fullPath);
-                    }
-                    
-                    File.Move(tempPath, fullPath);
+
+                    // Atomic replace: the original file is never deleted before the new
+                    // content is in place, so a crash cannot lose both.
+                    File.Move(tempPath, fullPath, overwrite: true);
                 }
                 finally
                 {
@@ -164,17 +159,17 @@ Safety features:
                         try { File.Delete(tempPath); } catch { }
                     }
                 }
-                
+
                 var fileInfo = new FileInfo(fullPath);
                 var result = new
                 {
                     Path = fullPath,
                     Size = fileInfo.Length,
-                    Created = !File.Exists(fullPath) || overwrite,
+                    Created = !fileExisted,
                     Encoding = encodingName
                 };
-                
-                var action = File.Exists(fullPath) && overwrite ? "Overwrote" : "Created";
+
+                var action = fileExisted ? "Overwrote" : "Created";
                 var message = $"{action} file: {fullPath} ({FormatFileSize(fileInfo.Length)})";
                 
                 return CreateSuccessResult(result, message);
