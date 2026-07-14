@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Saturn.Agents.Core;
 using Saturn.Configuration.Objects;
 using Saturn.Providers;
+using Saturn.Tools.Search;
 
 namespace Saturn.Configuration
 {
@@ -121,11 +122,14 @@ namespace Saturn.Configuration
         {
             try
             {
-                if (config.ActiveProvider == null || config.Providers == null)
+                if (config.ActiveProvider == null || config.Providers == null ||
+                    config.SearchProvider == null || config.SearchProviders == null)
                 {
                     var existing = await LoadConfigurationAsync();
                     config.ActiveProvider ??= existing?.ActiveProvider;
                     config.Providers ??= existing?.Providers;
+                    config.SearchProvider ??= existing?.SearchProvider;
+                    config.SearchProviders ??= existing?.SearchProviders;
                 }
 
                 if (!string.IsNullOrWhiteSpace(config.ActiveProvider) && !string.IsNullOrWhiteSpace(config.Model))
@@ -213,9 +217,20 @@ namespace Saturn.Configuration
 
         public static ProviderSettings GetProviderSettings(PersistedAgentConfiguration? config, string providerName)
         {
+            return ReadProviderSettings(config?.Providers, providerName);
+        }
+
+        public static ProviderSettings GetSearchProviderSettings(PersistedAgentConfiguration? config, string providerName)
+        {
+            return ReadProviderSettings(config?.SearchProviders, providerName);
+        }
+
+        private static ProviderSettings ReadProviderSettings(
+            Dictionary<string, PersistedProviderConfiguration>? map, string providerName)
+        {
             var settings = new ProviderSettings();
-            if (config?.Providers != null &&
-                config.Providers.TryGetValue(providerName, out var providerConfig) &&
+            if (map != null &&
+                map.TryGetValue(providerName, out var providerConfig) &&
                 providerConfig.Settings != null)
             {
                 foreach (var kvp in providerConfig.Settings)
@@ -226,56 +241,72 @@ namespace Saturn.Configuration
             return settings;
         }
 
+        public static async Task SaveSearchProviderSelectionAsync(string providerName, ProviderSettings settings)
+        {
+            await SaveLock.WaitAsync();
+            try
+            {
+                await SaveSearchProviderSelectionLockedAsync(providerName, settings);
+            }
+            finally
+            {
+                SaveLock.Release();
+            }
+        }
+
+        private static async Task SaveSearchProviderSelectionLockedAsync(string providerName, ProviderSettings settings)
+        {
+            var config = await LoadConfigurationAsync() ?? new PersistedAgentConfiguration();
+
+            config.SearchProvider = providerName;
+            config.SearchProviders ??= new Dictionary<string, PersistedProviderConfiguration>(StringComparer.OrdinalIgnoreCase);
+
+            if (!config.SearchProviders.TryGetValue(providerName, out var providerConfig))
+            {
+                providerConfig = new PersistedProviderConfiguration();
+                config.SearchProviders[providerName] = providerConfig;
+            }
+
+            var toPersist = new Dictionary<string, string?>(settings.Values, StringComparer.OrdinalIgnoreCase);
+            if (SearchProviderRegistry.TryGet(providerName, out var provider))
+            {
+                foreach (var descriptor in provider.SettingDescriptors)
+                {
+                    if (descriptor.Kind != ProviderSettingKind.Secret ||
+                        string.IsNullOrWhiteSpace(descriptor.EnvironmentVariable))
+                    {
+                        continue;
+                    }
+
+                    var envValue = Environment.GetEnvironmentVariable(descriptor.EnvironmentVariable);
+                    if (toPersist.TryGetValue(descriptor.Key, out var saved) &&
+                        !string.IsNullOrEmpty(saved) &&
+                        string.Equals(saved, envValue, StringComparison.Ordinal))
+                    {
+                        toPersist.Remove(descriptor.Key);
+                    }
+                }
+            }
+            providerConfig.Settings = toPersist;
+
+            await SaveConfigurationLockedAsync(config);
+        }
+
         /// <summary>
         /// Returns a copy of the configuration with secret-kind provider settings encrypted,
         /// leaving the caller's in-memory configuration in plaintext.
         /// </summary>
         private static PersistedAgentConfiguration WithProtectedSecrets(PersistedAgentConfiguration config)
         {
-            if (config.Providers == null)
-            {
-                return config;
-            }
+            var protectedProviders = ProtectProviderMap(
+                config.Providers,
+                name => ProviderRegistry.TryGet(name, out var p) ? p.SettingDescriptors : null);
 
-            Dictionary<string, PersistedProviderConfiguration>? protectedProviders = null;
+            var protectedSearchProviders = ProtectProviderMap(
+                config.SearchProviders,
+                name => SearchProviderRegistry.TryGet(name, out var p) ? p.SettingDescriptors : null);
 
-            foreach (var (providerName, providerConfig) in config.Providers)
-            {
-                var settings = providerConfig.Settings;
-                if (settings == null || !ProviderRegistry.TryGet(providerName, out var provider))
-                {
-                    continue;
-                }
-
-                Dictionary<string, string?>? protectedSettings = null;
-                foreach (var descriptor in provider.SettingDescriptors)
-                {
-                    if (descriptor.Kind != ProviderSettingKind.Secret)
-                    {
-                        continue;
-                    }
-
-                    if (settings.TryGetValue(descriptor.Key, out var value) &&
-                        !string.IsNullOrEmpty(value) &&
-                        !SecretProtector.IsProtected(value))
-                    {
-                        protectedSettings ??= new Dictionary<string, string?>(settings, StringComparer.OrdinalIgnoreCase);
-                        protectedSettings[descriptor.Key] = SecretProtector.Protect(value, AppDataPath);
-                    }
-                }
-
-                if (protectedSettings != null)
-                {
-                    protectedProviders ??= new Dictionary<string, PersistedProviderConfiguration>(config.Providers, StringComparer.OrdinalIgnoreCase);
-                    protectedProviders[providerName] = new PersistedProviderConfiguration
-                    {
-                        Settings = protectedSettings,
-                        Model = providerConfig.Model
-                    };
-                }
-            }
-
-            if (protectedProviders == null)
+            if (protectedProviders == null && protectedSearchProviders == null)
             {
                 return config;
             }
@@ -295,8 +326,65 @@ namespace Saturn.Configuration
                 RequireCommandApproval = config.RequireCommandApproval,
                 EnableUserRules = config.EnableUserRules,
                 ActiveProvider = config.ActiveProvider,
-                Providers = protectedProviders
+                Providers = protectedProviders ?? config.Providers,
+                SearchProvider = config.SearchProvider,
+                SearchProviders = protectedSearchProviders ?? config.SearchProviders
             };
+        }
+
+        /// <summary>
+        /// Returns a copy of <paramref name="map"/> with every secret-kind setting encrypted, or
+        /// null if there was nothing to protect (letting the caller keep the original reference).
+        /// </summary>
+        private static Dictionary<string, PersistedProviderConfiguration>? ProtectProviderMap(
+            Dictionary<string, PersistedProviderConfiguration>? map,
+            Func<string, IReadOnlyList<ProviderSettingDescriptor>?> descriptorLookup)
+        {
+            if (map == null)
+            {
+                return null;
+            }
+
+            Dictionary<string, PersistedProviderConfiguration>? protectedMap = null;
+
+            foreach (var (providerName, providerConfig) in map)
+            {
+                var settings = providerConfig.Settings;
+                var descriptors = descriptorLookup(providerName);
+                if (settings == null || descriptors == null)
+                {
+                    continue;
+                }
+
+                Dictionary<string, string?>? protectedSettings = null;
+                foreach (var descriptor in descriptors)
+                {
+                    if (descriptor.Kind != ProviderSettingKind.Secret)
+                    {
+                        continue;
+                    }
+
+                    if (settings.TryGetValue(descriptor.Key, out var value) &&
+                        !string.IsNullOrEmpty(value) &&
+                        !SecretProtector.IsProtected(value))
+                    {
+                        protectedSettings ??= new Dictionary<string, string?>(settings, StringComparer.OrdinalIgnoreCase);
+                        protectedSettings[descriptor.Key] = SecretProtector.Protect(value, AppDataPath);
+                    }
+                }
+
+                if (protectedSettings != null)
+                {
+                    protectedMap ??= new Dictionary<string, PersistedProviderConfiguration>(map, StringComparer.OrdinalIgnoreCase);
+                    protectedMap[providerName] = new PersistedProviderConfiguration
+                    {
+                        Settings = protectedSettings,
+                        Model = providerConfig.Model
+                    };
+                }
+            }
+
+            return protectedMap;
         }
 
         public static string? GetProviderModel(PersistedAgentConfiguration? config, string providerName)

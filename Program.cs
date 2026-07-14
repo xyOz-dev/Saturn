@@ -284,7 +284,7 @@ Operating Principles
                     "write_file", "search_and_replace", "delete_file",
                     "create_agent", "hand_off_to_agent", "get_agent_status",
                     "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
-                    "get_command_output", "kill_command", "web_fetch",
+                    "get_command_output", "kill_command", "web_fetch", "web_search",
                     "list_tasks", "create_task", "update_task", "complete_task",
                     "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks",
                     "update_todos"
@@ -298,7 +298,7 @@ Operating Principles
             {
                 "list_tasks", "create_task", "update_task", "complete_task",
                 "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks",
-                "update_todos"
+                "update_todos", "web_search"
             };
 
             if (persistedConfig != null)

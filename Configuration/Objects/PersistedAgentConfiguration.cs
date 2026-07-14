@@ -24,6 +24,10 @@ namespace Saturn.Configuration.Objects
         public string? ActiveProvider { get; set; }
 
         public Dictionary<string, PersistedProviderConfiguration>? Providers { get; set; }
+
+        public string? SearchProvider { get; set; }
+
+        public Dictionary<string, PersistedProviderConfiguration>? SearchProviders { get; set; }
     }
 
     public class PersistedProviderConfiguration
