@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -59,11 +58,6 @@ namespace Saturn.Core
 
             try
             {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    HandleWindowsNulFile(path);
-                }
-
                 var initResult = await ExecuteGitCommand("init", path);
                 if (!initResult.success)
                 {
@@ -90,10 +84,6 @@ namespace Saturn.Core
             {
                 return (false, $"Failed to initialize repository: {ex.Message}");
             }
-        }
-
-        private static void HandleWindowsNulFile(string path)
-        {
         }
 
         private static async Task<bool> CheckUserConfig()
@@ -154,30 +144,20 @@ namespace Saturn.Core
 
         private static async Task<(bool success, string output)> CreateInitialCommit(string path)
         {
-            string addCommand = "add .";
-            //    //TODO: Rethink this as it causes errors.
-
-            var addResult = await ExecuteGitCommand(addCommand, path);
+            // --ignore-errors stages everything it can instead of aborting on the
+            // first un-addable file (reserved Windows names, locked files, etc.),
+            // but git still exits non-zero when files were skipped.
+            var addResult = await ExecuteGitCommand("add . --ignore-errors", path);
             if (!addResult.success)
             {
-                var statusResult = await ExecuteGitCommand("status --porcelain", path);
-                if (statusResult.success && string.IsNullOrWhiteSpace(statusResult.output))
-                {
-                    var gitkeepPath = Path.Combine(path, ".gitkeep");
-                    await File.WriteAllTextAsync(gitkeepPath, "");
-                    addResult = await ExecuteGitCommand("add .gitkeep", path);
-                    if (!addResult.success)
-                    {
-                        return addResult;
-                    }
-                }
-                else
+                var stagedResult = await ExecuteGitCommand("ls-files", path);
+                if (stagedResult.success && string.IsNullOrWhiteSpace(stagedResult.output))
                 {
                     return (false, $"Failed to add files: {addResult.output}");
                 }
             }
 
-            return await ExecuteGitCommand("commit -m \"Initial commit - Saturn workspace initialized\"", path);
+            return await ExecuteGitCommand("commit --allow-empty -m \"Initial commit - Saturn workspace initialized\"", path);
         }
 
         private static async Task<(bool success, string output)> ExecuteGitCommand(string arguments, string? workingDirectory = null)
