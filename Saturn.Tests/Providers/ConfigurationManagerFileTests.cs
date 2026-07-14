@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Saturn.Tests.Providers
 {
+    [Collection("Configuration")]
     public class ConfigurationManagerFileTests : IDisposable
     {
         private readonly string _configDir;

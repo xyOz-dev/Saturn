@@ -199,6 +199,7 @@ namespace Saturn.UI
                     new MenuItem("_Modes...", "", async () => await ShowModeSelectionDialogAsync()),
                     null,
                     new MenuItem("_Provider...", "", async () => await ShowProviderDialogAsync()),
+                    new MenuItem("Searc_h Provider...", "", async () => await ShowSearchProviderDialogAsync()),
                     new MenuItem("_Select Model...", "", async () => await ShowModelSelectionDialog()),
                     new MenuItem("_Temperature...", "", () => ShowTemperatureDialog()),
                     new MenuItem("_Max Tokens...", "", () => ShowMaxTokensDialog()),
@@ -886,6 +887,13 @@ namespace Saturn.UI
             {
             }
             return "Not connected";
+        }
+
+        private async Task ShowSearchProviderDialogAsync()
+        {
+            var persisted = await ConfigurationManager.LoadConfigurationAsync();
+            var dialog = new SearchProviderSettingsDialog(persisted);
+            Application.Run(dialog);
         }
 
         private async Task ShowProviderDialogAsync()

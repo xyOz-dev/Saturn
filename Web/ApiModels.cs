@@ -54,6 +54,8 @@ namespace Saturn.Web
 
     public record ProviderSwitchRequest(string Provider, Dictionary<string, string?>? Settings, string? Model);
 
+    public record SearchProviderSwitchRequest(string? Provider, Dictionary<string, string?>? Settings);
+
     public record ModelSwitchRequest(string Model);
 
     public record AgentConfigUpdateRequest(

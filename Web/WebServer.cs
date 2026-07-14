@@ -22,6 +22,7 @@ using Saturn.Data;
 using Saturn.Data.Tasks;
 using Saturn.Providers;
 using Saturn.Tools.Core;
+using Saturn.Tools.Search;
 
 namespace Saturn.Web
 {
@@ -421,6 +422,66 @@ namespace Saturn.Web
                 await Saturn.Configuration.ConfigurationManager.SaveProviderSelectionAsync(provider.Name, settings, model);
                 _hub.Publish("provider.changed", new { provider = _clientSource.ActiveProviderName, model });
                 return Results.Ok(new { provider = _clientSource.ActiveProviderName, model, connected = _clientSource.IsConnected });
+            });
+
+            api.MapGet("/search-providers", async () =>
+            {
+                var persisted = await Saturn.Configuration.ConfigurationManager.LoadConfigurationAsync();
+                return Results.Ok(SearchProviderRegistry.All.Select(p =>
+                {
+                    var saved = Saturn.Configuration.ConfigurationManager.GetSearchProviderSettings(persisted, p.Name);
+                    return new
+                    {
+                        name = p.Name,
+                        displayName = p.DisplayName,
+                        active = string.Equals(persisted?.SearchProvider, p.Name, StringComparison.OrdinalIgnoreCase),
+                        settings = p.SettingDescriptors.Select(d => new
+                        {
+                            key = d.Key,
+                            label = d.Label,
+                            kind = d.Kind.ToString().ToLowerInvariant(),
+                            required = d.Required,
+                            defaultValue = d.DefaultValue,
+                            environmentVariable = d.EnvironmentVariable,
+                            configured = !string.IsNullOrWhiteSpace(d.Resolve(saved)),
+                            // Secrets are never echoed back to the browser.
+                            value = d.Kind == ProviderSettingKind.Secret ? null : saved.Get(d.Key)
+                        })
+                    };
+                }));
+            });
+
+            api.MapPost("/search-providers/switch", async (SearchProviderSwitchRequest request) =>
+            {
+                if (!SearchProviderRegistry.TryGet(request.Provider ?? "", out var provider))
+                {
+                    return Results.NotFound(new { error = $"Unknown search provider '{request.Provider}'" });
+                }
+
+                var persisted = await Saturn.Configuration.ConfigurationManager.LoadConfigurationAsync();
+                var settings = Saturn.Configuration.ConfigurationManager.GetSearchProviderSettings(persisted, provider.Name);
+                if (request.Settings != null)
+                {
+                    foreach (var kvp in request.Settings)
+                    {
+                        // Only overwrite with non-empty values so a blank secret field keeps the stored key.
+                        if (!string.IsNullOrWhiteSpace(kvp.Value))
+                        {
+                            settings.Set(kvp.Key, kvp.Value);
+                        }
+                    }
+                }
+
+                var missing = provider.SettingDescriptors
+                    .FirstOrDefault(d => d.Required && string.IsNullOrWhiteSpace(d.Resolve(settings)));
+                if (missing != null)
+                {
+                    return Results.BadRequest(new { error = $"{missing.Label} is required for {provider.DisplayName}." });
+                }
+
+                await Saturn.Configuration.ConfigurationManager.SaveSearchProviderSelectionAsync(provider.Name, settings);
+                _hub.Publish("search.provider.changed", new { provider = provider.Name });
+                return Results.Ok(new { provider = provider.Name, configured = true });
             });
 
             api.MapPost("/model", async (ModelSwitchRequest request) =>

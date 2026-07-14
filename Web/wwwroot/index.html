@@ -252,6 +252,17 @@
         </div>
 
         <div class="panel">
+          <div class="panel-head"><h2>Web Search</h2></div>
+          <label class="field"><span>Provider</span>
+            <select id="search-prov-select" class="input select" style="width:100%"></select></label>
+          <div id="search-prov-settings"></div>
+          <div class="field-row">
+            <button class="btn primary" id="search-prov-apply">Save search provider</button>
+          </div>
+          <p class="hint" id="search-prov-status"></p>
+        </div>
+
+        <div class="panel">
           <div class="panel-head"><h2>Generation</h2></div>
           <div class="field-row" style="margin-bottom:12px">
             <label class="field" style="flex:1;margin:0"><span>Temperature</span><input class="input" id="gen-temp" type="number" step="0.05" min="0" max="2" style="width:100%"></label>
