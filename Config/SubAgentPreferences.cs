@@ -109,9 +109,9 @@ namespace Saturn.Config
                     WriteIndented = true
                 };
 
-                var json = JsonSerializer.Serialize(this, saveOptions);
                 lock (SaveFileLock)
                 {
+                    var json = JsonSerializer.Serialize(this, saveOptions);
                     var tempPath = PreferencesPath + ".tmp";
                     File.WriteAllText(tempPath, json);
                     File.Move(tempPath, PreferencesPath, overwrite: true);
@@ -157,7 +157,10 @@ namespace Saturn.Config
                 throw new ArgumentNullException(nameof(config), "Configuration cannot be null.");
             }
             
-            PurposeConfigurations[purpose] = config;
+            lock (SaveFileLock)
+            {
+                PurposeConfigurations[purpose] = config;
+            }
             Save();
         }
     }

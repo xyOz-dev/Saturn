@@ -118,7 +118,22 @@ namespace Saturn.Configuration
 
                 Directory.CreateDirectory(appDataPath);
                 var key = RandomNumberGenerator.GetBytes(32);
-                File.WriteAllBytes(keyPath, key);
+                try
+                {
+                    // CreateNew is atomic across processes; if another instance won the
+                    // race, use its key so already-encrypted secrets stay readable.
+                    using var stream = new FileStream(keyPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    stream.Write(key, 0, key.Length);
+                }
+                catch (IOException)
+                {
+                    var winner = File.ReadAllBytes(keyPath);
+                    if (winner.Length == 32)
+                    {
+                        key = winner;
+                    }
+                }
+
                 if (!OperatingSystem.IsWindows())
                 {
                     File.SetUnixFileMode(keyPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);

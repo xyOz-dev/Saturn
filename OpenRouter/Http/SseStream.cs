@@ -71,16 +71,9 @@ namespace Saturn.OpenRouter.Http
                 }
             }
 
-            // Flush a trailing event if the stream ended without a terminating blank line.
-            if (!cancellationToken.IsCancellationRequested && dataBuffer != null)
-            {
-                yield return new SseEvent
-                {
-                    Event = currentEventName,
-                    Data = dataBuffer.ToString(),
-                    IsComment = false
-                };
-            }
+            // Per the SSE spec, an event that was not terminated by a blank line before
+            // EOF is incomplete (e.g. a dropped connection) and must be discarded rather
+            // than surfaced as a truncated payload.
         }
     }
 }

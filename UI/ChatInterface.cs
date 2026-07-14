@@ -1196,7 +1196,11 @@ namespace Saturn.UI
             try
             {
                 currentConfig.EnableStreaming = !currentConfig.EnableStreaming;
-                await UpdateConfiguration();
+                if (!await UpdateConfiguration())
+                {
+                    currentConfig.EnableStreaming = !currentConfig.EnableStreaming;
+                    return;
+                }
                 var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
                 if (menu != null)
                 {
@@ -1217,7 +1221,11 @@ namespace Saturn.UI
             try
             {
                 currentConfig.MaintainHistory = !currentConfig.MaintainHistory;
-                await UpdateConfiguration();
+                if (!await UpdateConfiguration())
+                {
+                    currentConfig.MaintainHistory = !currentConfig.MaintainHistory;
+                    return;
+                }
                 var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
                 if (menu != null)
                 {
@@ -1238,7 +1246,11 @@ namespace Saturn.UI
             try
             {
                 currentConfig.RequireCommandApproval = !currentConfig.RequireCommandApproval;
-                await UpdateConfiguration();
+                if (!await UpdateConfiguration())
+                {
+                    currentConfig.RequireCommandApproval = !currentConfig.RequireCommandApproval;
+                    return;
+                }
                 var menu = app.Subviews.OfType<MenuBar>().FirstOrDefault();
                 if (menu != null)
                 {
@@ -1443,7 +1455,7 @@ namespace Saturn.UI
             MessageBox.Query("Agent Configuration", config, "OK");
         }
 
-        private async Task UpdateConfiguration()
+        private async Task<bool> UpdateConfiguration()
         {
             try
             {
@@ -1483,10 +1495,12 @@ namespace Saturn.UI
 
                 UpdateConfigurationDisplay();
                 Application.Refresh();
+                return true;
             }
             catch (Exception ex)
             {
                 MessageBox.ErrorQuery("Configuration Error", $"Failed to update configuration: {ex.Message}", "OK");
+                return false;
             }
         }
 

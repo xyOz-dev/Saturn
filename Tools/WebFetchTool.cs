@@ -209,9 +209,13 @@ When to use:
                 {
                     var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
 
-                    // Only forward caller-supplied headers to the original host so a redirect
-                    // can't siphon them off to another origin.
-                    if (headers != null && string.Equals(currentUri.Host, uri.Host, StringComparison.OrdinalIgnoreCase))
+                    // Only forward caller-supplied headers to the original origin (scheme,
+                    // host, and port) so a redirect can't siphon them off elsewhere,
+                    // including https->http downgrades on the same hostname.
+                    if (headers != null &&
+                        string.Equals(currentUri.Scheme, uri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(currentUri.IdnHost, uri.IdnHost, StringComparison.OrdinalIgnoreCase) &&
+                        currentUri.Port == uri.Port)
                     {
                         foreach (var header in headers)
                         {

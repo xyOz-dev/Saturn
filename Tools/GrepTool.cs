@@ -150,8 +150,26 @@ Examples:
                 }
                 else if (Directory.Exists(path))
                 {
-                    var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-                    var files = Directory.GetFiles(path, filePattern, searchOption);
+                    // IgnoreInaccessible keeps one unreadable subdirectory from aborting the
+                    // whole enumeration; AttributesToSkip is cleared so hidden/system files
+                    // are still searched as before.
+                    var enumerationOptions = new EnumerationOptions
+                    {
+                        RecurseSubdirectories = recursive,
+                        IgnoreInaccessible = true,
+                        AttributesToSkip = FileAttributes.None
+                    };
+
+                    IEnumerable<string> files;
+                    try
+                    {
+                        files = Directory.EnumerateFiles(path, filePattern, enumerationOptions);
+                    }
+                    catch (Exception ex)
+                    {
+                        skippedFiles.Add($"{path}: {ex.Message}");
+                        files = Enumerable.Empty<string>();
+                    }
 
                     foreach (var file in files)
                     {

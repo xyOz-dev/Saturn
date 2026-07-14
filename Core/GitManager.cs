@@ -212,8 +212,25 @@ namespace Saturn.Core
                 }
                 catch (OperationCanceledException)
                 {
-                    try { process.Kill(entireProcessTree: true); } catch { }
-                    return (false, "git command timed out after 10 seconds");
+                    var terminated = false;
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                        terminated = process.WaitForExit(5000);
+                    }
+                    catch
+                    {
+                        terminated = process.HasExited;
+                    }
+
+                    if (terminated)
+                    {
+                        await Task.WhenAll(outputTask, errorTask);
+                    }
+
+                    return (false, terminated
+                        ? "git command timed out after 10 seconds"
+                        : "git command timed out after 10 seconds and could not be terminated; it may still hold repository locks");
                 }
 
                 var output = await outputTask;

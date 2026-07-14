@@ -27,8 +27,9 @@ namespace Saturn.Agents.Core
         public string? ManagerAgentId { get; set; }
         public bool IsOrchestrator { get; set; }
         protected ChatHistoryRepository? Repository { get; set; }
-        private readonly List<Message> _pendingMessages = new List<Message>();
+        private readonly List<(string SessionId, Message Message)> _pendingMessages = new();
         private readonly object _pendingMessagesLock = new object();
+        private readonly List<Task> _pendingFlushTasks = new();
         
         public event Action<string, string>? OnToolCall;
 
@@ -161,10 +162,7 @@ namespace Saturn.Agents.Core
                 ChatHistory.Add(userMessage);
                 TrimHistory();
 
-                lock (_pendingMessagesLock)
-                {
-                    _pendingMessages.Add(userMessage);
-                }
+                EnqueuePendingMessage(userMessage);
 
                 return new List<Message>(ChatHistory);
             }
@@ -197,12 +195,9 @@ namespace Saturn.Agents.Core
             {
                 ChatHistory.Add(finalMessage);
 
-                lock (_pendingMessagesLock)
-                {
-                    _pendingMessages.Add(finalMessage);
-                }
+                EnqueuePendingMessage(finalMessage);
                 var sessionId = CurrentSessionId;
-                Task.Run(async () => await FlushPendingMessagesAsync(sessionId, CancellationToken.None));
+                TrackFlushTask(Task.Run(() => FlushPendingMessagesAsync(sessionId, CancellationToken.None)));
             }
 
             return finalMessage;
@@ -219,11 +214,11 @@ namespace Saturn.Agents.Core
             if (sessionId != null && Repository != null)
             {
                 var repository = Repository;
-                Task.Run(async () =>
+                TrackFlushTask(Task.Run(async () =>
                 {
                     await FlushPendingMessagesAsync(sessionId, CancellationToken.None);
                     await repository.SetSessionInactiveAsync(sessionId);
-                });
+                }));
             }
         }
 
@@ -252,12 +247,17 @@ namespace Saturn.Agents.Core
         {
             if (Repository == null || sessionId == null) return;
 
+            // Only drain this session's messages; a turn still running for a cleared
+            // session must not leak its messages into the next session's flush.
             List<Message> messagesToSave;
             lock (_pendingMessagesLock)
             {
-                if (_pendingMessages.Count == 0) return;
-                messagesToSave = new List<Message>(_pendingMessages);
-                _pendingMessages.Clear();
+                messagesToSave = _pendingMessages
+                    .Where(p => p.SessionId == sessionId)
+                    .Select(p => p.Message)
+                    .ToList();
+                if (messagesToSave.Count == 0) return;
+                _pendingMessages.RemoveAll(p => p.SessionId == sessionId);
             }
 
             try
@@ -267,6 +267,26 @@ namespace Saturn.Agents.Core
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to persist message batch: {ex.Message}");
+            }
+        }
+
+        private void EnqueuePendingMessage(Message message)
+        {
+            var sessionId = CurrentSessionId;
+            if (sessionId == null) return;
+
+            lock (_pendingMessagesLock)
+            {
+                _pendingMessages.Add((sessionId, message));
+            }
+        }
+
+        private void TrackFlushTask(Task task)
+        {
+            lock (_pendingMessagesLock)
+            {
+                _pendingFlushTasks.RemoveAll(t => t.IsCompleted);
+                _pendingFlushTasks.Add(task);
             }
         }
 
@@ -455,10 +475,7 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
-                            lock (_pendingMessagesLock)
-                            {
-                                _pendingMessages.Add(toolMessage);
-                            }
+                            EnqueuePendingMessage(toolMessage);
                         }
                         else
                         {
@@ -1012,10 +1029,7 @@ namespace Saturn.Agents.Core
                         if (Configuration.MaintainHistory)
                         {
                             ChatHistory.Add(toolMessage);
-                            lock (_pendingMessagesLock)
-                            {
-                                _pendingMessages.Add(toolMessage);
-                            }
+                            EnqueuePendingMessage(toolMessage);
                         }
                         else
                         {
@@ -1394,6 +1408,20 @@ namespace Saturn.Agents.Core
         {
             if (disposing)
             {
+                Task[] pendingFlushes;
+                lock (_pendingMessagesLock)
+                {
+                    pendingFlushes = _pendingFlushTasks.Where(t => !t.IsCompleted).ToArray();
+                    _pendingFlushTasks.Clear();
+                }
+
+                if (pendingFlushes.Length > 0)
+                {
+                    // Give queued persistence work a chance to finish before the
+                    // repository goes away; flush failures log rather than throw.
+                    try { Task.WaitAll(pendingFlushes, TimeSpan.FromSeconds(5)); } catch { }
+                }
+
                 Repository?.Dispose();
                 Repository = null;
             }
