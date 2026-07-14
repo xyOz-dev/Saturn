@@ -19,11 +19,14 @@ namespace Saturn.Tests.Tools
 
         public ReadFileToolTests()
         {
-            _testDirectory = Path.Combine(Path.GetTempPath(), $"SaturnTests_{Guid.NewGuid()}");
-            Directory.CreateDirectory(_testDirectory);
+            var testDirectory = Path.Combine(Path.GetTempPath(), $"SaturnTests_{Guid.NewGuid()}");
+            Directory.CreateDirectory(testDirectory);
             _createdFiles = new List<string>();
             _originalDirectory = Directory.GetCurrentDirectory();
-            Directory.SetCurrentDirectory(_testDirectory);
+            Directory.SetCurrentDirectory(testDirectory);
+            // Use the canonical form so absolute test paths match the working directory
+            // on macOS, where the temp dir lives behind the /var -> /private/var symlink.
+            _testDirectory = Directory.GetCurrentDirectory();
         }
 
         [Fact]
