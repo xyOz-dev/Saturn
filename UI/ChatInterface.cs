@@ -941,8 +941,6 @@ namespace Saturn.UI
 
             if (!dialog.Applied) return;
 
-            ModelCatalog.Invalidate();
-
             var providerName = manager.ActiveProviderName;
             var capabilities = manager.Current.Capabilities;
 
