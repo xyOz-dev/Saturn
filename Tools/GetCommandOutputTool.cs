@@ -133,7 +133,7 @@ Notes:
 
             var matched = text
                 .Split('\n')
-                .Where(line => regex.IsMatch(line));
+                .Where(line => regex.IsMatch(line.TrimEnd('\r')));
 
             return string.Join("\n", matched);
         }
