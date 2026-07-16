@@ -169,9 +169,23 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
+        // Optimistic concurrency: the write only lands if the row still carries the
+        // UpdatedAt the caller loaded. Returns false when a concurrent writer got
+        // there first (or the row is gone); callers reload, reapply and retry.
         public Task<bool> UpdateTaskAsync(SaturnTask t, CancellationToken ct = default)
         {
-            t.UpdatedAt = DateTime.UtcNow;
+            // UpdatedAt is stored via ToString("O") and read back with
+            // RoundtripKind, so the "O" string of the loaded value matches the
+            // stored text exactly; compare on that form rather than on ticks.
+            var expectedUpdatedAt = t.UpdatedAt.ToString("O");
+            var now = DateTime.UtcNow;
+            if (now <= t.UpdatedAt)
+            {
+                // Clock granularity can make back-to-back updates share a timestamp,
+                // which would let a stale writer still match; always move forward.
+                now = t.UpdatedAt.AddTicks(1);
+            }
+            t.UpdatedAt = now;
             return WithWriteLockAsync(async () =>
             {
                 using var connection = CreateConnection();
@@ -183,9 +197,10 @@ namespace Saturn.Data.Tasks
                         RecurrenceIntervalSeconds=@RecurrenceIntervalSeconds, RecurrenceCron=@RecurrenceCron,
                         CatchUpPolicy=@CatchUpPolicy, NextRunAt=@NextRunAt, LastRunAt=@LastRunAt,
                         UpdatedAt=@UpdatedAt, CompletedAt=@CompletedAt
-                    WHERE Id=@Id", connection);
+                    WHERE Id=@Id AND UpdatedAt=@ExpectedUpdatedAt", connection);
                 BindTask(cmd, t);
                 cmd.Parameters.AddWithValue("@SortOrder", t.SortOrder);
+                cmd.Parameters.AddWithValue("@ExpectedUpdatedAt", expectedUpdatedAt);
                 return await cmd.ExecuteNonQueryAsync(ct) > 0;
             }, ct);
         }
