@@ -25,5 +25,8 @@ namespace Saturn.OpenRouter.Models.Api.Chat
 
         [JsonPropertyName("system_fingerprint")]
         public string? SystemFingerprint { get; set; }
+
+        [JsonPropertyName("error")]
+        public ErrorResponse.ErrorBody? Error { get; set; }
     }
 }
