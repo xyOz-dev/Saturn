@@ -129,18 +129,34 @@ Safety features:
                     return CreateSuccessResult(deletionInfo, dryRunMessage);
                 }
                 
-                var deletedItems = await PerformDeletion(deletionInfo.ItemsToDelete, force);
-                
+                var (deletedItems, failedItems) = await PerformDeletion(deletionInfo.ItemsToDelete, force);
+
                 var result = new
                 {
                     DeletedFiles = deletedItems.Count(i => i.Type == "file"),
                     DeletedDirectories = deletedItems.Count(i => i.Type == "directory"),
                     TotalSize = deletedItems.Sum(i => i.Size),
-                    Items = deletedItems.Select(i => i.Path).ToList()
+                    Items = deletedItems.Select(i => i.Path).ToList(),
+                    FailedItems = failedItems.Select(f => f.Path).ToList()
                 };
 
+                if (failedItems.Count > 0)
+                {
+                    var failureMessage = $"Deleted {result.DeletedFiles} files and {result.DeletedDirectories} directories ({FormatFileSize(result.TotalSize)}), " +
+                        $"but failed to delete {failedItems.Count} item(s): " +
+                        string.Join("; ", failedItems.Select(f => $"{f.Path} ({f.Error})"));
+
+                    return new ToolResult
+                    {
+                        Success = false,
+                        RawData = result,
+                        Error = failureMessage,
+                        FormattedOutput = failureMessage
+                    };
+                }
+
                 var message = $"Deleted {result.DeletedFiles} files and {result.DeletedDirectories} directories ({FormatFileSize(result.TotalSize)})";
-                
+
                 return CreateSuccessResult(result, message);
             }
             catch (Exception ex)
@@ -220,8 +236,9 @@ Safety features:
         
         private void CollectItemsRecursive(string path, string pattern, List<DeletionItem> items)
         {
-            var searchPattern = string.IsNullOrEmpty(pattern) ? "*" : pattern;
-            
+            var hasPattern = !string.IsNullOrEmpty(pattern) && pattern != "*";
+            var searchPattern = hasPattern ? pattern : "*";
+
             foreach (var file in Directory.GetFiles(path, searchPattern, SearchOption.AllDirectories))
             {
                 var fileInfo = new FileInfo(file);
@@ -233,7 +250,13 @@ Safety features:
                     IsReadOnly = fileInfo.IsReadOnly
                 });
             }
-            
+
+            // A specific pattern only selects files - directories (including the root) are left in place.
+            if (hasPattern)
+            {
+                return;
+            }
+
             foreach (var dir in Directory.GetDirectories(path, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
             {
                 items.Add(new DeletionItem
@@ -244,7 +267,7 @@ Safety features:
                     IsReadOnly = false
                 });
             }
-            
+
             items.Add(new DeletionItem
             {
                 Path = path,
@@ -254,32 +277,47 @@ Safety features:
             });
         }
         
-        private async Task<List<DeletionItem>> PerformDeletion(List<DeletionItem> items, bool force)
+        private async Task<(List<DeletionItem> Deleted, List<(string Path, string Error)> Failed)> PerformDeletion(List<DeletionItem> items, bool force)
         {
             var deleted = new List<DeletionItem>();
-            
+            var failed = new List<(string Path, string Error)>();
+
             foreach (var item in items.Where(i => i.Type == "file"))
             {
-                if (item.IsReadOnly && force)
+                try
                 {
-                    File.SetAttributes(item.Path, FileAttributes.Normal);
-                }
-                
-                File.Delete(item.Path);
-                deleted.Add(item);
-            }
-            
-            foreach (var item in items.Where(i => i.Type == "directory").OrderByDescending(i => i.Path.Length))
-            {
-                if (Directory.Exists(item.Path))
-                {
-                    Directory.Delete(item.Path, false);
+                    if (item.IsReadOnly && force)
+                    {
+                        File.SetAttributes(item.Path, FileAttributes.Normal);
+                    }
+
+                    File.Delete(item.Path);
                     deleted.Add(item);
                 }
+                catch (Exception ex)
+                {
+                    failed.Add((item.Path, ex.Message));
+                }
             }
-            
+
+            foreach (var item in items.Where(i => i.Type == "directory").OrderByDescending(i => i.Path.Length))
+            {
+                try
+                {
+                    if (Directory.Exists(item.Path))
+                    {
+                        Directory.Delete(item.Path, false);
+                        deleted.Add(item);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failed.Add((item.Path, ex.Message));
+                }
+            }
+
             await Task.CompletedTask;
-            return deleted;
+            return (deleted, failed);
         }
         
         private string FormatDryRunMessage(DeletionInfo info)
