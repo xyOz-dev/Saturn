@@ -1816,6 +1816,10 @@ function connectEvents() {
 
   es.addEventListener("orchestrator.state", (e) => {
     const d = JSON.parse(e.data);
+    if (d.busy && !state.orchestratorBusy) {
+      currentTurnTools = [];
+      renderToolLog();
+    }
     setOrchestratorBusy(d.busy);
   });
 
