@@ -500,15 +500,20 @@ public class ChatHistoryRepository : IDisposable
         });
     }
 
-    public async Task<List<ChatSession>> GetSessionsAsync(string? chatType = null, int limit = 100)
+    public async Task<List<ChatSession>> GetSessionsAsync(string? chatType = null, int limit = 100, bool activeOnly = false)
     {
         return await WithReadLockAsync(async () =>
         {
             using var connection = CreateConnection();
 
-            var sql = chatType != null
-                ? "SELECT * FROM ChatSessions WHERE ChatType = @ChatType ORDER BY UpdatedAt DESC LIMIT @Limit"
-                : "SELECT * FROM ChatSessions ORDER BY UpdatedAt DESC LIMIT @Limit";
+            var conditions = new List<string>();
+            if (chatType != null)
+                conditions.Add("ChatType = @ChatType");
+            if (activeOnly)
+                conditions.Add("IsActive = 1");
+
+            var whereClause = conditions.Count > 0 ? " WHERE " + string.Join(" AND ", conditions) : "";
+            var sql = $"SELECT * FROM ChatSessions{whereClause} ORDER BY UpdatedAt DESC LIMIT @Limit";
 
             using var cmd = new SqliteCommand(sql, connection);
             if (chatType != null)
