@@ -203,6 +203,10 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                         lock (_historyLock)
                         {
                             _commandHistory.Add(historyEntry);
+                            if (_commandHistory.Count > _config.MaxHistorySize)
+                            {
+                                _commandHistory.RemoveAt(0);
+                            }
                         }
                     }
 

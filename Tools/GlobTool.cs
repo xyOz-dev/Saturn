@@ -32,7 +32,7 @@ How to use:
 - Set 'caseSensitive' based on your needs
 - Use 'compactOutput' for just file paths
 - Set 'maxDepth' to limit recursion depth
-- This tool matches files only; use list_files to explore directories
+- This tool matches files by default; set includeDirectories=true to also match directories against the pattern (use list_files for tree exploration)
 
 Examples:
 - Find all C# files: pattern='**/*.cs'
@@ -278,8 +278,62 @@ Note: Use this before grep when you need to find files first, then search within
                 }
             }
             
+            // Matcher.Execute only matches files, so directories are matched
+            // against the same patterns in a separate pass.
+            if (includeDirectories)
+            {
+                var enumerationOptions = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = followSymlinks ? FileAttributes.None : FileAttributes.ReparsePoint
+                };
+
+                foreach (var dirPath in Directory.EnumerateDirectories(basePath, "*", enumerationOptions))
+                {
+                    if (results.Count >= maxResults)
+                    {
+                        break;
+                    }
+
+                    var dirInfo = new DirectoryInfo(dirPath);
+                    var relativePath = Path.GetRelativePath(basePath, dirInfo.FullName).Replace('\\', '/');
+
+                    if (maxDepth >= 0 && relativePath.Count(c => c == '/') > maxDepth)
+                    {
+                        continue;
+                    }
+
+                    if (!matcher.Match(relativePath).HasMatches)
+                    {
+                        continue;
+                    }
+
+                    if (!followSymlinks && IsSymbolicLink(dirInfo))
+                    {
+                        continue;
+                    }
+
+                    if (!visitedPaths.Add(dirInfo.FullName))
+                    {
+                        continue;
+                    }
+
+                    totalMatches++;
+                    results.Add(new GlobMatch
+                    {
+                        Path = dirInfo.FullName,
+                        RelativePath = relativePath,
+                        IsDirectory = true,
+                        Size = 0,
+                        LastModified = dirInfo.LastWriteTime,
+                        IsSymbolicLink = IsSymbolicLink(dirInfo)
+                    });
+                }
+            }
+
             results.Sort((a, b) => string.Compare(a.RelativePath, b.RelativePath, StringComparison.OrdinalIgnoreCase));
-            
+
             return new GlobMatchResult { Matches = results, TotalCount = totalMatches };
         }
         

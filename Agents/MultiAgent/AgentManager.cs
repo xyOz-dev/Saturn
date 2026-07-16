@@ -219,14 +219,26 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                 }
                 catch
                 {
+                    var rolledBackToIdle = false;
                     lock (_agentRegistrationLock)
                     {
-                        agentContext.Status = AgentStatus.Idle;
-                        agentContext.CurrentTask = null;
-                        agentContext.Cancellation = null;
+                        // TerminateAgent may have run while the callback was awaited;
+                        // never resurrect a terminated agent, and only roll back the
+                        // task this handoff created.
+                        if (agentContext.Status != AgentStatus.Terminated &&
+                            agentContext.CurrentTask?.Id == taskId)
+                        {
+                            agentContext.Status = AgentStatus.Idle;
+                            agentContext.CurrentTask = null;
+                            agentContext.Cancellation = null;
+                            rolledBackToIdle = true;
+                        }
                     }
                     cancellation.Dispose();
-                    OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
+                    if (rolledBackToIdle)
+                    {
+                        OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
+                    }
                     throw;
                 }
             }
@@ -623,11 +635,14 @@ Your decision:";
             // so callers waiting on the task id resolve instead of timing out.
             _completedTasks[taskId] = taskResult;
 
-            OnTaskCompleted?.Invoke(taskId, taskResult);
+            // Publish the idle transition before completion handlers run: a handler
+            // may immediately hand off another task, and its "Working" event must
+            // not be followed by a stale "Idle".
             if (becameIdle)
             {
                 OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
             }
+            OnTaskCompleted?.Invoke(taskId, taskResult);
         }
 
         public void TerminateAgent(string agentId)

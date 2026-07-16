@@ -39,6 +39,22 @@ Limits:
         private const int MaxRedirects = 5;
         private const int MaxResponseBytes = 10 * 1024 * 1024;
 
+        private static string BuildHeadersFingerprint(Dictionary<string, object>? headers)
+        {
+            if (headers == null || headers.Count == 0)
+            {
+                return "";
+            }
+
+            var canonical = string.Join("\n", headers
+                .OrderBy(h => h.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(h => $"{h.Key}:{h.Value}"));
+
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(canonical));
+            return Convert.ToHexString(hash);
+        }
+
         private static async Task<string> ReadBodyBoundedAsync(HttpResponseMessage response)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -233,7 +249,9 @@ Limits:
                     return CreateErrorResult(validationError);
                 }
 
-                var cacheKey = $"{url}|{extractionMode}|{selector}|{maxLength}|{includeMetadata}";
+                // Headers are part of the key: a response fetched with auth headers
+                // must never be served to a later caller that did not supply them.
+                var cacheKey = $"{url}|{extractionMode}|{selector}|{maxLength}|{includeMetadata}|{BuildHeadersFingerprint(headers)}";
                 if (useCache && _cache.TryGetValue(cacheKey, out var cached))
                 {
                     if (DateTime.UtcNow - cached.CachedAt < CacheDuration)

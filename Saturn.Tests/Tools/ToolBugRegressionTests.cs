@@ -29,10 +29,13 @@ namespace Saturn.Tests.Tools
         {
             Directory.SetCurrentDirectory(_originalDirectory);
 
-            var siblingDirectory = _fileHelper.TestDirectory + "Sibling";
-            if (Directory.Exists(siblingDirectory))
+            foreach (var suffix in new[] { "Sibling", "Outside" })
             {
-                Directory.Delete(siblingDirectory, true);
+                var outsideDirectory = _fileHelper.TestDirectory + suffix;
+                if (Directory.Exists(outsideDirectory))
+                {
+                    Directory.Delete(outsideDirectory, true);
+                }
             }
 
             _fileHelper.Dispose();
@@ -67,6 +70,56 @@ namespace Saturn.Tests.Tools
             var act = () => PathSecurity.ValidateInsideWorkingDirectory("../outside.txt");
 
             act.Should().Throw<System.Security.SecurityException>();
+        }
+
+        [Fact]
+        public void PathSecurity_SymlinkedDirectoryPointingOutside_IsRejected()
+        {
+            var outsideDirectory = _fileHelper.TestDirectory + "Outside";
+            Directory.CreateDirectory(outsideDirectory);
+
+            var linkPath = _fileHelper.GetPath("link_dir");
+            if (!TryCreateDirectoryLink(linkPath, outsideDirectory))
+            {
+                // Creating links needs elevation or developer mode on some systems;
+                // without it there is nothing to test.
+                return;
+            }
+
+            var act = () => PathSecurity.ValidateInsideWorkingDirectory(
+                Path.Combine(linkPath, "escape.txt"));
+
+            act.Should().Throw<System.Security.SecurityException>()
+                .WithMessage("*outside the working directory*");
+        }
+
+        private static bool TryCreateDirectoryLink(string linkPath, string targetPath)
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(linkPath, targetPath);
+                return true;
+            }
+            catch (Exception)
+            {
+            }
+
+            if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+                    System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                return false;
+            }
+
+            // Junctions do not require elevation on Windows.
+            var psi = new System.Diagnostics.ProcessStartInfo(
+                "cmd.exe", $"/c mklink /J \"{linkPath}\" \"{targetPath}\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false
+            };
+            using var process = System.Diagnostics.Process.Start(psi);
+            process!.WaitForExit();
+            return Directory.Exists(linkPath);
         }
 
         [Fact]
@@ -227,6 +280,28 @@ namespace Saturn.Tests.Tools
             result.Success.Should().BeTrue(result.Error);
             var results = result.RawData as System.Collections.IEnumerable;
             results!.Cast<object>().Count().Should().Be(10);
+        }
+
+        #endregion
+
+        #region Glob directories
+
+        [Fact]
+        public async Task Glob_IncludeDirectories_ReturnsMatchingDirectories()
+        {
+            _fileHelper.CreateDirectory("src/models");
+            _fileHelper.CreateFile("src/models/user.cs", "class User {}");
+
+            var tool = new GlobTool();
+            var result = await tool.ExecuteAsync(new Dictionary<string, object>
+            {
+                { "pattern", "src/**" },
+                { "includeDirectories", true }
+            });
+
+            result.Success.Should().BeTrue(result.Error);
+            result.FormattedOutput.Should().Contain("models");
+            result.FormattedOutput.Should().Contain("user.cs");
         }
 
         #endregion
