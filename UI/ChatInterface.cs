@@ -719,11 +719,11 @@ namespace Saturn.UI
                             Application.MainLoop.Invoke(() =>
                             {
                                 var currentText = chatView.Text;
-                                
+
                                 chatView.Text += renderedResponse;
-                                
+
                                 var updatedText = chatView.Text;
-                                bool endsWithNewline = updatedText.EndsWith("\n\n");
+                                bool endsWithNewline = updatedText.EndsWith("\n");
                                 bool endsWithDoubleNewline = updatedText.EndsWith("\n\n");
                                 
                                 var trimmedResponse = renderedResponse.TrimEnd();
