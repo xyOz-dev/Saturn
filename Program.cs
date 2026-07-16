@@ -45,8 +45,7 @@ namespace Saturn
                     var server = new Saturn.Web.WebServer(agent, client, port);
                     Console.WriteLine($"Saturn web UI running at {server.Url}");
                     Console.WriteLine("Press Ctrl+C to stop.");
-                    TryOpenBrowser(server.Url);
-                    await server.RunAsync();
+                    await server.RunAsync(onReady: () => TryOpenBrowser(server.Url));
                     return;
                 }
 
