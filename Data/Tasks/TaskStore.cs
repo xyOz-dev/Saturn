@@ -321,8 +321,23 @@ namespace Saturn.Data.Tasks
 
             if (task.IsRecurring)
             {
-                await RepoOf(task).SetLatestRunOutcomeAsync(task.Id,
-                    note ?? (success ? TaskStatuses.Done : TaskStatuses.Failed));
+                var outcome = note ?? (success ? TaskStatuses.Done : TaskStatuses.Failed);
+                var repo = RepoOf(task);
+                var updated = await repo.SetLatestRunOutcomeAsync(task.Id, outcome);
+                if (updated == 0)
+                {
+                    // No TaskRuns row exists yet (the task has never fired via the
+                    // due-recurrence sweep). Record a run directly so dependents
+                    // relying on HasCompletedRunAsync don't stay blocked forever.
+                    var now = DateTime.UtcNow;
+                    await repo.InsertRunAsync(new TaskRun
+                    {
+                        TaskId = task.Id,
+                        ScheduledFor = now,
+                        FiredAt = now,
+                        Outcome = outcome
+                    });
+                }
                 task.Status = TaskStatuses.Pending;
                 task.ClaimStatus = ClaimStatuses.None;
                 task.ClaimedBy = null;
