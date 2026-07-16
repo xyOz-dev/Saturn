@@ -49,14 +49,10 @@ namespace Saturn.Core.Tasks
             // The hourly cap only throttles proactive nudges (recurrences, ready
             // tasks). Completions, claim results and recovery notices must always
             // land or their continuations are lost.
-            if (!critical)
+            if (!critical && !await HasWakeBudgetAsync())
             {
-                var recentCount = await _store.Project.CountRecentWakesAsync(DateTime.UtcNow.AddHours(-1));
-                if (recentCount >= _settings.MaxWakesPerHour)
-                {
-                    _hub.Publish("wake.suppressed", new { kind, taskId, reason = $"MaxWakesPerHour ({_settings.MaxWakesPerHour}) reached" });
-                    return false;
-                }
+                _hub.Publish("wake.suppressed", new { kind, taskId, reason = $"MaxWakesPerHour ({_settings.MaxWakesPerHour}) reached" });
+                return false;
             }
 
             var enqueued = await _store.Project.TryEnqueueWakeAsync(new WakeItem
@@ -73,6 +69,12 @@ namespace Saturn.Core.Tasks
                 _ = SafePumpAsync();
             }
             return enqueued;
+        }
+
+        private async Task<bool> HasWakeBudgetAsync()
+        {
+            var recentCount = await _store.Project.CountRecentWakesAsync(DateTime.UtcNow.AddHours(-1));
+            return recentCount < _settings.MaxWakesPerHour;
         }
 
         public async Task PumpWakeQueueAsync()
@@ -102,6 +104,16 @@ namespace Saturn.Core.Tasks
             {
                 foreach (var task in await repo.GetDueRecurringAsync(now))
                 {
+                    // Check the wake budget before claiming: claiming advances
+                    // NextRunAt irreversibly, so if the wake would be dropped by
+                    // the hourly cap, leave the occurrence unclaimed so the next
+                    // sweep retries it once budget frees up.
+                    if (!await HasWakeBudgetAsync())
+                    {
+                        _hub.Publish("wake.suppressed", new { kind = WakeKinds.RecurrenceDue, taskId = task.Id, reason = $"MaxWakesPerHour ({_settings.MaxWakesPerHour}) reached; occurrence left unclaimed for retry" });
+                        continue;
+                    }
+
                     var scheduledFor = task.NextRunAt!.Value;
                     var next = RecurrenceCalculator.GetNextOccurrenceUtc(
                         task.RecurrenceKind, task.RecurrenceIntervalSeconds, task.RecurrenceCron, now);
@@ -180,7 +192,8 @@ namespace Saturn.Core.Tasks
                     task.Id,
                     $"Task '{task.Title}' ({task.Id}) is no longer blocked — its dependency '{completed.Title}' ({completed.Id}) completed. " +
                     "It can now be worked on.",
-                    $"unblock:{task.Id}:{completed.Id}");
+                    $"unblock:{task.Id}:{completed.Id}",
+                    critical: true);
             }
         }
 
