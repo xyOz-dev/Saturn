@@ -45,8 +45,7 @@ namespace Saturn.OpenRouter.Services
                 headers: null,
                 cancellationToken: cancellationToken).ConfigureAwait(false))
             {
-                if (cancellationToken.IsCancellationRequested)
-                    yield break;
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (ev.IsComment)
                     continue;
