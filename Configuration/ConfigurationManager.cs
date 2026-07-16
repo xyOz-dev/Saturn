@@ -79,6 +79,51 @@ namespace Saturn.Configuration
             }
         }
 
+        /// <summary>
+        /// Loads the configuration for use as the base of a save/rewrite operation. Unlike
+        /// <see cref="LoadConfigurationAsync"/>, this does not swallow read failures for a file
+        /// that exists: a transient read error (locked file, corrupt JSON, etc.) must not be
+        /// treated the same as "no config file exists yet", since callers use the result as the
+        /// base object they overwrite the config file with. Returning null in that case would
+        /// cause the save to silently rebuild a fresh configuration and wipe out any other
+        /// providers' settings.
+        /// </summary>
+        private static async Task<PersistedAgentConfiguration?> LoadForRewriteAsync()
+        {
+            if (!File.Exists(ConfigFilePath))
+            {
+                return null;
+            }
+
+            try
+            {
+                var json = await File.ReadAllTextAsync(ConfigFilePath);
+                var config = JsonSerializer.Deserialize<PersistedAgentConfiguration>(json, JsonOptions);
+
+                if (config != null && config.RequireCommandApproval == null)
+                {
+                    config.RequireCommandApproval = true;
+                }
+
+                if (config != null && config.EnableUserRules == null)
+                {
+                    config.EnableUserRules = true;
+                }
+
+                if (config != null)
+                {
+                    MigrateLegacyProviderFields(config);
+                }
+
+                return config;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to load existing configuration for save: {ex.Message}");
+                throw new IOException($"Refusing to save configuration: existing config file at '{ConfigFilePath}' could not be read ({ex.Message}).", ex);
+            }
+        }
+
         private static void MigrateLegacyProviderFields(PersistedAgentConfiguration config)
         {
             config.ActiveProvider ??= "openrouter";
@@ -125,7 +170,7 @@ namespace Saturn.Configuration
                 if (config.ActiveProvider == null || config.Providers == null ||
                     config.SearchProvider == null || config.SearchProviders == null)
                 {
-                    var existing = await LoadConfigurationAsync();
+                    var existing = await LoadForRewriteAsync();
                     config.ActiveProvider ??= existing?.ActiveProvider;
                     config.Providers ??= existing?.Providers;
                     config.SearchProvider ??= existing?.SearchProvider;
@@ -174,7 +219,7 @@ namespace Saturn.Configuration
 
         private static async Task SaveProviderSelectionLockedAsync(string providerName, ProviderSettings settings, string? model)
         {
-            var config = await LoadConfigurationAsync() ?? new PersistedAgentConfiguration();
+            var config = await LoadForRewriteAsync() ?? new PersistedAgentConfiguration();
 
             config.ActiveProvider = providerName;
             config.Providers ??= new Dictionary<string, PersistedProviderConfiguration>(StringComparer.OrdinalIgnoreCase);
