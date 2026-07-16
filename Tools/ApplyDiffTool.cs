@@ -42,9 +42,12 @@ Updating an existing file:
  }
 
 Rules:
-- The context line (@@ ... @@) must appear exactly once in the file
+- The context line (@@ ... @@) locates the change; if it appears multiple times in the file, the hunk body is used to pick the right occurrence (pure insertions with no '-' lines need a unique context line)
 - Lines starting with a space are unchanged context, '-' lines are removed, '+' lines are added
-- Context and '-' lines must match the file content exactly, including indentation
+- Context and '-' lines must match the file content exactly, including indentation. NEVER include line-number prefixes from read_file output
+- Blank lines inside a hunk must still carry their prefix (a single space for context)
+- File paths must be inside the current working directory
+- Prefer a single '*** Update File:' section per file with multiple hunks; multiple sections for the same file are applied in order
 
 The format also supports '*** Add File: path' (every content line prefixed with '+') and '*** Delete File: path' when you need them in a combined patch.";
         
@@ -462,8 +465,15 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                 else if (op.Type == OperationType.Update && op.Hunks != null)
                 {
                     var originalContent = currentFiles.ContainsKey(op.FilePath) ? currentFiles[op.FilePath] : "";
-                    var lineEnding = DetectLineEnding(originalContent);
-                    var lines = originalContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+                    // A later Update section for the same file builds on the earlier
+                    // section's result instead of silently discarding it.
+                    var baseContent = changes.TryGetValue(op.FilePath, out var priorChange) && priorChange.Type == ChangeType.Update
+                        ? priorChange.NewContent ?? originalContent
+                        : originalContent;
+
+                    var lineEnding = DetectLineEnding(baseContent);
+                    var lines = baseContent.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
                     
                     foreach (var hunk in op.Hunks)
                     {
@@ -674,21 +684,10 @@ The format also supports '*** Add File: path' (every content line prefixed with 
             {
                 throw new ArgumentException("File path cannot be null or empty");
             }
-            
-            if (filePath.Contains("..") || filePath.Contains("~"))
-            {
-                throw new SecurityException($"Invalid file path: {filePath}. Path traversal attempts are not allowed.");
-            }
-            
+
             try
             {
-                var fullPath = Path.GetFullPath(filePath);
-                var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-                
-                if (!fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new SecurityException($"Access denied: Path '{filePath}' is outside the working directory.");
-                }
+                PathSecurity.ValidateInsideWorkingDirectory(filePath);
             }
             catch (Exception ex) when (!(ex is SecurityException))
             {

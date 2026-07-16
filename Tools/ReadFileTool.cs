@@ -29,8 +29,8 @@ How to use:
 
 Important rules:
 - You MUST read a file before attempting to edit it with apply_diff
-- For very large files, use line ranges to read relevant sections
-- The tool shows line numbers which you'll need for apply_diff context
+- For very large files, use line ranges to read relevant sections; without a range the whole file is returned
+- Line numbers in the output (the 'NNN: ' prefix) are for your reference ONLY. NEVER copy them into apply_diff patches - patches match the raw file content, without line numbers
 
 Examples:
 - Read entire file: path='src/UserService.cs'
@@ -62,7 +62,7 @@ Examples:
                 { "encoding", new Dictionary<string, object>
                     {
                         { "type", "string" },
-                        { "enum", new[] { "utf8", "utf16", "utf32", "ascii", "unicode" } },
+                        { "enum", new[] { "utf8", "utf16", "utf32", "ascii" } },
                         { "default", "utf8" },
                         { "description", "Text encoding to use. Default is utf8" }
                     }
@@ -194,13 +194,13 @@ Examples:
                     {
                         lineNumber++;
                         content.TotalLines++;
-                        
+
                         if (startLine.HasValue && lineNumber < startLine.Value)
                             continue;
-                            
+
                         if (endLine.HasValue && lineNumber > endLine.Value)
-                            break;
-                        
+                            continue;
+
                         if (includeLineNumbers)
                         {
                             content.Lines.Add($"{lineNumber,6}: {line}");
@@ -209,7 +209,7 @@ Examples:
                         {
                             content.Lines.Add(line);
                         }
-                        
+
                         content.ReadLines++;
                     }
                 }

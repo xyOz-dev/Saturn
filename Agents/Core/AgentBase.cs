@@ -99,10 +99,10 @@ namespace Saturn.Agents.Core
             TrimHistory();
         }
 
-        public virtual async Task<T> Execute<T>(object input)
+        public virtual async Task<T> Execute<T>(object input, CancellationToken cancellationToken = default)
         {
             var messages = PrepareMessages(input?.ToString() ?? string.Empty);
-            var responseMessage = await ExecuteWithTools(messages);
+            var responseMessage = await ExecuteWithTools(messages, cancellationToken);
             var finalMessage = ProcessResponse(responseMessage);
             return (T)(object)finalMessage;
         }
@@ -343,7 +343,7 @@ namespace Saturn.Agents.Core
             }
         }
 
-        protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages)
+        protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages, CancellationToken cancellationToken = default)
         {
             var client = Configuration.ClientSource.Current;
 
@@ -353,6 +353,8 @@ namespace Saturn.Agents.Core
 
             while (continueProcessing)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
 
@@ -415,6 +417,8 @@ namespace Saturn.Agents.Core
                             
                         }
                     }
+
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     var toolResults = await HandleToolCalls(validToolCalls);
 

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -19,16 +21,56 @@ namespace Saturn.Tools
     {
         public override string Name => "web_fetch";
         
-        public override string Description => @"Fetches and processes web content from any URL. Converts HTML to readable text/markdown format.
+        public override string Description => @"Fetches and processes web content from a public URL. Converts HTML to readable text/markdown format.
 
 When to use:
 - Fetching documentation or API references
 - Researching solutions from blog posts or articles
 - Retrieving information from web resources
 - Gathering context from external sources
-- Analyzing web page content or structure";
+- Analyzing web page content or structure
+
+Limits:
+- Only public http/https URLs; localhost and private-network addresses are blocked (use execute_command with curl for local servers)
+- 30 second timeout, at most 5 redirects
+- Content is truncated to 'maxLength' characters (default 50000)
+- Successful responses are cached for 5 minutes";
 
         private const int MaxRedirects = 5;
+        private const int MaxResponseBytes = 10 * 1024 * 1024;
+
+        private static async Task<string> ReadBodyBoundedAsync(HttpResponseMessage response)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var buffered = new MemoryStream();
+
+            var buffer = new byte[81920];
+            int read;
+            while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, timeout.Token)) > 0)
+            {
+                buffered.Write(buffer, 0, read);
+                if (buffered.Length > MaxResponseBytes)
+                {
+                    throw new InvalidDataException($"Response exceeded the {MaxResponseBytes / (1024 * 1024)} MB limit and was aborted");
+                }
+            }
+
+            var charset = response.Content.Headers.ContentType?.CharSet;
+            Encoding encoding;
+            try
+            {
+                encoding = string.IsNullOrWhiteSpace(charset)
+                    ? Encoding.UTF8
+                    : Encoding.GetEncoding(charset.Trim('"'));
+            }
+            catch (ArgumentException)
+            {
+                encoding = Encoding.UTF8;
+            }
+
+            return encoding.GetString(buffered.ToArray());
+        }
 
         private static readonly HttpClient _httpClient = CreateHttpClient();
 
@@ -191,7 +233,7 @@ When to use:
                     return CreateErrorResult(validationError);
                 }
 
-                var cacheKey = $"{url}|{extractionMode}|{selector}";
+                var cacheKey = $"{url}|{extractionMode}|{selector}|{maxLength}|{includeMetadata}";
                 if (useCache && _cache.TryGetValue(cacheKey, out var cached))
                 {
                     if (DateTime.UtcNow - cached.CachedAt < CacheDuration)
@@ -226,7 +268,7 @@ When to use:
                         }
                     }
 
-                    response = await _httpClient.SendAsync(request);
+                    response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
                     var statusCode = (int)response.StatusCode;
                     if (statusCode >= 300 && statusCode < 400 && response.Headers.Location != null)
@@ -260,8 +302,14 @@ When to use:
                     return CreateErrorResult($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
 
-                var html = await response.Content.ReadAsStringAsync();
-                
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength.HasValue && contentLength.Value > MaxResponseBytes)
+                {
+                    return CreateErrorResult($"Response too large: {contentLength.Value} bytes (limit is {MaxResponseBytes / (1024 * 1024)} MB)");
+                }
+
+                var html = await ReadBodyBoundedAsync(response);
+
                 if (string.IsNullOrWhiteSpace(html))
                 {
                     return CreateErrorResult("Empty response from server");
@@ -271,8 +319,8 @@ When to use:
                 doc.LoadHtml(html);
 
                 var result = ProcessContent(doc, uri, extractionMode, selector!, maxLength, includeMetadata);
-                
-                if (useCache)
+
+                if (useCache && result.Success)
                 {
                     _cache[cacheKey] = new CachedContent
                     {
@@ -282,6 +330,10 @@ When to use:
                 }
 
                 return result;
+            }
+            catch (InvalidDataException ex)
+            {
+                return CreateErrorResult(ex.Message);
             }
             catch (TaskCanceledException)
             {

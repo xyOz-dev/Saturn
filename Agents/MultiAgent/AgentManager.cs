@@ -12,12 +12,13 @@ using Saturn.Config;
 using Saturn.Data;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.Providers;
+using Saturn.Tools.Core;
 
 namespace Saturn.Agents.MultiAgent
 {
     public class AgentManager
     {
-        private static AgentManager? _instance;
+        private static readonly Lazy<AgentManager> _lazyInstance = new Lazy<AgentManager>(() => new AgentManager());
         private readonly ConcurrentDictionary<string, SubAgentContext> _runningAgents;
         private readonly ConcurrentDictionary<string, AgentTaskResult> _completedTasks;
         private readonly ConcurrentDictionary<string, ReviewerContext> _reviewers;
@@ -25,13 +26,22 @@ namespace Saturn.Agents.MultiAgent
         private ILlmClientSource _clientSource = null!;
         private const int DefaultMaxConcurrentAgents = 50;
         private const int AbsoluteMaxConcurrentAgents = 200;
+
+        // Agent-lifecycle and orchestrator-only tools; sub-agents must not see these
+        // (recursive create_agent, terminating siblings, or waiting on their own task).
+        private static readonly HashSet<string> SubAgentExcludedTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "create_agent", "hand_off_to_agent", "terminate_agent",
+            "wait_for_agent", "get_agent_status", "get_task_result",
+            "claim_task", "dispatch_task", "list_due_tasks"
+        };
         private int _maxConcurrentAgents = DefaultMaxConcurrentAgents;
         private readonly object _agentRegistrationLock = new object();
         private string? _parentSessionId;
         private string? _parentModel;
         private bool _parentEnableUserRules = true;
         
-        public static AgentManager Instance => _instance ??= new AgentManager();
+        public static AgentManager Instance => _lazyInstance.Value;
         
         public event Action<string, string, string>? OnAgentStatusChanged;
         public event Action<string, string>? OnAgentCreated;
@@ -46,10 +56,7 @@ namespace Saturn.Agents.MultiAgent
         
         public void Initialize(ILlmClientSource clientSource)
         {
-            if (_instance != null)
-            {
-                _instance._clientSource = clientSource;
-            }
+            _clientSource = clientSource;
         }
         
         public void SetParentSessionId(string? sessionId)
@@ -136,6 +143,9 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     MaxTokens = maxTokens ?? 4096,
                     TopP = topP ?? 0.95,
                     EnableTools = enableTools,
+                    ToolNames = ToolRegistry.Instance.GetAllNames()
+                        .Where(name => !SubAgentExcludedTools.Contains(name))
+                        .ToList(),
                     MaintainHistory = true,
                     MaxHistoryMessages = 20
                 };
@@ -170,16 +180,32 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
             }
 
             var taskId = $"task_{Guid.NewGuid():N}".Substring(0, 12);
+            var cancellation = new CancellationTokenSource();
 
-            agentContext.Status = AgentStatus.Working;
-            agentContext.CurrentTask = new AgentTask
+            lock (_agentRegistrationLock)
             {
-                Id = taskId,
-                Description = task,
-                Context = context,
-                StartedAt = DateTime.Now,
-                Status = TaskStatus.Running
-            };
+                if (agentContext.Agent == null)
+                {
+                    throw new InvalidOperationException($"Agent {agentId} is still initializing; retry shortly");
+                }
+
+                if (agentContext.Status != AgentStatus.Idle)
+                {
+                    throw new InvalidOperationException(
+                        $"Agent {agentId} is busy (status: {agentContext.Status}, task: {agentContext.CurrentTask?.Id ?? "unknown"}); wait for it to finish before handing off another task");
+                }
+
+                agentContext.Status = AgentStatus.Working;
+                agentContext.Cancellation = cancellation;
+                agentContext.CurrentTask = new AgentTask
+                {
+                    Id = taskId,
+                    Description = task,
+                    Context = context,
+                    StartedAt = DateTime.Now,
+                    Status = TaskStatus.Running
+                };
+            }
 
             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Working");
 
@@ -187,7 +213,22 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
             // agent runs; a fast-completing agent would otherwise race past it.
             if (onBeforeStart != null)
             {
-                await onBeforeStart(taskId);
+                try
+                {
+                    await onBeforeStart(taskId);
+                }
+                catch
+                {
+                    lock (_agentRegistrationLock)
+                    {
+                        agentContext.Status = AgentStatus.Idle;
+                        agentContext.CurrentTask = null;
+                        agentContext.Cancellation = null;
+                    }
+                    cancellation.Dispose();
+                    OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
+                    throw;
+                }
             }
 
             _ = Task.Run(async () =>
@@ -204,7 +245,7 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                         }
                     }
                     
-                    var result = await agentContext.Agent.Execute<Message>(input);
+                    var result = await agentContext.Agent.Execute<Message>(input, cancellation.Token);
                     
                     if (SubAgentPreferences.Instance.EnableReviewStage)
                     {
@@ -227,7 +268,7 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Revising (Attempt {agentContext.RevisionCount})");
                             
                             var revisionInput = $"Please revise your previous work based on this feedback:\n{reviewDecision.Feedback}\n\nOriginal task: {task}";
-                            var revisedResult = await agentContext.Agent.Execute<Message>(revisionInput);
+                            var revisedResult = await agentContext.Agent.Execute<Message>(revisionInput, cancellation.Token);
                             currentResult = revisedResult.Content.ToString();
                             
                             agentContext.Status = AgentStatus.BeingReviewed;
@@ -263,6 +304,10 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     {
                         CompleteTask(taskId, agentId, agentContext, true, result.Content.ToString());
                     }
+                }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                {
+                    CompleteTask(taskId, agentId, agentContext, false, "Task terminated before completion");
                 }
                 catch (Exception ex)
                 {
@@ -540,6 +585,29 @@ Your decision:";
         
         private void CompleteTask(string taskId, string agentId, SubAgentContext agentContext, bool success, string result)
         {
+            DateTime? startedAt = null;
+            var becameIdle = false;
+
+            lock (_agentRegistrationLock)
+            {
+                var currentTask = agentContext.CurrentTask;
+                if (currentTask != null && currentTask.Id == taskId)
+                {
+                    startedAt = currentTask.StartedAt;
+                    currentTask.Status = success ? TaskStatus.Completed : TaskStatus.Failed;
+                    agentContext.CurrentTask = null;
+                    agentContext.RevisionCount = 0;
+                    agentContext.Cancellation?.Dispose();
+                    agentContext.Cancellation = null;
+
+                    if (agentContext.Status != AgentStatus.Terminated)
+                    {
+                        agentContext.Status = AgentStatus.Idle;
+                        becameIdle = _runningAgents.ContainsKey(agentId);
+                    }
+                }
+            }
+
             var taskResult = new AgentTaskResult
             {
                 TaskId = taskId,
@@ -548,24 +616,39 @@ Your decision:";
                 Success = success,
                 Result = result,
                 CompletedAt = DateTime.Now,
-                Duration = DateTime.Now - agentContext.CurrentTask!.StartedAt
+                Duration = startedAt.HasValue ? DateTime.Now - startedAt.Value : TimeSpan.Zero
             };
-            
+
+            // Always record the result, even for a terminated or superseded task,
+            // so callers waiting on the task id resolve instead of timing out.
             _completedTasks[taskId] = taskResult;
-            agentContext.CurrentTask!.Status = success ? TaskStatus.Completed : TaskStatus.Failed;
-            agentContext.Status = AgentStatus.Idle;
-            agentContext.CurrentTask = null;
-            agentContext.RevisionCount = 0;
-            
+
             OnTaskCompleted?.Invoke(taskId, taskResult);
-            OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
+            if (becameIdle)
+            {
+                OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
+            }
         }
-        
+
         public void TerminateAgent(string agentId)
         {
             if (_runningAgents.TryRemove(agentId, out var context))
             {
-                context.Status = AgentStatus.Terminated;
+                CancellationTokenSource? cancellation;
+                lock (_agentRegistrationLock)
+                {
+                    context.Status = AgentStatus.Terminated;
+                    cancellation = context.Cancellation;
+                }
+
+                try
+                {
+                    cancellation?.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+
                 OnAgentStatusChanged?.Invoke(agentId, context.Name, "Terminated");
             }
         }
