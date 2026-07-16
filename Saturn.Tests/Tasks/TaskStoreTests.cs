@@ -187,6 +187,22 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public async Task UpdateAsync_SettingStatusToDone_FiresCompletedEvent()
+        {
+            var task = await CreateTaskAsync("finish via update");
+
+            var changes = new List<(string Change, string Status)>();
+            _store.OnTaskChanged += (change, changedTask) => changes.Add((change, changedTask.Status));
+
+            var updated = await _store.UpdateAsync(task.Id, new TaskUpdateSpec { Status = TaskStatuses.Done });
+
+            updated!.Status.Should().Be(TaskStatuses.Done);
+
+            // update_task must trigger the same unblock sweep as complete_task.
+            changes.Should().ContainSingle(c => c.Change == "completed" && c.Status == TaskStatuses.Done);
+        }
+
+        [Fact]
         public async Task UpdateAsync_ScopeChange_MovesTaskBetweenDatabases()
         {
             var task = await CreateTaskAsync("mover");
