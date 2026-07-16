@@ -31,6 +31,7 @@ namespace Saturn.Web
         private CancellationTokenSource? _cts;
         private int _busy;
         private bool _parentWired;
+        private int _sessionEpoch;
 
         public event Action? OnIdle;
 
@@ -118,6 +119,8 @@ namespace Saturn.Web
             var cts = new CancellationTokenSource();
             _cts = cts;
 
+            var epoch = Volatile.Read(ref _sessionEpoch);
+
             _ = Task.Run(async () =>
             {
                 var buffer = new StringBuilder();
@@ -135,15 +138,24 @@ namespace Saturn.Web
                         return Task.CompletedTask;
                     }, cts.Token);
 
-                    AddEntry("assistant", buffer.ToString());
+                    if (Volatile.Read(ref _sessionEpoch) == epoch)
+                    {
+                        AddEntry("assistant", buffer.ToString());
+                    }
                 }
                 catch (OperationCanceledException)
                 {
-                    AddEntry("system", "Response cancelled.");
+                    if (Volatile.Read(ref _sessionEpoch) == epoch)
+                    {
+                        AddEntry("system", "Response cancelled.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    AddEntry("system", $"Error: {ex.Message}");
+                    if (Volatile.Read(ref _sessionEpoch) == epoch)
+                    {
+                        AddEntry("system", $"Error: {ex.Message}");
+                    }
                 }
                 finally
                 {
@@ -216,6 +228,7 @@ namespace Saturn.Web
         public void StartNewSession()
         {
             Cancel();
+            Interlocked.Increment(ref _sessionEpoch);
             _agent.ClearHistory();
             _parentWired = false;
             lock (_transcriptLock)
