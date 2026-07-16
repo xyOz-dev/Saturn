@@ -391,6 +391,17 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
+        public Task<bool> DeleteRunsForTaskAsync(string taskId, CancellationToken ct = default)
+        {
+            return WithWriteLockAsync(async () =>
+            {
+                using var connection = CreateConnection();
+                using var cmd = new SqliteCommand("DELETE FROM TaskRuns WHERE TaskId = @TaskId", connection);
+                cmd.Parameters.AddWithValue("@TaskId", taskId);
+                return await cmd.ExecuteNonQueryAsync(ct) > 0;
+            }, ct);
+        }
+
         // ---------- Waiters (runtime) ----------
 
         public Task<TaskWaiter> InsertWaiterAsync(TaskWaiter w, CancellationToken ct = default)

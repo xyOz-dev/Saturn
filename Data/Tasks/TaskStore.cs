@@ -180,6 +180,7 @@ namespace Saturn.Data.Tasks
             {
                 var sourceRepo = RepoFor(originalScope);
                 var deps = await sourceRepo.GetDependenciesAsync(task.Id);
+                var runs = await sourceRepo.GetRunsAsync(task.Id, limit: int.MaxValue);
 
                 // DeleteTaskAsync also wipes edges where this task is the blocker;
                 // snapshot the dependents' edge lists so they can be restored.
@@ -190,9 +191,14 @@ namespace Saturn.Data.Tasks
                 }
 
                 await sourceRepo.DeleteTaskAsync(task.Id);
+                await sourceRepo.DeleteRunsForTaskAsync(task.Id);
                 task.Scope = spec.Scope;
                 await RepoOf(task).InsertTaskAsync(task);
                 await RepoOf(task).SetDependenciesAsync(task.Id, deps);
+                foreach (var run in runs)
+                {
+                    await RepoOf(task).InsertRunAsync(run);
+                }
 
                 foreach (var (dependentId, edges) in dependentEdges)
                 {
