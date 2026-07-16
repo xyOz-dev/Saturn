@@ -25,18 +25,20 @@ When to use:
 - Checking if certain files exist in the project
 
 How to use:
-- Set 'pattern' to your glob pattern (supports *, ?, ** wildcards)
+- Set 'pattern' to your glob pattern (supports *, ?, ** wildcards; brace expansion like {json,xml} is NOT supported)
+- Multiple patterns can be separated with commas or semicolons; prefix a pattern with ! to exclude its matches
 - Use 'path' to search from a specific directory (optional)
-- Set 'includeDirectories' to true to also list folders
 - Use 'exclude' array to filter out unwanted results
 - Set 'caseSensitive' based on your needs
 - Use 'compactOutput' for just file paths
 - Set 'maxDepth' to limit recursion depth
+- This tool matches files by default; set includeDirectories=true to also match directories against the pattern (use list_files for tree exploration)
 
 Examples:
 - Find all C# files: pattern='**/*.cs'
 - Find test files: pattern='**/*Test.cs' or pattern='**/test/**/*'
-- Find config files: pattern='**/*.{json,xml,config}'
+- Find config files: pattern='**/*.json,**/*.xml,**/*.config'
+- Exclude generated code: pattern='**/*.cs,!**/obj/**'
 - Find specific file: pattern='**/UserService.cs'
 - Find all in folder: pattern='src/models/**/*'
 
@@ -276,8 +278,62 @@ Note: Use this before grep when you need to find files first, then search within
                 }
             }
             
+            // Matcher.Execute only matches files, so directories are matched
+            // against the same patterns in a separate pass.
+            if (includeDirectories)
+            {
+                var enumerationOptions = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = followSymlinks ? FileAttributes.None : FileAttributes.ReparsePoint
+                };
+
+                foreach (var dirPath in Directory.EnumerateDirectories(basePath, "*", enumerationOptions))
+                {
+                    if (results.Count >= maxResults)
+                    {
+                        break;
+                    }
+
+                    var dirInfo = new DirectoryInfo(dirPath);
+                    var relativePath = Path.GetRelativePath(basePath, dirInfo.FullName).Replace('\\', '/');
+
+                    if (maxDepth >= 0 && relativePath.Count(c => c == '/') > maxDepth)
+                    {
+                        continue;
+                    }
+
+                    if (!matcher.Match(relativePath).HasMatches)
+                    {
+                        continue;
+                    }
+
+                    if (!followSymlinks && IsSymbolicLink(dirInfo))
+                    {
+                        continue;
+                    }
+
+                    if (!visitedPaths.Add(dirInfo.FullName))
+                    {
+                        continue;
+                    }
+
+                    totalMatches++;
+                    results.Add(new GlobMatch
+                    {
+                        Path = dirInfo.FullName,
+                        RelativePath = relativePath,
+                        IsDirectory = true,
+                        Size = 0,
+                        LastModified = dirInfo.LastWriteTime,
+                        IsSymbolicLink = IsSymbolicLink(dirInfo)
+                    });
+                }
+            }
+
             results.Sort((a, b) => string.Compare(a.RelativePath, b.RelativePath, StringComparison.OrdinalIgnoreCase));
-            
+
             return new GlobMatchResult { Matches = results, TotalCount = totalMatches };
         }
         
@@ -352,18 +408,7 @@ Note: Use this before grep when you need to find files first, then search within
         
         private void ValidatePathSecurity(string path)
         {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                throw new ArgumentException("Path cannot be null or empty");
-            }
-            
-            var fullPath = Path.GetFullPath(path);
-            var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-            
-            if (!fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new SecurityException($"Access denied: Path '{path}' is outside the working directory.");
-            }
+            PathSecurity.ValidateInsideWorkingDirectory(path);
         }
         
         private bool IsSymbolicLink(FileSystemInfo info)

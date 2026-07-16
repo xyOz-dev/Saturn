@@ -34,9 +34,10 @@ namespace Saturn
                     await Task.Delay(1000);
                 }
 
-                var (agent, client) = await CreateAgent();
+                var isWebMode = TryParseWebOptions(args, out var port);
+                var (agent, client) = await CreateAgent(isWebMode);
 
-                if (TryParseWebOptions(args, out var port))
+                if (isWebMode)
                 {
                     agent.IsOrchestrator = true;
                     // Long-horizon web sessions benefit from a deeper context window.
@@ -104,7 +105,7 @@ namespace Saturn
             }
         }
 
-        static async Task<(Agent, ILlmClientSource)> CreateAgent()
+        static async Task<(Agent, ILlmClientSource)> CreateAgent(bool isWebMode)
         {
             ProviderRegistry.Register(new OpenRouterProvider());
             ProviderRegistry.Register(new LMStudioProvider());
@@ -157,7 +158,108 @@ namespace Saturn
             var agentConfig = new Saturn.Agents.Core.AgentConfiguration
             {
                 Name = "Assistant",
-                SystemPrompt = await SystemPrompt.Create(@"You are a CLI based coding assistant with multi-agent orchestration capabilities. Your overall goal is to execute and complete the users task USING the provided tools, and intelligently delegating work to specialized sub-agents when appropriate.
+                SystemPrompt = await SystemPrompt.Create(BuildSystemPromptText(isWebMode), includeDirectories: true, includeUserRules: enableUserRules),
+                ClientSource = manager,
+                Model = model,
+                Temperature = temperature,
+                MaxTokens = 4096,
+                TopP = 0.25,
+                MaintainHistory = true,
+                MaxHistoryMessages = 10,
+                EnableTools = true,
+                EnableStreaming = true,
+                RequireCommandApproval = true,
+                EnableUserRules = enableUserRules,
+                ToolNames = BuildDefaultToolNames(isWebMode),
+            };
+
+            // Persisted configs predate newer tools; backfill only those.
+            // Re-adding the full default set would silently restore tools
+            // the user deliberately removed (e.g. execute_command).
+            var backfillTools = new List<string> { "update_todos", "web_search" };
+            if (isWebMode)
+            {
+                backfillTools.AddRange(WebModeTaskTools);
+            }
+
+            if (persistedConfig != null)
+            {
+                ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
+
+                agentConfig.Model = model;
+
+                agentConfig.ToolNames = agentConfig.ToolNames
+                    .Union(backfillTools, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            else
+            {
+                await ConfigurationManager.SaveConfigurationAsync(
+                    ConfigurationManager.FromAgentConfiguration(agentConfig));
+            }
+
+            if (!isWebMode)
+            {
+                // The task system only runs in web mode; its tools error out in the
+                // TUI, so don't offer them to the model there.
+                agentConfig.ToolNames = agentConfig.ToolNames
+                    .Where(name => !WebModeTaskTools.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            await ConfigurationManager.SaveProviderSelectionAsync(providerName, providerSettings, model);
+
+            if (agentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+            {
+                agentConfig.Temperature = 1.0;
+            }
+
+            return (new Agent(agentConfig), manager);
+        }
+
+        private static readonly string[] WebModeTaskTools =
+        {
+            "list_tasks", "create_task", "update_task", "complete_task",
+            "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks"
+        };
+
+        static List<string> BuildDefaultToolNames(bool isWebMode)
+        {
+            var toolNames = new List<string>
+            {
+                "apply_diff", "grep", "glob", "read_file", "list_files",
+                "write_file", "search_and_replace", "delete_file",
+                "create_agent", "hand_off_to_agent", "get_agent_status",
+                "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
+                "get_command_output", "kill_command", "web_fetch", "web_search",
+                "update_todos"
+            };
+
+            if (isWebMode)
+            {
+                toolNames.AddRange(WebModeTaskTools);
+            }
+
+            return toolNames;
+        }
+
+        static string BuildSystemPromptText(bool isWebMode)
+        {
+            var taskSystemSection = isWebMode ? @"Task System
+- The user maintains durable todo lists via the task tools: list_tasks, create_task, update_task, complete_task, wait_for_task, claim_task, dispatch_task, list_due_tasks.
+- Scopes: 'global' (machine-wide), 'project' (this repository, named boards), 'agent' (per-agent lists).
+- [Saturn Scheduler] messages are automated wake-ups: a recurring task fired, a task unblocked, a dispatched task completed, or an agent-available task is ready. Act on them using the task tools, then report concisely.
+- Tasks flagged requires-approval: call claim_task and WAIT for the user's decision (you will be woken). Never work on user-handoff-only tasks.
+- For long-running dependencies prefer wait_for_task over polling: register, end your turn, and you will be re-prompted with the result when it completes.
+- Keep the task list accurate: complete_task when work finishes, create_task for follow-ups you discover.
+
+" : "";
+
+            var todoScratchpadNote = isWebMode
+                ? "; use the task tools for the user's durable todo lists"
+                : "";
+
+            return @"You are a CLI based coding assistant with multi-agent orchestration capabilities. Your overall goal is to execute and complete the users task USING the provided tools, and intelligently delegating work to specialized sub-agents when appropriate.
 
 Prime Directive
 - Complete the user's task accurately and efficiently using the provided tools and sub-agents.
@@ -176,15 +278,7 @@ Prime Directive
 2) Output Rules:
    - **NEVER** Use emojis.
 
-Task System (web mode)
-- The user maintains durable todo lists via the task tools: list_tasks, create_task, update_task, complete_task, wait_for_task, claim_task, dispatch_task, list_due_tasks.
-- Scopes: 'global' (machine-wide), 'project' (this repository, named boards), 'agent' (per-agent lists).
-- [Saturn Scheduler] messages are automated wake-ups: a recurring task fired, a task unblocked, a dispatched task completed, or an agent-available task is ready. Act on them using the task tools, then report concisely.
-- Tasks flagged requires-approval: call claim_task and WAIT for the user's decision (you will be woken). Never work on user-handoff-only tasks.
-- For long-running dependencies prefer wait_for_task over polling: register, end your turn, and you will be re-prompted with the result when it completes.
-- Keep the task list accurate: complete_task when work finishes, create_task for follow-ups you discover.
-
-Multi-Agent Orchestration
+" + taskSystemSection + @"Multi-Agent Orchestration
 1) When to use sub-agents:
    - Background tasks: Long-running operations that don't need immediate attention
    - Parallel work: Multiple independent tasks that can run simultaneously
@@ -231,9 +325,9 @@ Operating Principles
 2) Planning
    - Make a brief plan before edits or commands. Keep the plan to 3–7 bullets.
    - Track multi-step work with update_todos: write the step list up front, keep exactly one item in_progress, and mark steps completed immediately.
-   - The update_todos list is your private, session-scoped scratchpad; use the task tools for the user's durable todo lists.
+   - The update_todos list is your private, session-scoped scratchpad" + todoScratchpadNote + @".
    - Identify opportunities for parallel execution with sub-agents.
-   - Track delegated work to avoid duplication - mark tasks as delegated.
+   - Track delegated work in your todo list (note the sub-agent task id) to avoid duplication.
    - If requirements are ambiguous, ask targeted clarifying questions.
    - When collecting sub-agent results, integrate don't recreate.
 
@@ -267,64 +361,7 @@ Operating Principles
    - Be mindful of the number of concurrent sub-agents.
    - Monitor agent status to avoid resource exhaustion.
    - Avoid redundant work - if a sub-agent did it, it's done.
-   - Efficiency means trusting delegation, not redoing completed tasks.", includeDirectories: true, includeUserRules: enableUserRules),
-                ClientSource = manager,
-                Model = model,
-                Temperature = temperature,
-                MaxTokens = 4096,
-                TopP = 0.25,
-                MaintainHistory = true,
-                MaxHistoryMessages = 10,
-                EnableTools = true,
-                EnableStreaming = true,
-                RequireCommandApproval = true,
-                EnableUserRules = enableUserRules,
-                ToolNames = new List<string>() {
-                    "apply_diff", "grep", "glob", "read_file", "list_files",
-                    "write_file", "search_and_replace", "delete_file",
-                    "create_agent", "hand_off_to_agent", "get_agent_status",
-                    "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
-                    "get_command_output", "kill_command", "web_fetch", "web_search",
-                    "list_tasks", "create_task", "update_task", "complete_task",
-                    "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks",
-                    "update_todos"
-                },
-            };
-
-            // Persisted configs predate newer tools; backfill only those.
-            // Re-adding the full default set would silently restore tools
-            // the user deliberately removed (e.g. execute_command).
-            var backfillTools = new[]
-            {
-                "list_tasks", "create_task", "update_task", "complete_task",
-                "wait_for_task", "claim_task", "dispatch_task", "list_due_tasks",
-                "update_todos", "web_search"
-            };
-
-            if (persistedConfig != null)
-            {
-                ConfigurationManager.ApplyToAgentConfiguration(agentConfig, persistedConfig);
-
-                agentConfig.Model = model;
-
-                agentConfig.ToolNames = agentConfig.ToolNames
-                    .Union(backfillTools, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
-            else
-            {
-                await ConfigurationManager.SaveConfigurationAsync(
-                    ConfigurationManager.FromAgentConfiguration(agentConfig));
-            }
-
-            await ConfigurationManager.SaveProviderSelectionAsync(providerName, providerSettings, model);
-
-            if (agentConfig.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
-            {
-                agentConfig.Temperature = 1.0;
-            }
-
-            return (new Agent(agentConfig), manager);
+   - Efficiency means trusting delegation, not redoing completed tasks.";
         }
 
         static async Task<string> ResolveStartupModelAsync(

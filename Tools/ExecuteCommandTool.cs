@@ -18,6 +18,7 @@ namespace Saturn.Tools
         private const int MaxOutputLength = 1048576;
         private const int MaxCaptureLength = 8388608;
         private readonly List<CommandHistory> _commandHistory = new();
+        private readonly object _historyLock = new();
         private readonly CommandExecutorConfig _config;
         private readonly ICommandApprovalService _approvalService;
 
@@ -39,7 +40,7 @@ How commands run:
 - On Windows the command is run with 'cmd.exe /c'; on Linux/macOS with '/bin/sh -c'. Use the syntax of the current platform.
 - Commands run non-interactively with no stdin. Do not run commands that wait for user input (e.g. editors, REPLs, prompts) - they will hang until the timeout.
 - Default timeout is 120 seconds; pass 'timeout' (in seconds) for longer-running commands like builds or test suites. On timeout the process is killed and any output captured so far is still returned.
-- Output is captured up to 1 MB; the middle is elided if it is longer, keeping the start and end.
+- Output is captured up to 8 MB (a marker is appended if more was discarded). At most 1 MB is returned; the middle is elided if it is longer, keeping the start and end.
 - The user may be asked to approve each command before it runs; a denied command returns an error.
 - For long-running processes (dev servers, watchers), set 'run_in_background' to true. The tool returns a command_id immediately; poll its output with get_command_output and stop it with kill_command.
 
@@ -121,6 +122,10 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 
                 var workingDirectory = GetParameter<string>(arguments, "workingDirectory", Directory.GetCurrentDirectory());
                 var timeoutSeconds = GetParameter<int>(arguments, "timeout", _config.DefaultTimeout);
+                if (timeoutSeconds <= 0)
+                {
+                    return CreateErrorResult($"Invalid timeout: {timeoutSeconds}. It must be a positive number of seconds.");
+                }
                 var captureOutput = GetParameter<bool>(arguments, "captureOutput", true);
                 var runAsShell = GetParameter<bool>(arguments, "runAsShell", true);
                 var runInBackground = GetParameter<bool>(arguments, "run_in_background", false);
@@ -176,10 +181,13 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
 
                     if (_config.EnableHistory)
                     {
-                        _commandHistory.Add(historyEntry);
-                        if (_commandHistory.Count > _config.MaxHistorySize)
+                        lock (_historyLock)
                         {
-                            _commandHistory.RemoveAt(0);
+                            _commandHistory.Add(historyEntry);
+                            if (_commandHistory.Count > _config.MaxHistorySize)
+                            {
+                                _commandHistory.RemoveAt(0);
+                            }
                         }
                     }
 
@@ -192,7 +200,14 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                     
                     if (_config.EnableHistory)
                     {
-                        _commandHistory.Add(historyEntry);
+                        lock (_historyLock)
+                        {
+                            _commandHistory.Add(historyEntry);
+                            if (_commandHistory.Count > _config.MaxHistorySize)
+                            {
+                                _commandHistory.RemoveAt(0);
+                            }
+                        }
                     }
 
                     throw;
@@ -219,21 +234,34 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             var outputBuilder = new StringBuilder();
             var errorBuilder = new StringBuilder();
 
+            var outputDropped = false;
+            var errorDropped = false;
+
             if (captureOutput)
             {
                 process.OutputDataReceived += (sender, e) =>
                 {
-                    if (e.Data != null && outputBuilder.Length < MaxCaptureLength)
+                    if (e.Data == null) return;
+                    if (outputBuilder.Length < MaxCaptureLength)
                     {
                         outputBuilder.AppendLine(e.Data);
+                    }
+                    else
+                    {
+                        outputDropped = true;
                     }
                 };
 
                 process.ErrorDataReceived += (sender, e) =>
                 {
-                    if (e.Data != null && errorBuilder.Length < MaxCaptureLength)
+                    if (e.Data == null) return;
+                    if (errorBuilder.Length < MaxCaptureLength)
                     {
                         errorBuilder.AppendLine(e.Data);
+                    }
+                    else
+                    {
+                        errorDropped = true;
                     }
                 };
             }
@@ -269,6 +297,16 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             try { process.WaitForExit(); } catch { }
 
             stopwatch.Stop();
+
+            if (outputDropped)
+            {
+                outputBuilder.AppendLine("... [capture limit reached; subsequent output was discarded] ...");
+            }
+
+            if (errorDropped)
+            {
+                errorBuilder.AppendLine("... [capture limit reached; subsequent error output was discarded] ...");
+            }
 
             int exitCode;
             try { exitCode = process.ExitCode; } catch { exitCode = -1; }
@@ -348,7 +386,8 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 else
                 {
                     startInfo.FileName = "/bin/sh";
-                    startInfo.Arguments = $"-c \"{command.Replace("\"", "\\\"")}\"";
+                    startInfo.ArgumentList.Add("-c");
+                    startInfo.ArgumentList.Add(command);
                 }
             }
             else
@@ -445,8 +484,20 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 + output.Substring(output.Length - tailLength);
         }
 
-        public IReadOnlyList<CommandHistory> GetCommandHistory() => _commandHistory.AsReadOnly();
+        public IReadOnlyList<CommandHistory> GetCommandHistory()
+        {
+            lock (_historyLock)
+            {
+                return _commandHistory.ToList();
+            }
+        }
 
-        public void ClearHistory() => _commandHistory.Clear();
+        public void ClearHistory()
+        {
+            lock (_historyLock)
+            {
+                _commandHistory.Clear();
+            }
+        }
     }
 }

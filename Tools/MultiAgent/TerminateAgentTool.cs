@@ -10,7 +10,7 @@ namespace Saturn.Tools.MultiAgent
     {
         public override string Name => "terminate_agent";
         
-        public override string Description => "Terminate a sub-agent to free up capacity. Use this when an agent is no longer needed or to make room for new agents.";
+        public override string Description => "Terminate a sub-agent to free up capacity. Cancellation takes effect at the agent's next step boundary, so an in-flight model call or tool may still finish; any in-progress task is recorded as failed. Use this when an agent is no longer needed or to make room for new agents.";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {

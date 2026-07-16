@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Saturn.Agents.MultiAgent.Objects
@@ -16,5 +17,6 @@ namespace Saturn.Agents.MultiAgent.Objects
         public DateTime CreatedAt { get; set; }
         public AgentTask? CurrentTask { get; set; }
         public int RevisionCount { get; set; } = 0;
+        public CancellationTokenSource? Cancellation { get; set; }
     }
 }

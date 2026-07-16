@@ -182,19 +182,9 @@ Safety features:
         
         private void ValidatePathSecurity(string path)
         {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                throw new ArgumentException("Path cannot be null or empty");
-            }
-            
+            PathSecurity.ValidateInsideWorkingDirectory(path);
+
             var fullPath = Path.GetFullPath(path);
-            var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-            
-            if (!fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new SecurityException($"Access denied: Path '{path}' is outside the working directory");
-            }
-            
             var invalidChars = Path.GetInvalidFileNameChars();
             var fileName = Path.GetFileName(fullPath);
             if (fileName.IndexOfAny(invalidChars) >= 0)

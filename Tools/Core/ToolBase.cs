@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -28,24 +29,40 @@ namespace Saturn.Tools.Core
         
         protected T GetParameter<T>(Dictionary<string, object> parameters, string key, T defaultValue = default!)
         {
-            if (parameters.TryGetValue(key, out var value))
+            if (!parameters.TryGetValue(key, out var value) || value == null)
             {
-                if (value is T typedValue)
+                return defaultValue;
+            }
+
+            if (value is T typedValue)
+            {
+                return typedValue;
+            }
+
+            var targetType = typeof(T);
+
+            if (value is List<object> list)
+            {
+                if (targetType == typeof(string[]))
                 {
-                    return typedValue;
+                    return (T)(object)list.Select(item => item?.ToString() ?? string.Empty).ToArray();
                 }
-                
-                try
+
+                if (targetType == typeof(List<string>))
                 {
-                    return (T)Convert.ChangeType(value, typeof(T));
-                }
-                catch
-                {
-                    return defaultValue;
+                    return (T)(object)list.Select(item => item?.ToString() ?? string.Empty).ToList();
                 }
             }
-            
-            return defaultValue;
+
+            try
+            {
+                var conversionType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+                return (T)Convert.ChangeType(value, conversionType);
+            }
+            catch
+            {
+                return defaultValue;
+            }
         }
         
         protected ToolResult CreateSuccessResult(object data, string? formattedOutput = null)

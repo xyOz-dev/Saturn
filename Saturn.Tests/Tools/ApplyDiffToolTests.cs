@@ -324,7 +324,7 @@ Content C");
             var result = await _tool.ExecuteAsync(parameters);
 
             result.Success.Should().BeFalse();
-            result.Error.Should().Contain("Path traversal");
+            result.Error.Should().Contain("outside the working directory");
         }
 
         [Fact]

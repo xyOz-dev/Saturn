@@ -213,21 +213,10 @@ Examples
             {
                 throw new ArgumentException("Path cannot be null or empty");
             }
-            
-            if (path.Contains("..") || path.Contains("~"))
-            {
-                throw new SecurityException($"Invalid path: {path}. Path traversal attempts are not allowed.");
-            }
-            
+
             try
             {
-                var fullPath = Path.GetFullPath(path);
-                var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-                
-                if (!fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new SecurityException($"Access denied: Path '{path}' is outside the working directory.");
-                }
+                PathSecurity.ValidateInsideWorkingDirectory(path);
             }
             catch (Exception ex) when (!(ex is SecurityException))
             {
