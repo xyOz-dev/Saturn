@@ -257,6 +257,25 @@ namespace Saturn.Tests.Tools
             bytes.Take(3).Should().NotEqual(new byte[] { 0xEF, 0xBB, 0xBF });
         }
 
+        [Fact]
+        public async Task SearchAndReplace_LiteralMode_TreatsReplacementDollarSignsLiterally()
+        {
+            _fileHelper.CreateFile("dollars.txt", "price: $99.99\n");
+
+            var tool = new SearchAndReplaceTool();
+            var result = await tool.ExecuteAsync(new Dictionary<string, object>
+            {
+                { "searchPattern", "price" },
+                { "replacement", "cost: $0" },
+                { "filePattern", "dollars.txt" },
+                { "regex", false }
+            });
+
+            result.Success.Should().BeTrue(result.Error);
+            _fileHelper.ReadFile("dollars.txt").Should().Contain("cost: $0");
+            _fileHelper.ReadFile("dollars.txt").Should().NotContain("cost: price");
+        }
+
         #endregion
 
         #region Grep result budget
