@@ -85,6 +85,11 @@ namespace Saturn.OpenRouter.Services
 
         private Errors.OpenRouterException? TryParseStreamError(string data)
         {
+            // Fast path: the vast majority of SSE payloads are ordinary content
+            // chunks with no "error" field, so skip the extra deserialization for them.
+            if (data.IndexOf("error", StringComparison.Ordinal) < 0)
+                return null;
+
             try
             {
                 var parsed = Json.Deserialize<Models.Api.ErrorResponse>(data, _jsonOptions);

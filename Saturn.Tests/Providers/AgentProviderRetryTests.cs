@@ -112,8 +112,8 @@ namespace Saturn.Tests.Providers
         public async Task Execute_RateLimitNeverClears_GivesUpAfterMaxAttempts()
         {
             var client = new FakeLlmClient();
-            // One more failure than the 1000-attempt retry budget.
-            for (var i = 0; i < 1001; i++)
+            // One more failure than the 50-attempt retry budget.
+            for (var i = 0; i < 51; i++)
             {
                 client.ChatExceptionQueue.Enqueue(RateLimitError());
             }
@@ -122,7 +122,7 @@ namespace Saturn.Tests.Providers
             await agent.Invoking(a => a.Execute<Message>("hello"))
                 .Should().ThrowAsync<OpenRouterException>();
 
-            client.Requests.Should().HaveCount(1001);
+            client.Requests.Should().HaveCount(51);
         }
 
         [Fact]
@@ -156,6 +156,50 @@ namespace Saturn.Tests.Providers
             notices.Should().Contain(n => n.Contains("retrying"));
             agent.ChatHistory.Select(m => m.Role).Should().Equal("system", "user", "assistant");
             agent.ChatHistory[^1].Content.GetString().Should().Be("hello back");
+        }
+
+        [Fact]
+        public async Task ExecuteStream_MidStreamError_ResetsPartialOutputBeforeRetrying()
+        {
+            var client = new FakeLlmClient();
+            // First attempt streams a partial token, then fails mid-stream.
+            client.PreErrorStreamChunks.Add(new ChatCompletionChunk
+            {
+                Choices = new[] { new StreamingChoice { Delta = new Delta { Role = "assistant", Content = "partial " } } }
+            });
+            client.StreamExceptionQueue.Enqueue(RateLimitError());
+            // Retry streams the full response.
+            client.StreamChunks.Add(new ChatCompletionChunk
+            {
+                Choices = new[] { new StreamingChoice { Delta = new Delta { Role = "assistant", Content = "the full answer" } } }
+            });
+            client.StreamChunks.Add(new ChatCompletionChunk
+            {
+                Choices = new[] { new StreamingChoice { Delta = new Delta(), FinishReason = "stop" } }
+            });
+            var agent = CreateAgent(client, enableStreaming: true);
+
+            var sawReset = false;
+            var contentAfterReset = new StringBuilder();
+            var result = await agent.ExecuteStreamAsync("hello", chunk =>
+            {
+                if (chunk.ResetContent)
+                {
+                    sawReset = true;
+                    contentAfterReset.Clear();
+                }
+                else if (!chunk.IsToolCall && !string.IsNullOrEmpty(chunk.Content))
+                {
+                    contentAfterReset.Append(chunk.Content);
+                }
+                return Task.CompletedTask;
+            });
+
+            sawReset.Should().BeTrue();
+            result.Content.GetString().Should().Be("the full answer");
+            // A consumer that honors ResetContent must not retain the discarded "partial ".
+            contentAfterReset.ToString().Should().NotContain("partial ");
+            contentAfterReset.ToString().Should().Contain("the full answer");
         }
 
         [Fact]

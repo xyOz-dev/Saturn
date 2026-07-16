@@ -640,6 +640,18 @@ namespace Saturn.UI
                                 message,
                                 async (chunk) =>
                                 {
+                                    if (chunk.ResetContent)
+                                    {
+                                        responseBuilder.Clear();
+                                        Application.MainLoop.Invoke(() =>
+                                        {
+                                            chatView.Text = chatView.Text.Substring(0, startPosition);
+                                            ScrollChatToBottom();
+                                            Application.Refresh();
+                                        });
+                                        return;
+                                    }
+
                                     if (!chunk.IsComplete && !chunk.IsToolCall && !string.IsNullOrEmpty(chunk.Content))
                                     {
                                         responseBuilder.Append(chunk.Content);

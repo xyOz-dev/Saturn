@@ -26,6 +26,9 @@ namespace Saturn.Tests.Providers
         public Queue<Exception> ChatExceptionQueue { get; } = new();
         public Queue<Exception> StreamExceptionQueue { get; } = new();
         public List<ChatCompletionChunk> StreamChunks { get; } = new();
+        // Chunks yielded before the next queued stream exception is thrown, so tests
+        // can simulate a mid-stream failure that already emitted partial content.
+        public List<ChatCompletionChunk> PreErrorStreamChunks { get; } = new();
 
         public Task<ChatCompletionResponse?> ChatAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default)
         {
@@ -65,6 +68,10 @@ namespace Saturn.Tests.Providers
 
             if (StreamExceptionQueue.Count > 0)
             {
+                foreach (var chunk in PreErrorStreamChunks)
+                {
+                    yield return chunk;
+                }
                 throw StreamExceptionQueue.Dequeue();
             }
 

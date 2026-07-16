@@ -13,7 +13,7 @@ namespace Saturn.Tools
     {
         public override string Name => "delete_file";
         
-        public override string Description => @"Safely delete files or directories with optional backup.
+        public override string Description => @"Delete files or directories. Deletion is permanent - there is no backup or undo; use 'dryRun' first when unsure.
 
 When to use:
 - Removing obsolete source files

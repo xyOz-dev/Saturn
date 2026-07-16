@@ -294,17 +294,14 @@ Safety features:
                 });
             }
             
+            var normalizedReplacement = replacement.Replace("\r\n", "\n").Replace("\n", lineEnding);
+
             if (!dryRun)
             {
-                var newContent = searchRegex.Replace(content, replacement);
-                
+                var newContent = searchRegex.Replace(content, normalizedReplacement);
+
                 if (newContent != originalContent)
                 {
-                    if (lineEnding != Environment.NewLine)
-                    {
-                        newContent = newContent.Replace(Environment.NewLine, lineEnding);
-                    }
-                    
                     await File.WriteAllTextAsync(filePath, newContent, encoding);
                     result.ReplacementCount = matches.Count;
                     result.Modified = true;
@@ -313,8 +310,8 @@ Safety features:
             else
             {
                 result.ReplacementCount = matches.Count;
-                
-                var newContent = searchRegex.Replace(content, replacement);
+
+                var newContent = searchRegex.Replace(content, normalizedReplacement);
                 if (newContent != originalContent)
                 {
                     result.Preview = GeneratePreview(originalContent, newContent, result.Matches);
@@ -331,16 +328,16 @@ Safety features:
         
         private int GetColumnNumber(string content, int index)
         {
-            var lastNewline = content.LastIndexOf('\n', index - 1);
+            var lastNewline = index > 0 ? content.LastIndexOf('\n', index - 1) : -1;
             return index - lastNewline;
         }
-        
+
         private string GetLineContent(string content, int index)
         {
-            var start = content.LastIndexOf('\n', index - 1) + 1;
+            var start = index > 0 ? content.LastIndexOf('\n', index - 1) + 1 : 0;
             var end = content.IndexOf('\n', index);
             if (end == -1) end = content.Length;
-            return content.Substring(start, end - start);
+            return content.Substring(start, end - start).TrimEnd('\r');
         }
         
         private string GeneratePreview(string original, string modified, List<SearchMatchInfo> matches)
@@ -428,23 +425,12 @@ Safety features:
         
         private void ValidatePathSecurity(string path)
         {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                throw new ArgumentException("Path cannot be null or empty");
-            }
-            
-            var fullPath = Path.GetFullPath(path);
-            var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-            
-            if (!fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new SecurityException($"Access denied: Path '{path}' is outside the working directory");
-            }
+            PathSecurity.ValidateInsideWorkingDirectory(path);
         }
          
         private Encoding DetectEncoding(string filePath)
         {
-            using var reader = new StreamReader(filePath, Encoding.UTF8, true);
+            using var reader = new StreamReader(filePath, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), true);
             reader.Peek();
             return reader.CurrentEncoding;
         }

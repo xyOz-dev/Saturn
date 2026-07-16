@@ -176,12 +176,12 @@ Examples:
                         if (results.Count >= maxResults)
                             break;
 
-                        SearchFile(file, regex, results, maxResults - results.Count, skippedFiles);
+                        SearchFile(file, regex, results, maxResults, skippedFiles);
                     }
                 }
             });
 
-            return FormatResults(results, skippedFiles);
+            return FormatResults(results, skippedFiles, maxResults);
         }
 
         private void ValidatePathSecurity(string path)
@@ -230,7 +230,7 @@ Examples:
             }
         }
 
-        private ToolResult FormatResults(List<GrepResult> results, List<string> skippedFiles)
+        private ToolResult FormatResults(List<GrepResult> results, List<string> skippedFiles, int maxResults)
         {
             if (results.Count == 0)
             {
@@ -243,7 +243,8 @@ Examples:
             }
 
             var lines = new List<string>();
-            lines.Add($"Found {results.Count} match{(results.Count == 1 ? "" : "es")}:");
+            var truncationNote = results.Count >= maxResults ? " (result limit reached; more matches may exist)" : "";
+            lines.Add($"Found {results.Count} match{(results.Count == 1 ? "" : "es")}{truncationNote}:");
             lines.Add("");
             
             foreach (var result in results)

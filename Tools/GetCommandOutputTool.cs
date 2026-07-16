@@ -14,7 +14,11 @@ namespace Saturn.Tools
 
         public override string Description => @"Read output produced by a command started with execute_command (run_in_background: true).
 
-Returns only the output generated since the last call for that command_id, along with the command's current status (running, exited, or killed) and its exit code once finished. Call it repeatedly to follow a long-running process.";
+Returns only the output generated since the last call for that command_id, along with the command's current status (running, exited, or killed) and its exit code once finished. Call it repeatedly to follow a long-running process.
+
+Notes:
+- Reads are destructive: output returned once is not returned again, and lines excluded by 'filter' are consumed and cannot be retrieved later. Omit 'filter' if you may need the full log.
+- Shortly after the status changes to exited, one more call may return final output that was still being flushed.";
 
         protected override Dictionary<string, object> GetParameterProperties()
         {

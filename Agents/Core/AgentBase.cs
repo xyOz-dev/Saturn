@@ -99,10 +99,10 @@ namespace Saturn.Agents.Core
             TrimHistory();
         }
 
-        public virtual async Task<T> Execute<T>(object input)
+        public virtual async Task<T> Execute<T>(object input, CancellationToken cancellationToken = default)
         {
             var messages = PrepareMessages(input?.ToString() ?? string.Empty);
-            var responseMessage = await ExecuteWithTools(messages);
+            var responseMessage = await ExecuteWithTools(messages, cancellationToken);
             var finalMessage = ProcessResponse(responseMessage);
             return (T)(object)finalMessage;
         }
@@ -343,9 +343,15 @@ namespace Saturn.Agents.Core
             }
         }
 
-        protected const int MaxProviderRetryAttempts = 1000;
+        // Generous backstop so transient blips and short rate-limit windows ride
+        // through, but the turn still gives up eventually. Retry waits honor the
+        // cancellation token, so the user can interrupt sooner.
+        protected const int MaxProviderRetryAttempts = 50;
         private static readonly TimeSpan BaseProviderRetryDelay = TimeSpan.FromSeconds(2);
         private static readonly TimeSpan MaxProviderRetryDelay = TimeSpan.FromSeconds(60);
+        // A provider-advertised Retry-After is honored up to this ceiling; the
+        // exponential backoff path stays capped at MaxProviderRetryDelay.
+        private static readonly TimeSpan MaxRetryAfterDelay = TimeSpan.FromMinutes(5);
 
         protected static bool IsRetryableProviderError(Exception ex, out TimeSpan? retryAfter)
         {
@@ -388,7 +394,9 @@ namespace Saturn.Agents.Core
         {
             if (retryAfter.HasValue && retryAfter.Value > TimeSpan.Zero)
             {
-                return retryAfter.Value < MaxProviderRetryDelay ? retryAfter.Value : MaxProviderRetryDelay;
+                // Respect the full advertised delay (rate limits are precise about
+                // when they clear); only clamp against an absolute sanity ceiling.
+                return retryAfter.Value < MaxRetryAfterDelay ? retryAfter.Value : MaxRetryAfterDelay;
             }
 
             // Clamp the exponent so high attempt counts cannot overflow TimeSpan.
@@ -423,7 +431,7 @@ namespace Saturn.Agents.Core
             }
         }
 
-        protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages)
+        protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages, CancellationToken cancellationToken = default)
         {
             var client = Configuration.ClientSource.Current;
 
@@ -433,6 +441,8 @@ namespace Saturn.Agents.Core
 
             while (continueProcessing)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
 
@@ -441,7 +451,7 @@ namespace Saturn.Agents.Core
 
                 var request = BuildRequest(client, currentMessages);
 
-                var response = await SendChatWithRetryAsync(client, request, CancellationToken.None);
+                var response = await SendChatWithRetryAsync(client, request, cancellationToken);
                 responseMessage = response?.Choices?.FirstOrDefault()?.Message;
 
                 if (responseMessage?.ToolCalls != null && responseMessage.ToolCalls.Length > 0)
@@ -495,6 +505,8 @@ namespace Saturn.Agents.Core
                             
                         }
                     }
+
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     var toolResults = await HandleToolCalls(validToolCalls);
 
@@ -1001,6 +1013,12 @@ namespace Saturn.Agents.Core
                         retryAttempt++;
                         var delay = GetProviderRetryDelay(retryAttempt, retryAfter);
                         finalResponse = null;
+                        // Discard any partial output already streamed for this attempt so the
+                        // consumer does not render it twice once the retry re-sends the turn.
+                        if (contentBuffer.Length > 0)
+                        {
+                            await onChunk(new StreamChunk { ResetContent = true });
+                        }
                         await onChunk(new StreamChunk
                         {
                             Content = $"\n[Provider rate-limited/unavailable; waiting {delay.TotalSeconds:F0}s before retrying (attempt {retryAttempt}/{MaxProviderRetryAttempts})]\n",
@@ -1021,7 +1039,7 @@ namespace Saturn.Agents.Core
                         if (looksLikeStreamingNotAllowed)
                         {
                             await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
-                            finalResponse = await ExecuteWithTools(currentMessages);
+                            finalResponse = await ExecuteWithTools(currentMessages, cancellationToken);
                             contentBuffer.Clear();
                             toolCallBuffer.Clear();
                             continueProcessing = false;
