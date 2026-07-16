@@ -343,6 +343,94 @@ namespace Saturn.Agents.Core
             }
         }
 
+        // Generous backstop so transient blips and short rate-limit windows ride
+        // through, but the turn still gives up eventually. Retry waits honor the
+        // cancellation token, so the user can interrupt sooner.
+        protected const int MaxProviderRetryAttempts = 50;
+        private static readonly TimeSpan BaseProviderRetryDelay = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan MaxProviderRetryDelay = TimeSpan.FromSeconds(60);
+        // A provider-advertised Retry-After is honored up to this ceiling; the
+        // exponential backoff path stays capped at MaxProviderRetryDelay.
+        private static readonly TimeSpan MaxRetryAfterDelay = TimeSpan.FromMinutes(5);
+
+        protected static bool IsRetryableProviderError(Exception ex, out TimeSpan? retryAfter)
+        {
+            retryAfter = null;
+            if (ex is not Saturn.OpenRouter.Errors.OpenRouterException openRouterEx)
+            {
+                return false;
+            }
+
+            retryAfter = openRouterEx.RetryAfter;
+
+            var status = (int)openRouterEx.StatusCode;
+            if (status == 429 || openRouterEx.ApiErrorCode == 429)
+            {
+                return true;
+            }
+
+            // OpenRouter wraps transient upstream/routing failures in 5xx responses.
+            if (status == 500 || status == 502 || status == 503 || status == 529)
+            {
+                return true;
+            }
+
+            var message = openRouterEx.Message ?? string.Empty;
+            if (message.IndexOf("RESOURCE_EXHAUSTED", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0
+                || message.IndexOf("rate-limited", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            // Gemini explicit caching via OpenRouter can 400 with "Cache content
+            // <id> is expired" when the server-side cache entry lapses; a retry
+            // makes OpenRouter build a fresh cache, so treat it as transient.
+            return message.IndexOf("cache content", StringComparison.OrdinalIgnoreCase) >= 0
+                && message.IndexOf("expired", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        protected static TimeSpan GetProviderRetryDelay(int attempt, TimeSpan? retryAfter)
+        {
+            if (retryAfter.HasValue && retryAfter.Value > TimeSpan.Zero)
+            {
+                // Respect the full advertised delay (rate limits are precise about
+                // when they clear); only clamp against an absolute sanity ceiling.
+                return retryAfter.Value < MaxRetryAfterDelay ? retryAfter.Value : MaxRetryAfterDelay;
+            }
+
+            // Clamp the exponent so high attempt counts cannot overflow TimeSpan.
+            var backoffMs = BaseProviderRetryDelay.TotalMilliseconds * Math.Pow(2, Math.Min(attempt - 1, 6));
+            return backoffMs < MaxProviderRetryDelay.TotalMilliseconds
+                ? TimeSpan.FromMilliseconds(backoffMs)
+                : MaxProviderRetryDelay;
+        }
+
+        protected virtual Task WaitForProviderRetryAsync(TimeSpan delay, CancellationToken cancellationToken)
+            => Task.Delay(delay, cancellationToken);
+
+        private async Task<ChatCompletionResponse?> SendChatWithRetryAsync(
+            ILlmClient client,
+            ChatCompletionRequest request,
+            CancellationToken cancellationToken)
+        {
+            var attempt = 0;
+            while (true)
+            {
+                try
+                {
+                    return await client.ChatAsync(request, cancellationToken);
+                }
+                catch (Exception ex) when (IsRetryableProviderError(ex, out var retryAfter) && attempt < MaxProviderRetryAttempts)
+                {
+                    attempt++;
+                    var delay = GetProviderRetryDelay(attempt, retryAfter);
+                    Console.Error.WriteLine($"Provider rate-limited/unavailable; retrying in {delay.TotalSeconds:F0}s (attempt {attempt}/{MaxProviderRetryAttempts}): {ex.Message}");
+                    await WaitForProviderRetryAsync(delay, cancellationToken);
+                }
+            }
+        }
+
         protected async Task<AssistantMessageResponse> ExecuteWithTools(List<Message> initialMessages, CancellationToken cancellationToken = default)
         {
             var client = Configuration.ClientSource.Current;
@@ -363,7 +451,7 @@ namespace Saturn.Agents.Core
 
                 var request = BuildRequest(client, currentMessages);
 
-                var response = await client.ChatAsync(request);
+                var response = await SendChatWithRetryAsync(client, request, cancellationToken);
                 responseMessage = response?.Choices?.FirstOrDefault()?.Message;
 
                 if (responseMessage?.ToolCalls != null && responseMessage.ToolCalls.Length > 0)
@@ -788,147 +876,178 @@ namespace Saturn.Agents.Core
                 var request = BuildRequest(client, currentMessages);
                 request.Stream = true;
 
-                try
+                var retryAttempt = 0;
+                var attemptStream = true;
+                while (attemptStream)
                 {
-                    var tokenIndex = 0;
+                    attemptStream = false;
+                    contentBuffer.Clear();
+                    toolCallBuffer.Clear();
 
-                    await foreach (var chunk in client.StreamChatAsync(request, cancellationToken))
+                    try
                     {
-                        if (cancellationToken.IsCancellationRequested)
-                            break;
+                        var tokenIndex = 0;
 
-                        var choice = chunk.Choices?.FirstOrDefault();
-                        if (choice?.Delta != null)
+                        await foreach (var chunk in client.StreamChatAsync(request, cancellationToken))
                         {
-                            var delta = choice.Delta;
+                            if (cancellationToken.IsCancellationRequested)
+                                break;
 
-                            if (!string.IsNullOrEmpty(delta.Content))
+                            var choice = chunk.Choices?.FirstOrDefault();
+                            if (choice?.Delta != null)
                             {
-                                var contentStr = delta.Content;
-                                contentBuffer.Append(contentStr);
-                                await onChunk(new StreamChunk
-                                {
-                                    Content = contentStr,
-                                    Role = delta.Role ?? "assistant",
-                                    IsToolCall = false,
-                                    TokenIndex = tokenIndex++
-                                });
-                            }
+                                var delta = choice.Delta;
 
-                            if (delta.ToolCalls != null && delta.ToolCalls.Length > 0)
-                            {
-                                foreach (var toolCall in delta.ToolCalls)
+                                if (!string.IsNullOrEmpty(delta.Content))
                                 {
-                                    ToolCall existing = null;
-                                    
-                                    if (toolCall.Index.HasValue)
-                                    {
-                                        while (toolCallBuffer.Count <= toolCall.Index.Value)
-                                        {
-                                            toolCallBuffer.Add(new ToolCall { Function = new ToolCall.FunctionCall() });
-                                        }
-                                        existing = toolCallBuffer[toolCall.Index.Value];
-                                    }
-                                    else if (!string.IsNullOrEmpty(toolCall.Id))
-                                    {
-                                        existing = toolCallBuffer.FirstOrDefault(tc => tc.Id == toolCall.Id);
-                                        if (existing == null)
-                                        {
-                                            existing = new ToolCall
-                                            {
-                                                Id = toolCall.Id,
-                                                Type = toolCall.Type ?? "function",
-                                                Function = new ToolCall.FunctionCall()
-                                            };
-                                            toolCallBuffer.Add(existing);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        continue;
-                                    }
-                                    
-                                    if (existing.Function == null)
-                                    {
-                                        existing.Function = new ToolCall.FunctionCall();
-                                    }
-                                    
-                                    if (!string.IsNullOrEmpty(toolCall.Id))
-                                    {
-                                        existing.Id = toolCall.Id;
-                                    }
-                                    
-                                    if (!string.IsNullOrEmpty(toolCall.Function?.Name))
-                                    {
-                                        existing.Function.Name = toolCall.Function.Name;
-                                    }
-                                    
-                                    if (toolCall.Function?.Arguments != null)
-                                    {
-                                        existing.Function.Arguments = (existing.Function.Arguments ?? string.Empty) + toolCall.Function.Arguments;
-                                    }
-
+                                    var contentStr = delta.Content;
+                                    contentBuffer.Append(contentStr);
                                     await onChunk(new StreamChunk
                                     {
-                                        IsToolCall = true,
-                                        ToolCallId = toolCall.Id,
-                                        ToolName = toolCall.Function?.Name,
-                                        ToolArguments = toolCall.Function?.Arguments,
+                                        Content = contentStr,
+                                        Role = delta.Role ?? "assistant",
+                                        IsToolCall = false,
                                         TokenIndex = tokenIndex++
                                     });
                                 }
-                            }
-                        }
 
-                        if (!string.IsNullOrEmpty(choice?.FinishReason))
-                        {
-                            if (string.Equals(choice.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
-                            {
-                                await onChunk(new StreamChunk
+                                if (delta.ToolCalls != null && delta.ToolCalls.Length > 0)
                                 {
-                                    Content = "\n[Response truncated: max token limit reached. Consider raising Max Tokens, especially for reasoning models.]\n",
-                                    Role = "assistant"
-                                });
+                                    foreach (var toolCall in delta.ToolCalls)
+                                    {
+                                        ToolCall existing = null;
+                                    
+                                        if (toolCall.Index.HasValue)
+                                        {
+                                            while (toolCallBuffer.Count <= toolCall.Index.Value)
+                                            {
+                                                toolCallBuffer.Add(new ToolCall { Function = new ToolCall.FunctionCall() });
+                                            }
+                                            existing = toolCallBuffer[toolCall.Index.Value];
+                                        }
+                                        else if (!string.IsNullOrEmpty(toolCall.Id))
+                                        {
+                                            existing = toolCallBuffer.FirstOrDefault(tc => tc.Id == toolCall.Id);
+                                            if (existing == null)
+                                            {
+                                                existing = new ToolCall
+                                                {
+                                                    Id = toolCall.Id,
+                                                    Type = toolCall.Type ?? "function",
+                                                    Function = new ToolCall.FunctionCall()
+                                                };
+                                                toolCallBuffer.Add(existing);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            continue;
+                                        }
+                                    
+                                        if (existing.Function == null)
+                                        {
+                                            existing.Function = new ToolCall.FunctionCall();
+                                        }
+                                    
+                                        if (!string.IsNullOrEmpty(toolCall.Id))
+                                        {
+                                            existing.Id = toolCall.Id;
+                                        }
+                                    
+                                        if (!string.IsNullOrEmpty(toolCall.Function?.Name))
+                                        {
+                                            existing.Function.Name = toolCall.Function.Name;
+                                        }
+                                    
+                                        if (toolCall.Function?.Arguments != null)
+                                        {
+                                            existing.Function.Arguments = (existing.Function.Arguments ?? string.Empty) + toolCall.Function.Arguments;
+                                        }
+
+                                        await onChunk(new StreamChunk
+                                        {
+                                            IsToolCall = true,
+                                            ToolCallId = toolCall.Id,
+                                            ToolName = toolCall.Function?.Name,
+                                            ToolArguments = toolCall.Function?.Arguments,
+                                            TokenIndex = tokenIndex++
+                                        });
+                                    }
+                                }
                             }
 
-                            finalResponse = new AssistantMessageResponse
+                            if (!string.IsNullOrEmpty(choice?.FinishReason))
                             {
-                                Role = "assistant",
-                                Content = contentBuffer.ToString(),
-                                ToolCalls = toolCallBuffer.Count > 0 ? toolCallBuffer.ToArray() : null
-                            };
+                                if (string.Equals(choice.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    await onChunk(new StreamChunk
+                                    {
+                                        Content = "\n[Response truncated: max token limit reached. Consider raising Max Tokens, especially for reasoning models.]\n",
+                                        Role = "assistant"
+                                    });
+                                }
+
+                                finalResponse = new AssistantMessageResponse
+                                {
+                                    Role = "assistant",
+                                    Content = contentBuffer.ToString(),
+                                    ToolCalls = toolCallBuffer.Count > 0 ? toolCallBuffer.ToArray() : null
+                                };
+                            }
                         }
                     }
-                }
-                catch (OperationCanceledException)
-                {
-                    await onChunk(new StreamChunk
+                    catch (OperationCanceledException)
                     {
-                        IsComplete = true,
-                        Content = "[Stream cancelled]"
-                    });
-                    throw;
-                }
-                catch (Saturn.OpenRouter.Errors.OpenRouterException ex)
-                {
-                    var msg = ex.Message ?? string.Empty;
-                    var looksLikeStreamingNotAllowed =
-                        msg.IndexOf("param", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                        msg.IndexOf("stream", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        msg.IndexOf("unsupported", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        msg.IndexOf("must be verified", StringComparison.OrdinalIgnoreCase) >= 0;
-
-                    if (looksLikeStreamingNotAllowed)
-                    {
-                        await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
-                        finalResponse = await ExecuteWithTools(currentMessages);
-                        contentBuffer.Clear();
-                        toolCallBuffer.Clear();
-                        continueProcessing = false;
-                    }
-                    else
-                    {
+                        await onChunk(new StreamChunk
+                        {
+                            IsComplete = true,
+                            Content = "[Stream cancelled]"
+                        });
                         throw;
+                    }
+                    catch (Saturn.OpenRouter.Errors.OpenRouterException ex) when (retryAttempt < MaxProviderRetryAttempts && IsRetryableProviderError(ex, out var retryAfter))
+                    {
+                        // Rate limits and transient routing failures must not abort the
+                        // turn: keep the in-flight history intact, wait, and re-send the
+                        // same request so the agent continues where it left off.
+                        retryAttempt++;
+                        var delay = GetProviderRetryDelay(retryAttempt, retryAfter);
+                        finalResponse = null;
+                        // Discard any partial output already streamed for this attempt so the
+                        // consumer does not render it twice once the retry re-sends the turn.
+                        if (contentBuffer.Length > 0)
+                        {
+                            await onChunk(new StreamChunk { ResetContent = true });
+                        }
+                        await onChunk(new StreamChunk
+                        {
+                            Content = $"\n[Provider rate-limited/unavailable; waiting {delay.TotalSeconds:F0}s before retrying (attempt {retryAttempt}/{MaxProviderRetryAttempts})]\n",
+                            Role = "assistant"
+                        });
+                        await WaitForProviderRetryAsync(delay, cancellationToken);
+                        attemptStream = true;
+                    }
+                    catch (Saturn.OpenRouter.Errors.OpenRouterException ex)
+                    {
+                        var msg = ex.Message ?? string.Empty;
+                        var looksLikeStreamingNotAllowed =
+                            msg.IndexOf("param", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                            msg.IndexOf("stream", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            msg.IndexOf("unsupported", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            msg.IndexOf("must be verified", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        if (looksLikeStreamingNotAllowed)
+                        {
+                            await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
+                            finalResponse = await ExecuteWithTools(currentMessages, cancellationToken);
+                            contentBuffer.Clear();
+                            toolCallBuffer.Clear();
+                            continueProcessing = false;
+                        }
+                        else
+                        {
+                            throw;
+                        }
                     }
                 }
 

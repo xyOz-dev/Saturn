@@ -182,6 +182,7 @@ namespace Saturn.OpenRouter.Http
         private async Task ThrowForErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
         {
             var status = response.StatusCode;
+            var retryAfter = GetRetryAfter(response);
             string? payload = null;
             try
             {
@@ -199,39 +200,14 @@ namespace Saturn.OpenRouter.Http
                 if (!string.IsNullOrWhiteSpace(payload))
                 {
                     var parsed = System.Text.Json.JsonSerializer.Deserialize<ErrorResponse>(payload!, _options.CreateJsonOptions());
-                    var code = parsed?.Error?.Code;
-                    var message = parsed?.Error?.Message ?? $"Request failed with status {(int)status} {response.ReasonPhrase}.";
-                    var metadata = parsed?.Error?.Metadata;
-
-                    if (metadata != null && metadata.Count > 0)
+                    if (parsed?.Error != null)
                     {
-                        try
-                        {
-                            if (metadata.TryGetValue("provider_name", out var providerNameEl) && providerNameEl.ValueKind == JsonValueKind.String)
-                            {
-                                var providerName = providerNameEl.GetString();
-                                if (!string.IsNullOrWhiteSpace(providerName))
-                                {
-                                    message += $" | provider={providerName}";
-                                }
-                            }
-                            if (metadata.TryGetValue("raw", out var rawEl))
-                            {
-                                var rawStr = rawEl.ToString();
-                                if (!string.IsNullOrWhiteSpace(rawStr))
-                                {
-                                    var snippet = Truncate(rawStr, 512).Replace("\r", " ").Replace("\n", " ");
-                                    message += $" | raw={snippet}";
-                                }
-                            }
-                        }
-                        catch
-                        {
-
-                        }
+                        throw OpenRouterException.FromErrorBody(
+                            status,
+                            parsed.Error,
+                            fallbackMessage: $"Request failed with status {(int)status} {response.ReasonPhrase}.",
+                            retryAfter: retryAfter);
                     }
-
-                    throw new OpenRouterException(status, message, apiErrorCode: code, metadata: metadata);
                 }
             }
             catch (OpenRouterException)
@@ -249,7 +225,26 @@ namespace Saturn.OpenRouter.Http
                 generic += $" Body: {Truncate(payload!, 2048)}";
             }
 
-            throw new OpenRouterException(status, generic);
+            throw new OpenRouterException(status, generic, retryAfter: retryAfter);
+        }
+
+        private static TimeSpan? GetRetryAfter(HttpResponseMessage response)
+        {
+            var retryAfter = response.Headers.RetryAfter;
+            if (retryAfter == null) return null;
+
+            if (retryAfter.Delta.HasValue)
+            {
+                return retryAfter.Delta.Value > TimeSpan.Zero ? retryAfter.Delta : null;
+            }
+
+            if (retryAfter.Date.HasValue)
+            {
+                var delta = retryAfter.Date.Value - DateTimeOffset.UtcNow;
+                return delta > TimeSpan.Zero ? delta : null;
+            }
+
+            return null;
         }
 
         private static string Truncate(string value, int max)

@@ -23,11 +23,22 @@ namespace Saturn.Tests.Providers
         public string ResponseContent { get; set; } = "ok";
 
         public Queue<ChatCompletionResponse> ResponseQueue { get; } = new();
+        public Queue<Exception> ChatExceptionQueue { get; } = new();
+        public Queue<Exception> StreamExceptionQueue { get; } = new();
+        public List<ChatCompletionChunk> StreamChunks { get; } = new();
+        // Chunks yielded before the next queued stream exception is thrown, so tests
+        // can simulate a mid-stream failure that already emitted partial content.
+        public List<ChatCompletionChunk> PreErrorStreamChunks { get; } = new();
 
         public Task<ChatCompletionResponse?> ChatAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default)
         {
             LastRequest = request;
             Requests.Add(request);
+
+            if (ChatExceptionQueue.Count > 0)
+            {
+                throw ChatExceptionQueue.Dequeue();
+            }
 
             if (ResponseQueue.Count > 0)
             {
@@ -52,8 +63,22 @@ namespace Saturn.Tests.Providers
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             LastRequest = request;
+            Requests.Add(request);
             await Task.CompletedTask;
-            yield break;
+
+            if (StreamExceptionQueue.Count > 0)
+            {
+                foreach (var chunk in PreErrorStreamChunks)
+                {
+                    yield return chunk;
+                }
+                throw StreamExceptionQueue.Dequeue();
+            }
+
+            foreach (var chunk in StreamChunks)
+            {
+                yield return chunk;
+            }
         }
 
         public Task<List<ModelInfo>> ListModelsAsync(CancellationToken cancellationToken = default)
@@ -79,12 +104,20 @@ namespace Saturn.Tests.Providers
 
     public class TestAgent : AgentBase
     {
+        public List<TimeSpan> RetryWaits { get; } = new();
+
         public TestAgent(AgentConfiguration configuration) : base(configuration)
         {
         }
 
         protected override void InitializeRepository()
         {
+        }
+
+        protected override Task WaitForProviderRetryAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            RetryWaits.Add(delay);
+            return Task.CompletedTask;
         }
     }
 
