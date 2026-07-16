@@ -1448,8 +1448,8 @@ namespace Saturn.UI
         {
             var dialog = new ToolSelectionDialog(currentConfig.ToolNames);
             Application.Run(dialog);
-            
-            if (dialog.SelectedTools.Count > 0 || currentConfig.ToolNames?.Count > 0)
+
+            if (!dialog.WasCancelled)
             {
                 currentConfig.ToolNames = dialog.SelectedTools;
                 currentConfig.EnableTools = dialog.SelectedTools.Count > 0;

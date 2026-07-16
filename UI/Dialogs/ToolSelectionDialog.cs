@@ -20,6 +20,7 @@ namespace Saturn.UI.Dialogs
         private string[] toolDisplayNames = null!;
         
         public List<string> SelectedTools => selectedToolNames.ToList();
+        public bool WasCancelled { get; private set; }
         
         public ToolSelectionDialog(List<string>? currentlySelectedTools = null)
             : base("Select Tools", 70, 20)
@@ -116,9 +117,9 @@ namespace Saturn.UI.Dialogs
                 X = Pos.Right(okButton) + 2,
                 Y = Pos.Top(selectAllButton)
             };
-            cancelButton.Clicked += () => 
+            cancelButton.Clicked += () =>
             {
-                selectedToolNames.Clear();
+                WasCancelled = true;
                 Application.RequestStop();
             };
             
