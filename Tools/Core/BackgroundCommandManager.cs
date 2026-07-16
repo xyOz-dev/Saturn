@@ -23,6 +23,8 @@ namespace Saturn.Tools.Core
         private readonly StringBuilder _stderr = new();
         private int _stdoutCursor;
         private int _stderrCursor;
+        private bool _stdoutDropped;
+        private bool _stderrDropped;
         private readonly object _lock = new();
         private BackgroundCommandStatus _status = BackgroundCommandStatus.Running;
 
@@ -89,12 +91,12 @@ namespace Saturn.Tools.Core
 
         public void AppendStdout(string line)
         {
-            lock (_lock) Append(_stdout, ref _stdoutCursor, line);
+            lock (_lock) Append(_stdout, ref _stdoutCursor, ref _stdoutDropped, line);
         }
 
         public void AppendStderr(string line)
         {
-            lock (_lock) Append(_stderr, ref _stderrCursor, line);
+            lock (_lock) Append(_stderr, ref _stderrCursor, ref _stderrDropped, line);
         }
 
         public (string StdOut, string StdErr) ReadNew()
@@ -105,16 +107,33 @@ namespace Saturn.Tools.Core
                 var errNew = _stderr.ToString(_stderrCursor, _stderr.Length - _stderrCursor);
                 _stdoutCursor = _stdout.Length;
                 _stderrCursor = _stderr.Length;
+
+                if (_stdoutDropped)
+                {
+                    outNew = "... [older output was discarded because the capture buffer overflowed] ...\n" + outNew;
+                    _stdoutDropped = false;
+                }
+
+                if (_stderrDropped)
+                {
+                    errNew = "... [older output was discarded because the capture buffer overflowed] ...\n" + errNew;
+                    _stderrDropped = false;
+                }
+
                 return (outNew, errNew);
             }
         }
 
-        private static void Append(StringBuilder buffer, ref int cursor, string line)
+        private static void Append(StringBuilder buffer, ref int cursor, ref bool dropped, string line)
         {
             buffer.AppendLine(line);
             if (buffer.Length > MaxBufferLength)
             {
                 var overflow = buffer.Length - MaxBufferLength;
+                if (cursor < overflow)
+                {
+                    dropped = true;
+                }
                 buffer.Remove(0, overflow);
                 cursor = Math.Max(0, cursor - overflow);
             }
