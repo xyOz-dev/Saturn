@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Saturn.Agents.MultiAgent;
 using Saturn.Agents.MultiAgent.Objects;
 using Saturn.Config;
@@ -390,12 +391,25 @@ namespace Saturn.Core.Tasks
                 return (false, $"Task {taskId} is already dispatched to {openDispatches[0].AgentName}", null);
             }
 
-            var dispatch = await _store.Project.InsertDispatchAsync(new TaskDispatch
+            TaskDispatch dispatch;
+            try
             {
-                TaskId = taskId,
-                AgentId = agentId,
-                AgentName = agentName
-            });
+                dispatch = await _store.Project.InsertDispatchAsync(new TaskDispatch
+                {
+                    TaskId = taskId,
+                    AgentId = agentId,
+                    AgentName = agentName
+                });
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.SqliteExtendedErrorCode == 2067)
+            {
+                // The partial unique index (idx_dispatch_open_unique) rejected a second
+                // concurrent open dispatch for this task; the pre-check above raced with
+                // another dispatcher and lost. Report the same "already dispatched" shape.
+                var current = (await _store.Project.GetDispatchesForTaskAsync(taskId)).Where(d => d.CompletedAt == null && !d.Orphaned).ToList();
+                var agentLabel = current.Count > 0 ? current[0].AgentName : "another agent";
+                return (false, $"Task {taskId} is already dispatched to {agentLabel}", null);
+            }
 
             var taskPrompt =
                 $"You have been dispatched Saturn task '{task.Title}' ({task.Id}).\n" +
