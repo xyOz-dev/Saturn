@@ -917,12 +917,15 @@ namespace Saturn.Web
 
             api.MapPut("/user-rules", async (UserRulesUpdateRequest request) =>
             {
-                var saved = await Saturn.Core.UserRulesManager.SaveRulesAsync(request.Content ?? "");
-                if (!saved)
+                try
                 {
-                    return Results.Problem("Failed to save rules file");
+                    await Saturn.Core.UserRulesManager.SaveRulesAsync(request.Content ?? "");
+                    return Results.Ok(new { saved = true });
                 }
-                return Results.Ok(new { saved = true });
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
             });
 
             // ---------- modes ----------
