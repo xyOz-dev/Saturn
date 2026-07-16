@@ -347,16 +347,17 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                     
                     while (i < lines.Length && !lines[i].StartsWith("***"))
                     {
-                        if (lines[i].StartsWith("@@") && lines[i].EndsWith("@@") && lines[i].Length > 4)
+                        var trimmedLine = lines[i].TrimEnd();
+                        if (trimmedLine.StartsWith("@@") && trimmedLine.EndsWith("@@") && trimmedLine.Length > 4)
                         {
-                            var contextLine = lines[i].Substring(2, lines[i].Length - 4).Trim();
+                            var contextLine = trimmedLine.Substring(2, trimmedLine.Length - 4).Trim();
                             if (string.IsNullOrEmpty(contextLine))
                             {
                                 throw new InvalidOperationException($"Empty context line at line {i + 1}");
                             }
                             var changes = new List<PatchChange>();
                             i++;
-                            
+
                             while (i < lines.Length && !lines[i].StartsWith("@@") && !lines[i].StartsWith("***"))
                             {
                                 var changeLine = lines[i];
@@ -374,12 +375,16 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                                 }
                                 i++;
                             }
-                            
+
                             hunks.Add(new PatchHunk { ContextLine = contextLine, Changes = changes });
+                        }
+                        else if (string.IsNullOrWhiteSpace(lines[i]))
+                        {
+                            i++;
                         }
                         else
                         {
-                            i++;
+                            throw new InvalidOperationException($"Malformed patch at line {i + 1}: expected a hunk header like '@@ context @@' but found: {lines[i]}");
                         }
                     }
                     

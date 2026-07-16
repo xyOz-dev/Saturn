@@ -666,5 +666,55 @@ Just some random text";
         }
 
         #endregion
+
+        #region Malformed Hunk Headers
+
+        [Fact]
+        public async Task ExecuteAsync_HunkHeaderWithTrailingWhitespace_AppliesPatch()
+        {
+            _fileHelper.CreateFile("trailing.txt", "Original content");
+
+            var hunkHeaderWithTrailingSpace = "@@ Original content @@" + "   ";
+            var patchText = "*** Update File: trailing.txt\n"
+                + hunkHeaderWithTrailingSpace + "\n"
+                + "-Original content\n"
+                + "+Updated content";
+
+            var parameters = new Dictionary<string, object>
+            {
+                { "patchText", patchText }
+            };
+
+            var result = await _tool.ExecuteAsync(parameters);
+
+            result.Success.Should().BeTrue();
+            result.FormattedOutput.Should().Contain("1 addition");
+            result.FormattedOutput.Should().Contain("1 removal");
+            _fileHelper.ReadFile("trailing.txt").Should().Be("Updated content");
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_MalformedHunkLine_ReturnsError()
+        {
+            _fileHelper.CreateFile("malformed.txt", "Original content");
+
+            var patchText = @"*** Update File: malformed.txt
+this is not a hunk header
+-Original content
++Updated content";
+
+            var parameters = new Dictionary<string, object>
+            {
+                { "patchText", patchText }
+            };
+
+            var result = await _tool.ExecuteAsync(parameters);
+
+            result.Success.Should().BeFalse();
+            result.Error.Should().Contain("Malformed patch");
+            _fileHelper.ReadFile("malformed.txt").Should().Be("Original content");
+        }
+
+        #endregion
     }
 }
