@@ -267,6 +267,16 @@ namespace Saturn.Agents.Core
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to persist message batch: {ex.Message}");
+
+                // SaveMessageBatchAsync writes the whole batch in a single transaction, so a
+                // failure here means nothing was persisted. Re-insert the drained messages at
+                // the front of the queue (ahead of anything enqueued while the save was in
+                // flight) so the next flush retries them in their original chronological order
+                // instead of losing them.
+                lock (_pendingMessagesLock)
+                {
+                    _pendingMessages.InsertRange(0, messagesToSave.Select(m => (sessionId, m)));
+                }
             }
         }
 
