@@ -101,16 +101,17 @@ Safety features:
             {
                 var fullPath = Path.GetFullPath(path);
 
-                var workingDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-                var relativeToWorkingDir = Path.GetRelativePath(workingDirectory, fullPath);
-                if (relativeToWorkingDir == ".." ||
-                    relativeToWorkingDir.StartsWith(".." + Path.DirectorySeparatorChar) ||
-                    relativeToWorkingDir.StartsWith(".." + Path.AltDirectorySeparatorChar) ||
-                    Path.IsPathRooted(relativeToWorkingDir))
+                try
                 {
-                    return CreateErrorResult($"Access denied: Path '{path}' is outside the working directory");
+                    PathSecurity.ValidateInsideWorkingDirectory(path);
+                }
+                catch (SecurityException ex)
+                {
+                    return CreateErrorResult(ex.Message);
                 }
 
+                var workingDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
+                var relativeToWorkingDir = Path.GetRelativePath(workingDirectory, fullPath);
                 if (relativeToWorkingDir == ".")
                 {
                     return CreateErrorResult("Access denied: Cannot delete the working directory itself");
