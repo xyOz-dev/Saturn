@@ -243,7 +243,7 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                 }
             }
 
-            _ = Task.Run(async () =>
+            var executionTask = Task.Run(async () =>
             {
                 try
                 {
@@ -326,6 +326,8 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     CompleteTask(taskId, agentId, agentContext, false, $"Error: {ex.Message}");
                 }
             });
+            agentContext.ExecutionTask = executionTask;
+            _ = executionTask;
 
             return taskId;
         }
@@ -524,7 +526,7 @@ Your decision:";
                 };
                 
                 var reviewerAgent = new Agent(reviewerConfig);
-                
+
                 var reviewerContext = new ReviewerContext
                 {
                     Id = reviewerId,
@@ -533,60 +535,80 @@ Your decision:";
                     TaskId = taskId,
                     StartedAt = DateTime.Now
                 };
-                
+
                 _reviewers[reviewerId] = reviewerContext;
-                
-                var reviewTask = reviewerAgent.Execute<Message>(reviewPrompt);
+
+                var reviewCts = new CancellationTokenSource();
+                var reviewTask = reviewerAgent.Execute<Message>(reviewPrompt, reviewCts.Token);
                 var timeoutTask = Task.Delay(prefs.ReviewTimeoutSeconds * 1000);
-                
+
                 var completedTask = await Task.WhenAny(reviewTask, timeoutTask);
-                
+
                 if (completedTask == timeoutTask)
                 {
                     _reviewers.TryRemove(reviewerId, out _);
+                    reviewCts.Cancel();
+                    // The review call may still be mid-flight (e.g. blocked on a
+                    // provider response); disposing the agent here could tear down
+                    // state it is still touching, so defer disposal until the task
+                    // actually unwinds.
+                    _ = reviewTask.ContinueWith(_ =>
+                    {
+                        reviewerAgent.Dispose();
+                        reviewCts.Dispose();
+                    }, TaskScheduler.Default);
+
                     return new ReviewDecision
                     {
                         Status = ReviewStatus.Approved,
                         Feedback = "Review timed out - auto-approved"
                     };
                 }
-                
-                var reviewResult = await reviewTask;
-                var reviewText = reviewResult.Content.ToString().Trim();
-                
-                _reviewers.TryRemove(reviewerId, out _);
 
-                if (reviewText.StartsWith("APPROVED:", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    return new ReviewDecision
+                    var reviewResult = await reviewTask;
+                    var reviewText = reviewResult.Content.ToString().Trim();
+
+                    _reviewers.TryRemove(reviewerId, out _);
+
+                    if (reviewText.StartsWith("APPROVED:", StringComparison.OrdinalIgnoreCase))
                     {
-                        Status = ReviewStatus.Approved,
-                        Feedback = reviewText.Substring(9).Trim()
-                    };
+                        return new ReviewDecision
+                        {
+                            Status = ReviewStatus.Approved,
+                            Feedback = reviewText.Substring(9).Trim()
+                        };
+                    }
+                    else if (reviewText.StartsWith("REVISION:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new ReviewDecision
+                        {
+                            Status = ReviewStatus.RevisionRequested,
+                            Feedback = reviewText.Substring(9).Trim()
+                        };
+                    }
+                    else if (reviewText.StartsWith("REJECTED:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new ReviewDecision
+                        {
+                            Status = ReviewStatus.Rejected,
+                            Feedback = reviewText.Substring(9).Trim()
+                        };
+                    }
+                    else
+                    {
+                        return new ReviewDecision
+                        {
+                            Status = ReviewStatus.Approved,
+                            Feedback = "Review response unclear - defaulting to approved"
+                        };
+                    }
                 }
-                else if (reviewText.StartsWith("REVISION:", StringComparison.OrdinalIgnoreCase))
+                finally
                 {
-                    return new ReviewDecision
-                    {
-                        Status = ReviewStatus.RevisionRequested,
-                        Feedback = reviewText.Substring(9).Trim()
-                    };
-                }
-                else if (reviewText.StartsWith("REJECTED:", StringComparison.OrdinalIgnoreCase))
-                {
-                    return new ReviewDecision
-                    {
-                        Status = ReviewStatus.Rejected,
-                        Feedback = reviewText.Substring(9).Trim()
-                    };
-                }
-                else
-                {
-                    return new ReviewDecision
-                    {
-                        Status = ReviewStatus.Approved,
-                        Feedback = "Review response unclear - defaulting to approved"
-                    };
+                    reviewerAgent.Dispose();
+                    reviewCts.Dispose();
                 }
             }
             finally
@@ -650,10 +672,12 @@ Your decision:";
             if (_runningAgents.TryRemove(agentId, out var context))
             {
                 CancellationTokenSource? cancellation;
+                Task? executionTask;
                 lock (_agentRegistrationLock)
                 {
                     context.Status = AgentStatus.Terminated;
                     cancellation = context.Cancellation;
+                    executionTask = context.ExecutionTask;
                 }
 
                 try
@@ -662,6 +686,27 @@ Your decision:";
                 }
                 catch (ObjectDisposedException)
                 {
+                }
+
+                if (context.Agent != null)
+                {
+                    var agentToDispose = context.Agent;
+                    if (executionTask != null && !executionTask.IsCompleted)
+                    {
+                        // The handoff's execution loop may still be mid-flight (e.g.
+                        // blocked on a provider response); disposing here could tear
+                        // down state it is still touching, so defer disposal until
+                        // the task actually unwinds — same reasoning as the reviewer
+                        // timeout path above.
+                        _ = executionTask.ContinueWith(_ =>
+                        {
+                            try { agentToDispose.Dispose(); } catch { }
+                        }, TaskScheduler.Default);
+                    }
+                    else
+                    {
+                        try { agentToDispose.Dispose(); } catch { }
+                    }
                 }
 
                 OnAgentStatusChanged?.Invoke(agentId, context.Name, "Terminated");

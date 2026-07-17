@@ -58,7 +58,7 @@ namespace Saturn.Web
         {
             try
             {
-                var sessions = await history.GetSessionsAsync("main", 1);
+                var sessions = await history.GetSessionsAsync("main", 1, activeOnly: true);
                 if (sessions.Count == 0)
                 {
                     return;
