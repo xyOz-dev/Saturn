@@ -876,7 +876,13 @@ function scheduleStreamRender() {
     const el = $("#chat-stream-text");
     renderMarkdown(el, streamBuffer);
     el.scrollTop = el.scrollHeight;
+    scrollChatToBottom();
   }, 80);
+}
+
+function scrollChatToBottom() {
+  const scroll = $("#chat-scroll");
+  scroll.scrollTop = scroll.scrollHeight;
 }
 
 async function loadTranscript() {
@@ -951,7 +957,7 @@ function renderTranscript() {
     }
     log.appendChild(div);
   }
-  log.scrollTop = log.scrollHeight;
+  scrollChatToBottom();
 }
 
 let workingSince = null;
@@ -970,6 +976,7 @@ function setOrchestratorBusy(busy) {
   if (busy) {
     if (!workingSince) workingSince = Date.now();
     $("#chat-stream").hidden = false;
+    scrollChatToBottom();
     updateWorkingLabel();
     if (!workingTimer) workingTimer = setInterval(updateWorkingLabel, 1000);
   } else {

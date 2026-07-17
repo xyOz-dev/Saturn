@@ -136,14 +136,16 @@
       <section class="view active" id="view-orchestrator">
         <div class="orch-layout">
         <div class="chat">
-          <div class="chat-log" id="chat-log"></div>
-          <div class="chat-stream" id="chat-stream" hidden>
-            <div class="chat-stream-head">
-              <span class="pulse-dot"></span>
-              <span id="working-label">assistant is working</span>
+          <div class="chat-scroll" id="chat-scroll">
+            <div class="chat-log" id="chat-log"></div>
+            <div class="chat-stream" id="chat-stream" hidden>
+              <div class="chat-stream-head">
+                <span class="pulse-dot"></span>
+                <span id="working-label">assistant is working</span>
+              </div>
+              <div class="tool-log" id="tool-log"></div>
+              <div class="md stream-md" id="chat-stream-text"></div>
             </div>
-            <div class="tool-log" id="tool-log"></div>
-            <div class="md stream-md" id="chat-stream-text"></div>
           </div>
           <form class="chat-input" id="chat-form">
             <textarea id="chat-text" rows="2" placeholder="Instruct the orchestrator… (Enter to send, Shift+Enter for newline)"></textarea>

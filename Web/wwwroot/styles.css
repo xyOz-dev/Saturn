@@ -545,10 +545,21 @@ textarea.input { resize: vertical; font-family: inherit; }
 #rail-activity li { display: block; overflow: hidden; text-overflow: ellipsis; }
 #rail-activity b { color: var(--text); font-weight: 600; }
 
-.chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; }
+/* One scroll container holds the finished log and the live stream bubble,
+   so streaming output rides inside the conversation. */
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.chat-log { display: flex; flex-direction: column; gap: 12px; }
 /* Anchor short conversations to the input, like any chat app — the slack
    collects above the conversation instead of between it and the input. */
-.chat-log > :first-child { margin-top: auto; }
+.chat-log { margin-top: auto; }
+.chat-log:empty { margin: auto 0; }
 .chat-log:empty::before {
   content: "No conversation yet. Give the orchestrator an instruction below — it can plan work, spawn sub-agents and hand tasks off to them.";
   color: var(--dim);
@@ -590,12 +601,18 @@ textarea.input { resize: vertical; font-family: inherit; }
 .chat-msg.assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .chat-msg.system { align-self: center; color: var(--dim); font-size: 12px; background: none; padding: 2px; }
 
+/* The live stream is styled as an in-progress assistant bubble. */
 .chat-stream {
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  align-self: flex-start;
+  width: fit-content;
+  min-width: 260px;
+  max-width: min(92%, 900px);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
   padding: 12px 14px;
-  margin-bottom: 12px;
+  flex-shrink: 0;
   animation: rise-in 0.25s var(--ease);
 }
 .chat-stream-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 8px; flex-wrap: wrap; }
