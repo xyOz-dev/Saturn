@@ -70,7 +70,7 @@ namespace Saturn.Web
 
         public string Url => $"http://localhost:{_port}";
 
-        public async Task RunAsync(CancellationToken cancellationToken = default)
+        public async Task RunAsync(CancellationToken cancellationToken = default, Action? onReady = null)
         {
             CommandApprovalService.GlobalOverride = _approvalCoordinator;
             TaskSystem.Store = _tasks;
@@ -142,6 +142,11 @@ namespace Saturn.Web
 
             MapStaticAssets(app);
             MapApi(app);
+
+            if (onReady != null)
+            {
+                app.Lifetime.ApplicationStarted.Register(onReady);
+            }
 
             await app.RunAsync(cancellationToken);
         }
