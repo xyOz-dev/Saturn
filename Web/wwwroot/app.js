@@ -35,7 +35,9 @@ const api = {
         const data = await res.json();
         message = data.error || data.detail || message;
       } catch { /* not json */ }
-      throw new Error(message);
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
     }
     if (res.status === 204 || res.status === 202) return null;
     const text = await res.text();
@@ -777,9 +779,15 @@ $("#chat-form").addEventListener("submit", async (e) => {
   } catch (err) {
     state.transcript = state.transcript.filter((x) => x !== entry);
     renderTranscript();
-    setOrchestratorBusy(false);
     $("#chat-text").value = message;
-    toast(`<b>Error:</b> ${esc(err.message)}`);
+    if (err.status === 409) {
+      // A scheduler-initiated run is already in progress; the server's state
+      // events keep driving the busy UI, so don't tear down the live stream.
+      toast("The assistant is already busy with a run — try again shortly.");
+    } else {
+      setOrchestratorBusy(false);
+      toast(`<b>Error:</b> ${esc(err.message)}`);
+    }
   }
 });
 
