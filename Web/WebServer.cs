@@ -184,6 +184,7 @@ namespace Saturn.Web
                     taskId,
                     result.AgentId,
                     result.AgentName,
+                    result.Description,
                     result.Success,
                     result.CompletedAt,
                     durationSeconds = result.Duration.TotalSeconds
@@ -323,6 +324,7 @@ namespace Saturn.Web
                         taskId = t.TaskId,
                         agentId = t.AgentId,
                         agentName = t.AgentName,
+                        description = t.Description,
                         success = t.Success,
                         result = t.Result,
                         completedAt = t.CompletedAt,

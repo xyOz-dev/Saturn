@@ -300,7 +300,7 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
 
                         if (terminated)
                         {
-                            CompleteTask(taskId, agentId, agentContext, false, "Task terminated before completion");
+                            CompleteTask(taskId, agentId, agentContext, task, false, "Task terminated before completion");
                             return;
                         }
 
@@ -364,38 +364,38 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
 
                         if (terminated)
                         {
-                            CompleteTask(taskId, agentId, agentContext, false, "Task terminated before completion");
+                            CompleteTask(taskId, agentId, agentContext, task, false, "Task terminated before completion");
                         }
                         else if (reviewDecision.Status == ReviewStatus.Approved)
                         {
                             var approvalMessage = agentContext.RevisionCount > 0 
                                 ? $"{currentResult}\n\n[Review: Approved after {agentContext.RevisionCount} revision(s) - {reviewDecision.Feedback}]"
                                 : $"{currentResult}\n\n[Review: Approved - {reviewDecision.Feedback}]";
-                            CompleteTask(taskId, agentId, agentContext, true, approvalMessage);
+                            CompleteTask(taskId, agentId, agentContext, task, true, approvalMessage);
                         }
                         else if (reviewDecision.Status == ReviewStatus.Rejected)
                         {
-                            CompleteTask(taskId, agentId, agentContext, false, 
+                            CompleteTask(taskId, agentId, agentContext, task, false,
                                 $"Task rejected by reviewer: {reviewDecision.Feedback}");
                         }
                         else
                         {
-                            CompleteTask(taskId, agentId, agentContext, false, 
+                            CompleteTask(taskId, agentId, agentContext, task, false,
                                 $"Task failed review after {agentContext.RevisionCount} revision(s). Final feedback: {reviewDecision.Feedback}");
                         }
                     }
                     else
                     {
-                        CompleteTask(taskId, agentId, agentContext, true, result.Content.ToString());
+                        CompleteTask(taskId, agentId, agentContext, task, true, result.Content.ToString());
                     }
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
                 {
-                    CompleteTask(taskId, agentId, agentContext, false, "Task terminated before completion");
+                    CompleteTask(taskId, agentId, agentContext, task, false, "Task terminated before completion");
                 }
                 catch (Exception ex)
                 {
-                    CompleteTask(taskId, agentId, agentContext, false, $"Error: {ex.Message}");
+                    CompleteTask(taskId, agentId, agentContext, task, false, $"Error: {ex.Message}");
                 }
             });
             agentContext.ExecutionTask = executionTask;
@@ -689,7 +689,7 @@ Your decision:";
             }
         }
         
-        private void CompleteTask(string taskId, string agentId, SubAgentContext agentContext, bool success, string result)
+        private void CompleteTask(string taskId, string agentId, SubAgentContext agentContext, string description, bool success, string result)
         {
             DateTime? startedAt = null;
             var becameIdle = false;
@@ -719,6 +719,7 @@ Your decision:";
                 TaskId = taskId,
                 AgentId = agentId,
                 AgentName = agentContext.Name,
+                Description = description,
                 Success = success,
                 Result = result,
                 CompletedAt = DateTime.Now,
