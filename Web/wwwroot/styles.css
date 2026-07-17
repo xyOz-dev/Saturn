@@ -128,6 +128,18 @@ input, textarea, select { font: inherit; color: inherit; }
   border-radius: 999px;
 }
 
+.approval-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 28px;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--panel-2);
+  font-size: 12.5px;
+  animation: fade-in 0.25s var(--ease);
+}
+.approval-banner::before { content: "⚑"; }
+
 .view {
   display: none;
   flex: 1;

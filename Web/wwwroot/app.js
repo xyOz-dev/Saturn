@@ -229,6 +229,7 @@ function showView(name) {
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   $("#view-title").textContent = VIEW_TITLES[name] || name;
+  updateApprovalBanner();
   refreshView(name);
 }
 
@@ -320,7 +321,21 @@ function updateBadges() {
   setBadge("#badge-approvals", o.pendingApprovals);
   $("#workcount-queue").textContent = o.todos.open || "";
   $("#workcount-running").textContent = o.tasks.running || "";
+  updateApprovalBanner();
 }
+
+// Pending approvals block agents mid-run, so they get a persistent banner
+// on every view except Approvals itself (where the cards are already visible).
+function updateApprovalBanner() {
+  const n = state.overview?.pendingApprovals || 0;
+  const show = n > 0 && state.view !== "approvals";
+  $("#approval-banner").hidden = !show;
+  if (show) {
+    $("#approval-banner-text").textContent = `${n} ${n === 1 ? "request is" : "requests are"} waiting for your approval`;
+  }
+}
+
+$("#approval-banner-btn").addEventListener("click", () => showView("approvals"));
 
 function setBadge(sel, value) {
   const el = $(sel);
