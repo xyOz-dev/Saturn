@@ -16,17 +16,11 @@ namespace Saturn.OpenRouter.Http
             string? currentEventName = null;
             StringBuilder? dataBuffer = null;
 
-            while (!cancellationToken.IsCancellationRequested)
+            while (true)
             {
-                string? line;
-                try
-                {
-                    line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    yield break;
-                }
+                // Cancellation must surface as OperationCanceledException so callers can
+                // distinguish a user-cancelled turn from a normal end-of-stream.
+                var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
 
                 if (line is null)
                     break;

@@ -215,6 +215,40 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public async Task UpdateTaskAsync_RejectsStaleWrites()
+        {
+            var task = await CreateTaskAsync("contended");
+
+            var copyA = await _store.Project.GetTaskAsync(task.Id);
+            var copyB = await _store.Project.GetTaskAsync(task.Id);
+
+            copyA!.Notes = "first writer";
+            (await _store.Project.UpdateTaskAsync(copyA)).Should().BeTrue();
+
+            // copyB still carries the pre-update UpdatedAt, so its write must lose.
+            copyB!.Status = TaskStatuses.InProgress;
+            (await _store.Project.UpdateTaskAsync(copyB)).Should().BeFalse();
+
+            var current = await _store.Project.GetTaskAsync(task.Id);
+            current!.Notes.Should().Be("first writer");
+            current.Status.Should().Be(TaskStatuses.Pending);
+        }
+
+        [Fact]
+        public async Task UpdateAsync_ReappliesOnConflict_InsteadOfClobbering()
+        {
+            var task = await CreateTaskAsync("racy");
+
+            // A stale in-memory copy commits between our load and write paths;
+            // the store-level update must still land without reverting it.
+            await _store.CompleteAsync(task.Id);
+            var updated = await _store.UpdateAsync(task.Id, new TaskUpdateSpec { Notes = "late edit" });
+
+            updated!.Notes.Should().Be("late edit");
+            updated.Status.Should().Be(TaskStatuses.Done);
+        }
+
+        [Fact]
         public async Task TryEnqueueWakeAsync_DeduplicatesByKey()
         {
             var first = await _store.Project.TryEnqueueWakeAsync(new WakeItem { Kind = "test", Prompt = "p", DedupeKey = "dup:1" });

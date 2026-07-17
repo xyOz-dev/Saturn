@@ -122,7 +122,7 @@ namespace Saturn.Agents.Core
         {
             if (!Configuration.EnableStreaming)
             {
-                var result = await Execute<T>(input);
+                var result = await Execute<T>(input, cancellationToken);
                 if (onChunk != null && result is Message msg)
                 {
                     await onChunk(new StreamChunk
@@ -866,8 +866,10 @@ namespace Saturn.Agents.Core
             var contentBuffer = new StringBuilder();
             var toolCallBuffer = new List<OpenRouter.Models.Api.Chat.ToolCall>();
 
-            while (continueProcessing && !cancellationToken.IsCancellationRequested)
+            while (continueProcessing)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (!ValidateToolMessageSequence(currentMessages))
                 {
                     currentMessages = CleanupInvalidToolMessages(currentMessages);
@@ -890,8 +892,7 @@ namespace Saturn.Agents.Core
 
                         await foreach (var chunk in client.StreamChatAsync(request, cancellationToken))
                         {
-                            if (cancellationToken.IsCancellationRequested)
-                                break;
+                            cancellationToken.ThrowIfCancellationRequested();
 
                             var choice = chunk.Choices?.FirstOrDefault();
                             if (choice?.Delta != null)
