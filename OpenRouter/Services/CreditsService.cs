@@ -63,7 +63,7 @@ namespace Saturn.OpenRouter.Services
 
             var text = response.Content is null
                 ? null
-                : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
             if (string.IsNullOrWhiteSpace(text))
             {
