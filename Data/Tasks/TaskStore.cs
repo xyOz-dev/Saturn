@@ -202,9 +202,20 @@ namespace Saturn.Data.Tasks
                     {
                         continue;
                     }
+
+                    // Run history stays behind on delete; move it too so
+                    // HasCompletedRunAsync keeps seeing completed occurrences
+                    // and already-unblocked dependents don't re-block.
+                    var runs = await sourceRepo.GetRunsAsync(task.Id, limit: int.MaxValue);
+                    await sourceRepo.DeleteRunsForTaskAsync(task.Id);
+
                     task.Scope = spec.Scope;
                     await RepoOf(task).InsertTaskAsync(task);
                     await RepoOf(task).SetDependenciesAsync(task.Id, deps);
+                    foreach (var run in runs)
+                    {
+                        await RepoOf(task).InsertRunAsync(run);
+                    }
 
                     foreach (var (dependentId, edges) in dependentEdges)
                     {

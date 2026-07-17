@@ -256,6 +256,32 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public async Task UpdateAsync_ScopeChange_MigratesRunHistorySoRecurringDependentsStayUnblocked()
+        {
+            var recurring = await CreateTaskAsync("nightly job", s =>
+            {
+                s.RecurrenceKind = RecurrenceKinds.Interval;
+                s.RecurrenceIntervalSeconds = 3600;
+            });
+            var dependent = await CreateTaskAsync("after nightly", s => s.BlockedBy = new List<string> { recurring.Id });
+
+            // Simulate one fired occurrence completing while the task is still project-scoped.
+            await _store.Project.InsertRunAsync(new TaskRun { TaskId = recurring.Id, ScheduledFor = DateTime.UtcNow });
+            await _store.CompleteAsync(recurring.Id, success: true);
+
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+
+            await _store.UpdateAsync(recurring.Id, new TaskUpdateSpec { Scope = TaskScopes.Global });
+
+            // The completed run must have moved with the task, or the dependent
+            // becomes re-blocked because its history is now invisible.
+            (await _store.Project.GetRunsAsync(recurring.Id)).Should().BeEmpty();
+            var migratedRuns = await _store.Global.GetRunsAsync(recurring.Id);
+            migratedRuns.Should().ContainSingle().Which.Outcome.Should().NotBeNull();
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+        }
+
+        [Fact]
         public async Task UpdateTaskAsync_RejectsStaleWrites()
         {
             var task = await CreateTaskAsync("contended");
