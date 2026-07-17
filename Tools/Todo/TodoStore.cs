@@ -31,7 +31,9 @@ namespace Saturn.Tools.Todo
 
         // Own repository instance on the shared chats.db; per-agent repositories
         // already coexist on the same file (WAL + busy_timeout).
-        private static readonly Lazy<ChatHistoryRepository?> _repository = new(() =>
+        private static Lazy<ChatHistoryRepository?> _repository = new(CreateDefaultRepository);
+
+        private static ChatHistoryRepository? CreateDefaultRepository()
         {
             try
             {
@@ -42,7 +44,20 @@ namespace Saturn.Tools.Todo
                 Console.Error.WriteLine($"Failed to open todo persistence store: {ex.Message}");
                 return null;
             }
-        });
+        }
+
+        // Test seam: unit tests must not share the process-wide chats.db in the
+        // current directory, so Saturn.Tests redirects persistence to an
+        // isolated workspace before any repository access happens.
+        internal static void OverrideRepositoryFactory(Func<ChatHistoryRepository?> factory)
+        {
+            var previous = _repository;
+            _repository = new Lazy<ChatHistoryRepository?>(factory);
+            if (previous.IsValueCreated)
+            {
+                previous.Value?.Dispose();
+            }
+        }
 
         public static string CurrentKey()
         {
