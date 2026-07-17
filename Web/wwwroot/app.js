@@ -855,7 +855,7 @@ function showWorkTab(tab) {
   });
   syncHash();
   const load = tab === "queue" ? loadTodos : tab === "schedule" ? loadWakes : loadTasks;
-  load().catch(() => {});
+  load().catch((err) => toast(`<b>Error:</b> ${esc(err.message)}`));
 }
 
 $("#work-tabs").addEventListener("click", (e) => {
