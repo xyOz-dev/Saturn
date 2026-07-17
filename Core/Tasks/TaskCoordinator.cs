@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Saturn.Agents.MultiAgent;
 using Saturn.Agents.MultiAgent.Objects;
 using Saturn.Config;
@@ -343,6 +344,31 @@ namespace Saturn.Core.Tasks
             return (false, null, false);
         }
 
+        // Reload-mutate-write loop over the optimistic concurrency guard in
+        // UpdateTaskAsync. mutate returns false to skip the write when its
+        // precondition no longer holds on the freshly loaded row; the freshest
+        // row is returned either way, or null when the task no longer exists.
+        private async Task<SaturnTask?> UpdateTaskWithRetryAsync(string taskId, Func<SaturnTask, bool> mutate)
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                var task = await _store.FindAsync(taskId);
+                if (task == null)
+                {
+                    return null;
+                }
+                if (!mutate(task))
+                {
+                    return task;
+                }
+                if (await _store.RepoOf(task).UpdateTaskAsync(task))
+                {
+                    return task;
+                }
+            }
+            throw new InvalidOperationException("concurrent update, try again");
+        }
+
         // ---------- Dispatch lifecycle ----------
 
         public async Task<(bool ok, string message, string? dispatchId)> DispatchTaskAsync(string taskId, string agentId, string agentName, bool userInitiated = false)
@@ -390,12 +416,25 @@ namespace Saturn.Core.Tasks
                 return (false, $"Task {taskId} is already dispatched to {openDispatches[0].AgentName}", null);
             }
 
-            var dispatch = await _store.Project.InsertDispatchAsync(new TaskDispatch
+            TaskDispatch dispatch;
+            try
             {
-                TaskId = taskId,
-                AgentId = agentId,
-                AgentName = agentName
-            });
+                dispatch = await _store.Project.InsertDispatchAsync(new TaskDispatch
+                {
+                    TaskId = taskId,
+                    AgentId = agentId,
+                    AgentName = agentName
+                });
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.SqliteExtendedErrorCode == 2067)
+            {
+                // The partial unique index (idx_dispatch_open_unique) rejected a second
+                // concurrent open dispatch for this task; the pre-check above raced with
+                // another dispatcher and lost. Report the same "already dispatched" shape.
+                var current = (await _store.Project.GetDispatchesForTaskAsync(taskId)).Where(d => d.CompletedAt == null && !d.Orphaned).ToList();
+                var agentLabel = current.Count > 0 ? current[0].AgentName : "another agent";
+                return (false, $"Task {taskId} is already dispatched to {agentLabel}", null);
+            }
 
             var taskPrompt =
                 $"You have been dispatched Saturn task '{task.Title}' ({task.Id}).\n" +
@@ -411,9 +450,12 @@ namespace Saturn.Core.Tasks
                 mgrTaskId = await AgentManager.Instance.HandOffTask(agentId, taskPrompt, onBeforeStart: async id =>
                 {
                     await _store.Project.SetDispatchManagerTaskIdAsync(dispatch.Id, id);
-                    task.Status = TaskStatuses.InProgress;
-                    task.ClaimedBy = agentName;
-                    await _store.RepoOf(task).UpdateTaskAsync(task);
+                    await UpdateTaskWithRetryAsync(task.Id, t =>
+                    {
+                        t.Status = TaskStatuses.InProgress;
+                        t.ClaimedBy = agentName;
+                        return true;
+                    });
                 });
             }
             catch (InvalidOperationException ex)
@@ -513,8 +555,15 @@ namespace Saturn.Core.Tasks
 
             if (task.RequiresApproval)
             {
-                task.ClaimStatus = ClaimStatuses.PendingApproval;
-                await _store.RepoOf(task).UpdateTaskAsync(task);
+                task = await UpdateTaskWithRetryAsync(task.Id, t =>
+                {
+                    t.ClaimStatus = ClaimStatuses.PendingApproval;
+                    return true;
+                });
+                if (task == null)
+                {
+                    return ("error", $"Task {taskId} not found");
+                }
                 _hub.Publish("tasks.changed", new { taskId = task.Id, scope = task.Scope, board = task.Board, change = "claim_pending" });
                 if (OnClaimApprovalNeeded != null)
                 {
@@ -525,24 +574,51 @@ namespace Saturn.Core.Tasks
                     "you will receive a scheduler message when it is approved or denied. Do not start work on it yet.");
             }
 
-            task.ClaimStatus = ClaimStatuses.Approved;
-            task.ClaimedBy = "orchestrator";
-            await _store.RepoOf(task).UpdateTaskAsync(task);
+            task = await UpdateTaskWithRetryAsync(task.Id, t =>
+            {
+                t.ClaimStatus = ClaimStatuses.Approved;
+                t.ClaimedBy = "orchestrator";
+                return true;
+            });
+            if (task == null)
+            {
+                return ("error", $"Task {taskId} not found");
+            }
             _hub.Publish("tasks.changed", new { taskId = task.Id, scope = task.Scope, board = task.Board, change = "claimed" });
             return ("claimed", $"Task {taskId} claimed. Work on it yourself or dispatch_task it to a sub-agent.");
         }
 
         public async Task ResolveClaimAsync(string taskId, bool approved)
         {
-            var task = await _store.FindAsync(taskId);
-            if (task == null || task.ClaimStatus != ClaimStatuses.PendingApproval)
+            var applied = false;
+            SaturnTask? task;
+            try
+            {
+                task = await UpdateTaskWithRetryAsync(taskId, t =>
+                {
+                    if (t.ClaimStatus != ClaimStatuses.PendingApproval)
+                    {
+                        applied = false;
+                        return false;
+                    }
+                    t.ClaimStatus = approved ? ClaimStatuses.Approved : ClaimStatuses.Denied;
+                    t.ClaimedBy = approved ? "orchestrator" : null;
+                    applied = true;
+                    return true;
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Called fire-and-forget from the web approval callback, so a
+                // conflict that outlasts the retry budget has nowhere else to
+                // surface; log it instead of losing it as an unobserved fault.
+                Console.Error.WriteLine($"Resolve claim for task {taskId} failed: {ex.Message}");
+                return;
+            }
+            if (task == null || !applied)
             {
                 return;
             }
-
-            task.ClaimStatus = approved ? ClaimStatuses.Approved : ClaimStatuses.Denied;
-            task.ClaimedBy = approved ? "orchestrator" : null;
-            await _store.RepoOf(task).UpdateTaskAsync(task);
             _hub.Publish("tasks.changed", new { taskId = task.Id, scope = task.Scope, board = task.Board, change = approved ? "claim_approved" : "claim_denied" });
 
             await EnqueueWakeAsync(
@@ -568,11 +644,25 @@ namespace Saturn.Core.Tasks
                 }
 
                 await _store.Project.MarkDispatchOrphanedAsync(dispatch.Id);
-                var task = await _store.FindAsync(dispatch.TaskId);
-                if (task != null && task.Status == TaskStatuses.InProgress)
+                SaturnTask? task = null;
+                try
                 {
-                    task.Status = TaskStatuses.Pending;
-                    await _store.RepoOf(task).UpdateTaskAsync(task);
+                    task = await UpdateTaskWithRetryAsync(dispatch.TaskId, t =>
+                    {
+                        if (t.Status != TaskStatuses.InProgress)
+                        {
+                            return false;
+                        }
+                        t.Status = TaskStatuses.Pending;
+                        return true;
+                    });
+                }
+                catch (InvalidOperationException ex)
+                {
+                    // Keep recovering the remaining dispatches; the wake below still
+                    // tells the orchestrator this dispatch was interrupted.
+                    Console.Error.WriteLine($"Recovery update for task {dispatch.TaskId} failed: {ex.Message}");
+                    task = await _store.FindAsync(dispatch.TaskId);
                 }
 
                 await EnqueueWakeAsync(
