@@ -30,6 +30,7 @@ namespace Saturn.Agents.Core
         private readonly List<(string SessionId, Message Message)> _pendingMessages = new();
         private readonly object _pendingMessagesLock = new object();
         private readonly List<Task> _pendingFlushTasks = new();
+        private readonly SemaphoreSlim _flushSerializer = new SemaphoreSlim(1, 1);
         
         public event Action<string, string>? OnToolCall;
 
@@ -247,26 +248,47 @@ namespace Saturn.Agents.Core
         {
             if (Repository == null || sessionId == null) return;
 
-            // Only drain this session's messages; a turn still running for a cleared
-            // session must not leak its messages into the next session's flush.
-            List<Message> messagesToSave;
-            lock (_pendingMessagesLock)
-            {
-                messagesToSave = _pendingMessages
-                    .Where(p => p.SessionId == sessionId)
-                    .Select(p => p.Message)
-                    .ToList();
-                if (messagesToSave.Count == 0) return;
-                _pendingMessages.RemoveAll(p => p.SessionId == sessionId);
-            }
-
+            // Serialize flushes so a later flush cannot drain messages enqueued mid-flight
+            // and persist them ahead of an earlier batch that is still saving (or about to
+            // be re-queued after a failure). Without this, sequence numbers could invert.
+            await _flushSerializer.WaitAsync(cancellationToken);
             try
             {
-                await Repository.SaveMessageBatchAsync(sessionId, messagesToSave, Configuration.Name, cancellationToken);
+                // Only drain this session's messages; a turn still running for a cleared
+                // session must not leak its messages into the next session's flush.
+                List<Message> messagesToSave;
+                lock (_pendingMessagesLock)
+                {
+                    messagesToSave = _pendingMessages
+                        .Where(p => p.SessionId == sessionId)
+                        .Select(p => p.Message)
+                        .ToList();
+                    if (messagesToSave.Count == 0) return;
+                    _pendingMessages.RemoveAll(p => p.SessionId == sessionId);
+                }
+
+                try
+                {
+                    await Repository.SaveMessageBatchAsync(sessionId, messagesToSave, Configuration.Name, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Failed to persist message batch: {ex.Message}");
+
+                    // SaveMessageBatchAsync writes the whole batch in a single transaction, so a
+                    // failure here means nothing was persisted. Re-insert the drained messages at
+                    // the front of the queue (ahead of anything enqueued while the save was in
+                    // flight) so the next flush retries them in their original chronological order
+                    // instead of losing them.
+                    lock (_pendingMessagesLock)
+                    {
+                        _pendingMessages.InsertRange(0, messagesToSave.Select(m => (sessionId, m)));
+                    }
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                Console.Error.WriteLine($"Failed to persist message batch: {ex.Message}");
+                _flushSerializer.Release();
             }
         }
 
