@@ -55,7 +55,7 @@ namespace Saturn.UI
                 TopP = agent.Configuration.TopP ?? 0.25,
                 EnableStreaming = agent.Configuration.EnableStreaming,
                 MaintainHistory = agent.Configuration.MaintainHistory,
-                MaxHistoryMessages = agent.Configuration.MaxHistoryMessages ?? 10,
+                MaxHistoryMessages = agent.Configuration.MaxHistoryMessages ?? 200,
                 SystemPrompt = agent.Configuration.SystemPrompt?.ToString() ?? "",
                 EnableTools = agent.Configuration.EnableTools,
                 ToolNames = agent.Configuration.ToolNames ?? new List<string>(),
@@ -1180,7 +1180,7 @@ namespace Saturn.UI
             var dialog = new Dialog("Set Max History Messages", 50, 10);
             dialog.ColorScheme = Colors.Dialog;
 
-            var label = new Label($"Max History Messages (0-100): Current = {currentConfig.MaxHistoryMessages}")
+            var label = new Label($"Max History Messages (0-1000): Current = {currentConfig.MaxHistoryMessages}")
             {
                 X = 1,
                 Y = 1,
@@ -1202,7 +1202,7 @@ namespace Saturn.UI
 
             okButton.Clicked += async () =>
             {
-                if (int.TryParse(textField.Text.ToString(), out int maxHistory) && maxHistory >= 0 && maxHistory <= 100)
+                if (int.TryParse(textField.Text.ToString(), out int maxHistory) && maxHistory >= 0 && maxHistory <= 1000)
                 {
                     currentConfig.MaxHistoryMessages = maxHistory;
                     await UpdateConfiguration();
@@ -1210,7 +1210,7 @@ namespace Saturn.UI
                 }
                 else
                 {
-                    MessageBox.ErrorQuery("Invalid Input", "Please enter a value between 0 and 100", "OK");
+                    MessageBox.ErrorQuery("Invalid Input", "Please enter a value between 0 and 1000", "OK");
                 }
             };
 

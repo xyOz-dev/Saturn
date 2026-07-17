@@ -40,8 +40,6 @@ namespace Saturn
                 if (isWebMode)
                 {
                     agent.IsOrchestrator = true;
-                    // Long-horizon web sessions benefit from a deeper context window.
-                    agent.Configuration.MaxHistoryMessages = 50;
                     var server = new Saturn.Web.WebServer(agent, client, port);
                     Console.WriteLine($"Saturn web UI running at {server.Url}");
                     Console.WriteLine("Press Ctrl+C to stop.");
@@ -164,7 +162,7 @@ namespace Saturn
                 MaxTokens = 4096,
                 TopP = 0.25,
                 MaintainHistory = true,
-                MaxHistoryMessages = 10,
+                MaxHistoryMessages = 200,
                 EnableTools = true,
                 EnableStreaming = true,
                 RequireCommandApproval = true,

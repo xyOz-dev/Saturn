@@ -14,7 +14,7 @@ namespace Saturn.UI
         public double TopP { get; set; } = 0.25;
         public bool EnableStreaming { get; set; } = true;
         public bool MaintainHistory { get; set; } = true;
-        public int MaxHistoryMessages { get; set; } = 10;
+        public int MaxHistoryMessages { get; set; } = 200;
         public string SystemPrompt { get; set; }
         public bool EnableTools { get; set; } = false;
         public List<string> ToolNames { get; set; } = new List<string>();

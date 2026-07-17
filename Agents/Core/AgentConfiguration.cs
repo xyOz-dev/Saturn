@@ -16,7 +16,7 @@ namespace Saturn.Agents.Core
         public double? FrequencyPenalty { get; set; }
         public double? PresencePenalty { get; set; }
         public string[]? StopSequences { get; set; }
-        public int? MaxHistoryMessages { get; set; } = 20;
+        public int? MaxHistoryMessages { get; set; } = 200;
         public bool MaintainHistory { get; set; } = true;
         public List<string> ToolNames { get; set; } = new List<string>();
         public bool EnableTools { get; set; } = false;
