@@ -140,6 +140,53 @@ namespace Saturn.Tests.Tools
         }
 
         [Fact]
+        public async Task Execute_ExplorerType_GetsReadOnlyToolsAndAddendum()
+        {
+            var client = new BlockingLlmClient();
+            AgentManager.Instance.Initialize(new StaticClientSource(client, "fake"));
+
+            var tool = new SpawnAgentTool();
+            var result = await tool.ExecuteAsync(Params("scout", "Map the codebase.",
+                ("agent_type", "explorer"), ("background", true)));
+
+            result.Success.Should().BeTrue();
+            var context = AgentManager.Instance.GetAgentContexts().Single(c => c.Name == "scout");
+            context.Agent.Configuration.ToolNames.Should().Contain("grep");
+            context.Agent.Configuration.ToolNames.Should().NotContain(new[] { "apply_diff", "write_file", "execute_command" });
+            context.Agent.Configuration.SystemPrompt.ToString().Should().Contain("read-only");
+
+            client.Unblock();
+            var taskId = (string)((Dictionary<string, object>)result.RawData!)["task_id"];
+            await AgentManager.Instance.WaitForAllTasks(new List<string> { taskId }, 5000);
+            await WaitForAgentCountAsync(0);
+        }
+
+        [Fact]
+        public async Task Execute_UnknownAgentType_ReturnsErrorListingValidTypes()
+        {
+            var client = new FakeLlmClient();
+            AgentManager.Instance.Initialize(new StaticClientSource(client, "fake"));
+
+            var tool = new SpawnAgentTool();
+            var result = await tool.ExecuteAsync(Params("x", "y", ("agent_type", "warlock")));
+
+            result.Success.Should().BeFalse();
+            result.Error.Should().Contain("warlock").And.Contain("general").And.Contain("explorer");
+            AgentManager.Instance.GetCurrentAgentCount().Should().Be(0);
+        }
+
+        [Fact]
+        public void Schema_AgentTypeEnum_MatchesRegistry()
+        {
+            var tool = new SpawnAgentTool();
+            var properties = (Dictionary<string, object>)tool.GetParameters()["properties"];
+            var agentType = (Dictionary<string, object>)properties["agent_type"];
+
+            ((string[])agentType["enum"]).Should().BeEquivalentTo(AgentTypeRegistry.Names);
+            agentType["default"].Should().Be("general");
+        }
+
+        [Fact]
         public async Task Execute_AtAgentLimit_ReturnsErrorWithoutLeakingSlot()
         {
             var client = new BlockingLlmClient();

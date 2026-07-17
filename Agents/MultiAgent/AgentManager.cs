@@ -89,7 +89,9 @@ namespace Saturn.Agents.MultiAgent
             double? topP = null,
             string? systemPromptOverride = null,
             bool? includeUserRules = null,
-            bool disposeOnTaskCompletion = false)
+            bool disposeOnTaskCompletion = false,
+            IReadOnlyList<string>? allowedTools = null,
+            string? systemPromptAddendum = null)
         {
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
 
@@ -135,6 +137,19 @@ When the task is complete, report back concisely:
 - Anything you could not complete, and why
 Your report is consumed by an orchestrator agent, so keep it factual and free of filler.";
 
+                if (systemPromptOverride == null && !string.IsNullOrWhiteSpace(systemPromptAddendum))
+                {
+                    systemPrompt += $"\n\n{systemPromptAddendum}";
+                }
+
+                var subAgentTools = ToolRegistry.Instance.GetAllNames()
+                    .Where(toolName => !SubAgentExcludedTools.Contains(toolName));
+                if (allowedTools != null)
+                {
+                    subAgentTools = subAgentTools
+                        .Where(toolName => allowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase));
+                }
+
                 var config = new AgentConfiguration
                 {
                     Name = name,
@@ -145,11 +160,11 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     MaxTokens = maxTokens ?? 4096,
                     TopP = topP ?? 0.95,
                     EnableTools = enableTools,
-                    ToolNames = ToolRegistry.Instance.GetAllNames()
-                        .Where(name => !SubAgentExcludedTools.Contains(name))
-                        .ToList(),
+                    ToolNames = subAgentTools.ToList(),
                     MaintainHistory = true,
-                    MaxHistoryMessages = 20
+                    // A real coding task is routinely 25+ tool round-trips; a low cap
+                    // makes the agent forget its own task mid-way.
+                    MaxHistoryMessages = 200
                 };
 
                 var agent = new Agent(config);
@@ -608,7 +623,7 @@ Your decision:";
                     return new ReviewDecision
                     {
                         Status = ReviewStatus.Approved,
-                        Feedback = "Review timed out - auto-approved"
+                        Feedback = "Reviewer timed out - result is UNREVIEWED"
                     };
                 }
 
