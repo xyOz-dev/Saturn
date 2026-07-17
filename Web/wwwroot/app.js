@@ -466,7 +466,12 @@ $("#agent-search").addEventListener("input", (e) => {
 });
 
 async function terminateAll() {
-  if (!confirm("Terminate all agents and clear completed tasks?")) return;
+  const ok = await confirmModal(
+    "Terminate all agents",
+    "Terminates every agent and clears completed tasks. Anything still running is lost.",
+    "Terminate all"
+  );
+  if (!ok) return;
   try {
     const r = await api.post("/agents/terminate-all");
     toast(`Terminated <b>${r.terminated}</b> agents`);
@@ -487,9 +492,35 @@ function openModal(title, bodyHtml) {
   $("#modal-backdrop").hidden = false;
 }
 
+// Set by confirmModal so dismissing any way (✕, backdrop, Escape) counts as "no".
+let onModalDismiss = null;
+
 function closeModal() {
   $("#modal-backdrop").hidden = true;
   $("#modal-body").innerHTML = "";
+  const cb = onModalDismiss;
+  onModalDismiss = null;
+  if (cb) cb();
+}
+
+function confirmModal(title, body, confirmLabel = "Confirm", danger = true) {
+  return new Promise((resolve) => {
+    openModal(
+      title,
+      `
+      <p style="font-size:13px;color:var(--muted);margin:0">${body}</p>
+      <div class="modal-actions">
+        <button class="btn" id="cf-cancel">Cancel</button>
+        <button class="btn ${danger ? "danger" : "primary"}" id="cf-ok">${esc(confirmLabel)}</button>
+      </div>`
+    );
+    onModalDismiss = () => resolve(false);
+    $("#cf-cancel").addEventListener("click", closeModal);
+    $("#cf-ok").addEventListener("click", () => {
+      resolve(true);
+      closeModal();
+    });
+  });
 }
 
 $("#modal-close").addEventListener("click", closeModal);
@@ -895,7 +926,13 @@ $("#chat-text").addEventListener("keydown", (e) => {
 $("#chat-cancel").addEventListener("click", () => api.post("/orchestrator/cancel").catch(() => {}));
 
 $("#chat-new").addEventListener("click", async () => {
-  if (!confirm("Start a fresh conversation? The current chat context is closed (history stays in Sessions).")) return;
+  const ok = await confirmModal(
+    "Start a fresh conversation?",
+    "The current chat context is closed. History stays available in Sessions.",
+    "New chat",
+    false
+  );
+  if (!ok) return;
   try {
     await api.post("/orchestrator/new-session");
   } catch (err) {
@@ -1787,9 +1824,16 @@ $("#setting-approval").addEventListener("change", (e) =>
 );
 
 $("#setting-trust").addEventListener("change", async (e) => {
-  if (e.target.checked && !confirm("Trust mode auto-approves EVERY shell command from every agent. Enable?")) {
-    e.target.checked = false;
-    return;
+  if (e.target.checked) {
+    const ok = await confirmModal(
+      "Enable trust mode",
+      "Trust mode auto-approves EVERY shell command from every agent, with no review.",
+      "Enable trust mode"
+    );
+    if (!ok) {
+      e.target.checked = false;
+      return;
+    }
   }
   await putSetting({ trustMode: e.target.checked },
     e.target.checked ? "<b>Trust mode ON</b> — all commands auto-approve" : "Trust mode off");
