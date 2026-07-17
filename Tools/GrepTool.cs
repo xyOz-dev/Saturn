@@ -186,17 +186,7 @@ Examples:
 
         private void ValidatePathSecurity(string path)
         {
-            var fullPath = Path.GetFullPath(path);
-            var currentDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
-
-            var relative = Path.GetRelativePath(currentDirectory, fullPath);
-            if (Path.IsPathRooted(relative) ||
-                relative == ".." ||
-                relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
-                relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-            {
-                throw new System.Security.SecurityException($"Access denied: Path '{path}' is outside the working directory");
-            }
+            PathSecurity.ValidateInsideWorkingDirectory(path);
         }
 
         private void SearchFile(string filePath, Regex regex, List<GrepResult> results, int maxResults, List<string> skippedFiles)
