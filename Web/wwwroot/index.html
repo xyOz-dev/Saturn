@@ -20,7 +20,10 @@
       </div>
 
       <nav class="nav">
-        <button class="nav-item active" data-view="overview">
+        <button class="nav-item active" data-view="orchestrator">
+          <span class="nav-icon">◈</span> Orchestrator
+        </button>
+        <button class="nav-item" data-view="overview">
           <span class="nav-icon">▣</span> Overview
         </button>
         <button class="nav-item" data-view="agents">
@@ -30,9 +33,6 @@
         <button class="nav-item" data-view="work">
           <span class="nav-icon">≡</span> Work
           <span class="nav-badge" id="badge-work">0</span>
-        </button>
-        <button class="nav-item" data-view="orchestrator">
-          <span class="nav-icon">◈</span> Orchestrator
         </button>
         <button class="nav-item" data-view="sessions">
           <span class="nav-icon">◷</span> Sessions
@@ -57,7 +57,7 @@
 
     <main class="main">
       <header class="topbar">
-        <h1 id="view-title">Overview</h1>
+        <h1 id="view-title">Orchestrator</h1>
         <div class="topbar-right">
           <span class="model-chip" id="model-chip">—</span>
           <span class="uptime" id="uptime-chip">up 0s</span>
@@ -70,7 +70,7 @@
       </div>
 
       <!-- OVERVIEW -->
-      <section class="view active" id="view-overview">
+      <section class="view" id="view-overview">
         <div class="stat-grid">
           <div class="stat-card" data-goto="agents">
             <div class="stat-value" id="stat-agents">0</div>
@@ -133,7 +133,8 @@
       </section>
 
       <!-- ORCHESTRATOR -->
-      <section class="view" id="view-orchestrator">
+      <section class="view active" id="view-orchestrator">
+        <div class="orch-layout">
         <div class="chat">
           <div class="chat-log" id="chat-log"></div>
           <div class="chat-stream" id="chat-stream" hidden>
@@ -152,6 +153,25 @@
               <button type="button" class="btn ghost sm" id="chat-new" title="start a fresh conversation">New chat</button>
             </div>
           </form>
+        </div>
+
+        <aside class="orch-rail">
+          <div class="rail-section" data-goto="agents">
+            <div class="rail-head"><span>Agents</span><span class="rail-count" id="rail-agents">0</span></div>
+            <ul class="rail-list" id="rail-agent-list"></ul>
+          </div>
+          <div class="rail-section" data-goto="work" data-goto-tab="running">
+            <div class="rail-head"><span>Running</span><span class="rail-count" id="rail-running">0</span></div>
+            <ul class="rail-list" id="rail-task-list"></ul>
+          </div>
+          <div class="rail-section" data-goto="approvals">
+            <div class="rail-head"><span>Approvals</span><span class="rail-count" id="rail-approvals">0</span></div>
+          </div>
+          <div class="rail-section rail-grow">
+            <div class="rail-head"><span>Activity</span></div>
+            <ul class="rail-list" id="rail-activity"></ul>
+          </div>
+        </aside>
         </div>
       </section>
 

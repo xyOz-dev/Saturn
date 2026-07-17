@@ -193,7 +193,7 @@ function removeApprovalToast(id) {
 /* ---------- state ---------- */
 
 const state = {
-  view: "overview",
+  view: "orchestrator",
   workTab: "queue",
   overview: null,
   agents: [],
@@ -241,7 +241,7 @@ async function refreshView(name) {
     if (name === "overview") await loadOverview();
     else if (name === "agents") await loadAgents();
     else if (name === "work") await Promise.all([loadTodos(), loadTasks(), loadWakes()]);
-    else if (name === "orchestrator") await loadTranscript();
+    else if (name === "orchestrator") await Promise.all([loadTranscript(), loadAgents(), loadTasks()]);
     else if (name === "sessions") await loadSessions();
     else if (name === "approvals") await loadApprovals();
     else if (name === "settings") await loadSettings();
@@ -256,7 +256,7 @@ async function refreshView(name) {
 // so refresh keeps your place and views are linkable.
 function currentRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
-  const view = VIEW_TITLES[parts[0]] ? parts[0] : "overview";
+  const view = VIEW_TITLES[parts[0]] ? parts[0] : "orchestrator";
   const sub = view === "work" && WORK_TABS.includes(parts[1]) ? parts[1] : null;
   return { view, sub };
 }
@@ -286,6 +286,7 @@ function logActivity(html) {
   state.activity.unshift({ time: new Date(), html });
   state.activity = state.activity.slice(0, 120);
   renderActivity();
+  renderRail();
 }
 
 function renderActivity() {
@@ -347,6 +348,33 @@ function updateBadges() {
   $("#workcount-queue").textContent = o.todos.open || "";
   $("#workcount-running").textContent = o.tasks.running || "";
   updateApprovalBanner();
+  renderRail();
+}
+
+// Live status rail beside the orchestrator chat: enough situational awareness
+// to command without tabbing away. Each section links to its full view.
+function renderRail() {
+  if (state.view !== "orchestrator") return;
+  const o = state.overview;
+  if (o) {
+    $("#rail-agents").textContent = o.agents.total;
+    $("#rail-running").textContent = o.tasks.running;
+    const approvals = $("#rail-approvals");
+    approvals.textContent = o.pendingApprovals;
+    approvals.classList.toggle("warn", o.pendingApprovals > 0);
+  }
+  $("#rail-agent-list").innerHTML = state.agents
+    .slice(0, 8)
+    .map((a) => `<li title="${esc(a.purpose)}"><span class="status-dot ${a.currentTask ? "working" : ""}"></span><span>${esc(a.name)}</span></li>`)
+    .join("") || '<li class="rail-empty">no agents</li>';
+  $("#rail-task-list").innerHTML = state.tasks.running
+    .slice(0, 6)
+    .map((t) => `<li title="${esc(t.description)}"><span class="status-dot working"></span><span>${esc(t.description)}</span></li>`)
+    .join("") || '<li class="rail-empty">idle</li>';
+  $("#rail-activity").innerHTML = state.activity
+    .slice(0, 10)
+    .map((a) => `<li>${a.html}</li>`)
+    .join("") || '<li class="rail-empty">quiet so far</li>';
 }
 
 // Pending approvals block agents mid-run, so they get a persistent banner
@@ -404,6 +432,7 @@ async function loadWakes() {
 async function loadAgents() {
   state.agents = await api.get("/agents");
   renderAgents();
+  renderRail();
 }
 
 function renderAgents() {
@@ -723,6 +752,7 @@ function openHandoffModal(agentId) {
 async function loadTasks() {
   state.tasks = await api.get("/tasks");
   renderTasks();
+  renderRail();
 }
 
 function renderTasks() {
@@ -1955,13 +1985,13 @@ function connectEvents() {
   es.addEventListener("agent.created", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`agent <b>${esc(d.name)}</b> created`);
-    refreshIf(["agents"], [loadAgents]);
+    refreshIf(["agents", "orchestrator"], [loadAgents]);
   });
 
   es.addEventListener("agent.status", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`<b>${esc(d.name)}</b> → ${esc(d.status)}`);
-    refreshIf(["agents", "work"], [loadAgents, loadTasks]);
+    refreshIf(["agents", "work", "orchestrator"], [loadAgents, loadTasks]);
   });
 
   es.addEventListener("task.completed", (e) => {
@@ -1969,10 +1999,10 @@ function connectEvents() {
     const desc = d.description ? `: ${esc(d.description.slice(0, 60))}` : "";
     logActivity(`task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "failed"} (${esc(d.agentName)})${desc}`);
     toast(`Task ${d.success ? "completed" : "<b>failed</b>"} — ${esc(d.agentName)}${desc}`);
-    refreshIf(["work", "agents"], [loadTasks, loadAgents]);
+    refreshIf(["work", "agents", "orchestrator"], [loadTasks, loadAgents]);
   });
 
-  es.addEventListener("agents.cleared", () => refreshIf(["agents", "work"], [loadAgents, loadTasks]));
+  es.addEventListener("agents.cleared", () => refreshIf(["agents", "work", "orchestrator"], [loadAgents, loadTasks]));
   es.addEventListener("tasks.cleared", () => refreshIf(["work"], [loadTasks]));
   es.addEventListener("todos.changed", () => refreshIf(["work"], [loadTodos]));
   es.addEventListener("tasks.changed", () => refreshIf(["work"], [loadTodos, loadWakes]));
@@ -2094,7 +2124,7 @@ function connectEvents() {
 
   setInterval(() => {
     loadOverview().catch(() => {});
-    if (state.view === "agents") loadAgents().catch(() => {});
-    if (state.view === "work") loadTasks().catch(() => {});
+    if (state.view === "agents" || state.view === "orchestrator") loadAgents().catch(() => {});
+    if (state.view === "work" || state.view === "orchestrator") loadTasks().catch(() => {});
   }, 10000);
 })();
