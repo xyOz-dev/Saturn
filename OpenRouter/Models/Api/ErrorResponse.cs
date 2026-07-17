@@ -11,6 +11,7 @@ namespace Saturn.OpenRouter.Models.Api
         public sealed class ErrorBody
         {
             [JsonPropertyName("code")]
+            [JsonConverter(typeof(Serialization.LenientNullableIntConverter))]
             public int? Code { get; set; }
 
             [JsonPropertyName("message")]
