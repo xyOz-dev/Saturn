@@ -1181,6 +1181,51 @@ button.task-badge:hover { background: var(--panel-3); }
 .result-pre.md { white-space: normal; font-family: inherit; font-size: 13px; color: var(--text); }
 .msg-content.md { white-space: normal; color: var(--text); }
 
+/* ---------- small screens ---------- */
+
+@media (max-width: 640px) {
+  .view { padding: 14px 14px 18px; }
+  .topbar { padding: 12px 14px; }
+  .topbar h1 { font-size: 15px; }
+  .uptime { display: none; }
+  .model-chip { max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .approval-banner { padding: 8px 14px; flex-wrap: wrap; }
+
+  .toolbar { flex-wrap: wrap; }
+  .toolbar .search { width: 100%; order: 9; }
+
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-value { font-size: 26px; }
+
+  .todo-add { flex-wrap: wrap; }
+  .todo-add .input:first-child { flex: 1 1 100%; }
+  .todo-item { flex-wrap: wrap; }
+  .task-badges { order: 8; flex-basis: 100%; }
+
+  .task-row { flex-wrap: wrap; row-gap: 6px; }
+  .task-desc { flex-basis: 100%; order: 9; white-space: normal; }
+
+  .session-row { flex-wrap: wrap; row-gap: 6px; }
+  .session-title { flex-basis: 100%; order: 9; white-space: normal; }
+
+  .agent-grid { grid-template-columns: 1fr; }
+
+  .chat-msg { max-width: 94%; }
+  .chat-msg.assistant.md, .chat-stream { max-width: 96%; }
+  .chat-input { flex-wrap: wrap; }
+  .chat-input textarea { flex: 1 1 100%; }
+  .chat-buttons { flex-direction: row; width: 100%; justify-content: flex-end; }
+
+  .settings-row { grid-template-columns: 1fr; }
+  .field-row { flex-wrap: wrap; }
+
+  .modal { padding: 16px; }
+  .drawer { width: 100vw; border-left: none; }
+
+  .toasts { left: 14px; right: 14px; bottom: 14px; }
+  .toast { max-width: none; }
+}
+
 /* ---------- animations ---------- */
 
 @keyframes view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
