@@ -14,14 +14,12 @@ namespace Saturn.Tests.Tools
     public class ReadFileToolTests : IDisposable
     {
         private readonly string _testDirectory;
-        private readonly List<string> _createdFiles;
         private readonly string _originalDirectory;
 
         public ReadFileToolTests()
         {
             var testDirectory = Path.Combine(Path.GetTempPath(), $"SaturnTests_{Guid.NewGuid()}");
             Directory.CreateDirectory(testDirectory);
-            _createdFiles = new List<string>();
             _originalDirectory = Directory.GetCurrentDirectory();
             Directory.SetCurrentDirectory(testDirectory);
             // Use the canonical form so absolute test paths match the working directory
@@ -205,7 +203,6 @@ namespace Saturn.Tests.Tools
         {
             var filePath = Path.Combine(_testDirectory, fileName);
             File.WriteAllText(filePath, content, Encoding.UTF8);
-            _createdFiles.Add(filePath);
             return filePath;
         }
 
@@ -213,17 +210,26 @@ namespace Saturn.Tests.Tools
         {
             Directory.SetCurrentDirectory(_originalDirectory);
 
-            foreach (var file in _createdFiles)
+            // Windows can hold transient locks on freshly written files (e.g. AV
+            // scanners); cleanup is best-effort, so retry briefly and never throw.
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                if (File.Exists(file))
+                try
                 {
-                    File.Delete(file);
+                    if (Directory.Exists(_testDirectory))
+                    {
+                        Directory.Delete(_testDirectory, true);
+                    }
+                    return;
                 }
-            }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
 
-            if (Directory.Exists(_testDirectory))
-            {
-                Directory.Delete(_testDirectory, true);
+                System.Threading.Thread.Sleep(100);
             }
         }
     }
