@@ -272,6 +272,37 @@ window.addEventListener("hashchange", () => {
   if (sub && sub !== state.workTab) showWorkTab(sub);
 });
 
+/* ---------- keyboard shortcuts ---------- */
+
+// 1-7 jump between views (nav order); "/" focuses the view's main input.
+// Disabled while typing or while a modal/drawer is open.
+const VIEW_ORDER = ["orchestrator", "overview", "agents", "work", "sessions", "approvals", "settings"];
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t.matches?.("input, textarea, select") || t.isContentEditable) return;
+  if (!$("#modal-backdrop").hidden || !$("#drawer-backdrop").hidden) return;
+
+  const idx = Number(e.key) - 1;
+  if (e.key >= "1" && e.key <= "7" && VIEW_ORDER[idx]) {
+    showView(VIEW_ORDER[idx]);
+    return;
+  }
+  if (e.key === "/") {
+    const target =
+      state.view === "orchestrator" ? $("#chat-text")
+      : state.view === "agents" ? $("#agent-search")
+      : state.view === "work" ? $("#todo-title")
+      : null;
+    // offsetParent is null for inputs inside a hidden work pane.
+    if (target && target.offsetParent !== null) {
+      e.preventDefault();
+      target.focus();
+    }
+  }
+});
+
 $$(".nav-item").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 $$("[data-goto]").forEach((el) =>
   el.addEventListener("click", () => {
