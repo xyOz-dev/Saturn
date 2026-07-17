@@ -80,10 +80,25 @@ Notes:
 
             var (stdout, stderr) = bg.ReadNew();
 
+            var filterTimedOut = false;
             if (filterRegex != null)
             {
-                stdout = FilterLines(stdout, filterRegex);
-                stderr = FilterLines(stderr, filterRegex);
+                var unfilteredStdout = stdout;
+                var unfilteredStderr = stderr;
+                try
+                {
+                    stdout = FilterLines(stdout, filterRegex);
+                    stderr = FilterLines(stderr, filterRegex);
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    // A timeout partway through (e.g. stdout filtered fine, stderr
+                    // timed out) must not leave one stream filtered and the other
+                    // not — revert both so the message below is accurate.
+                    stdout = unfilteredStdout;
+                    stderr = unfilteredStderr;
+                    filterTimedOut = true;
+                }
             }
 
             var status = bg.Status.ToString().ToLowerInvariant();
@@ -94,6 +109,10 @@ Notes:
             if (bg.Status != BackgroundCommandStatus.Running && bg.ExitCode.HasValue)
             {
                 output.AppendLine($"Exit Code: {bg.ExitCode.Value}");
+            }
+            if (filterTimedOut)
+            {
+                output.AppendLine("Filter regex timed out; showing unfiltered output.");
             }
             output.AppendLine();
 
