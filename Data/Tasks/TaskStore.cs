@@ -128,89 +128,104 @@ namespace Saturn.Data.Tasks
 
         public async Task<SaturnTask?> UpdateAsync(string id, TaskUpdateSpec spec)
         {
-            var task = await FindAsync(id);
-            if (task == null)
+            // Read-modify-write under optimistic concurrency: when the guarded
+            // update loses a race, reload the row and reapply the spec so the
+            // concurrent writer's committed columns survive.
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                return null;
-            }
-
-            var originalScope = task.Scope;
-
-            if (spec.Title != null && !string.IsNullOrWhiteSpace(spec.Title)) task.Title = spec.Title.Trim();
-            if (spec.Notes != null) task.Notes = string.IsNullOrWhiteSpace(spec.Notes) ? null : spec.Notes.Trim();
-            if (spec.Priority != null) task.Priority = spec.Priority;
-            if (spec.Board != null && !string.IsNullOrWhiteSpace(spec.Board)) task.Board = spec.Board.Trim();
-            if (spec.SortOrder.HasValue) task.SortOrder = spec.SortOrder.Value;
-            if (spec.AgentAvailable.HasValue) task.AgentAvailable = spec.AgentAvailable.Value;
-            if (spec.RequiresApproval.HasValue) task.RequiresApproval = spec.RequiresApproval.Value;
-            if (spec.UserHandoffOnly.HasValue) task.UserHandoffOnly = spec.UserHandoffOnly.Value;
-
-            if (spec.Status != null && TaskStatuses.All.Contains(spec.Status))
-            {
-                task.Status = spec.Status;
-                task.CompletedAt = TaskStatuses.IsTerminal(spec.Status) ? DateTime.UtcNow : null;
-            }
-
-            if (spec.RecurrenceKind != null)
-            {
-                var kind = spec.RecurrenceKind;
-                var interval = spec.RecurrenceIntervalSeconds ?? task.RecurrenceIntervalSeconds;
-                var cron = spec.RecurrenceCron ?? task.RecurrenceCron;
-                var error = RecurrenceCalculator.Validate(kind, interval, cron);
-                if (error != null)
+                var task = await FindAsync(id);
+                if (task == null)
                 {
-                    throw new ArgumentException(error);
-                }
-                task.RecurrenceKind = kind;
-                task.RecurrenceIntervalSeconds = kind == RecurrenceKinds.Interval ? interval : null;
-                task.RecurrenceCron = kind == RecurrenceKinds.Cron ? cron : null;
-                task.NextRunAt = task.IsRecurring
-                    ? RecurrenceCalculator.GetNextOccurrenceUtc(task.RecurrenceKind, task.RecurrenceIntervalSeconds, task.RecurrenceCron, DateTime.UtcNow)
-                    : null;
-            }
-            if (spec.CatchUpPolicy != null) task.CatchUpPolicy = spec.CatchUpPolicy;
-
-            if (spec.BlockedBy != null)
-            {
-                await ValidateDependenciesAsync(task.Id, spec.BlockedBy);
-            }
-
-            // Scope moves migrate the row between databases.
-            if (spec.Scope != null && TaskScopes.All.Contains(spec.Scope) && spec.Scope != originalScope)
-            {
-                var sourceRepo = RepoFor(originalScope);
-                var deps = await sourceRepo.GetDependenciesAsync(task.Id);
-
-                // DeleteTaskAsync also wipes edges where this task is the blocker;
-                // snapshot the dependents' edge lists so they can be restored.
-                var dependentEdges = new Dictionary<string, List<string>>();
-                foreach (var dependentId in await sourceRepo.GetDependentsAsync(task.Id))
-                {
-                    dependentEdges[dependentId] = await sourceRepo.GetDependenciesAsync(dependentId);
+                    return null;
                 }
 
-                await sourceRepo.DeleteTaskAsync(task.Id);
-                task.Scope = spec.Scope;
-                await RepoOf(task).InsertTaskAsync(task);
-                await RepoOf(task).SetDependenciesAsync(task.Id, deps);
+                var originalScope = task.Scope;
 
-                foreach (var (dependentId, edges) in dependentEdges)
+                if (spec.Title != null && !string.IsNullOrWhiteSpace(spec.Title)) task.Title = spec.Title.Trim();
+                if (spec.Notes != null) task.Notes = string.IsNullOrWhiteSpace(spec.Notes) ? null : spec.Notes.Trim();
+                if (spec.Priority != null) task.Priority = spec.Priority;
+                if (spec.Board != null && !string.IsNullOrWhiteSpace(spec.Board)) task.Board = spec.Board.Trim();
+                if (spec.SortOrder.HasValue) task.SortOrder = spec.SortOrder.Value;
+                if (spec.AgentAvailable.HasValue) task.AgentAvailable = spec.AgentAvailable.Value;
+                if (spec.RequiresApproval.HasValue) task.RequiresApproval = spec.RequiresApproval.Value;
+                if (spec.UserHandoffOnly.HasValue) task.UserHandoffOnly = spec.UserHandoffOnly.Value;
+
+                if (spec.Status != null && TaskStatuses.All.Contains(spec.Status))
                 {
-                    await sourceRepo.SetDependenciesAsync(dependentId, edges);
+                    task.Status = spec.Status;
+                    task.CompletedAt = TaskStatuses.IsTerminal(spec.Status) ? DateTime.UtcNow : null;
                 }
-            }
-            else
-            {
-                await RepoOf(task).UpdateTaskAsync(task);
+
+                if (spec.RecurrenceKind != null)
+                {
+                    var kind = spec.RecurrenceKind;
+                    var interval = spec.RecurrenceIntervalSeconds ?? task.RecurrenceIntervalSeconds;
+                    var cron = spec.RecurrenceCron ?? task.RecurrenceCron;
+                    var error = RecurrenceCalculator.Validate(kind, interval, cron);
+                    if (error != null)
+                    {
+                        throw new ArgumentException(error);
+                    }
+                    task.RecurrenceKind = kind;
+                    task.RecurrenceIntervalSeconds = kind == RecurrenceKinds.Interval ? interval : null;
+                    task.RecurrenceCron = kind == RecurrenceKinds.Cron ? cron : null;
+                    task.NextRunAt = task.IsRecurring
+                        ? RecurrenceCalculator.GetNextOccurrenceUtc(task.RecurrenceKind, task.RecurrenceIntervalSeconds, task.RecurrenceCron, DateTime.UtcNow)
+                        : null;
+                }
+                if (spec.CatchUpPolicy != null) task.CatchUpPolicy = spec.CatchUpPolicy;
+
+                if (spec.BlockedBy != null)
+                {
+                    await ValidateDependenciesAsync(task.Id, spec.BlockedBy);
+                }
+
+                // Scope moves migrate the row between databases.
+                if (spec.Scope != null && TaskScopes.All.Contains(spec.Scope) && spec.Scope != originalScope)
+                {
+                    var sourceRepo = RepoFor(originalScope);
+                    var deps = await sourceRepo.GetDependenciesAsync(task.Id);
+
+                    // DeleteTaskAsync also wipes edges where this task is the blocker;
+                    // snapshot the dependents' edge lists so they can be restored.
+                    var dependentEdges = new Dictionary<string, List<string>>();
+                    foreach (var dependentId in await sourceRepo.GetDependentsAsync(task.Id))
+                    {
+                        dependentEdges[dependentId] = await sourceRepo.GetDependenciesAsync(dependentId);
+                    }
+
+                    // Guard the delete with the row's loaded UpdatedAt so a writer
+                    // that committed since we read it isn't silently discarded by
+                    // the move; reload and reapply the whole spec on conflict.
+                    if (!await sourceRepo.DeleteTaskAsync(task.Id, task.UpdatedAt))
+                    {
+                        continue;
+                    }
+                    task.Scope = spec.Scope;
+                    await RepoOf(task).InsertTaskAsync(task);
+                    await RepoOf(task).SetDependenciesAsync(task.Id, deps);
+
+                    foreach (var (dependentId, edges) in dependentEdges)
+                    {
+                        await sourceRepo.SetDependenciesAsync(dependentId, edges);
+                    }
+                }
+                else if (!await RepoOf(task).UpdateTaskAsync(task))
+                {
+                    // Lost the race (or the task was deleted): reload and reapply.
+                    continue;
+                }
+
+                if (spec.BlockedBy != null)
+                {
+                    await RepoOf(task).SetDependenciesAsync(task.Id, spec.BlockedBy.Distinct().ToList());
+                }
+
+                OnTaskChanged?.Invoke("updated", task);
+                return task;
             }
 
-            if (spec.BlockedBy != null)
-            {
-                await RepoOf(task).SetDependenciesAsync(task.Id, spec.BlockedBy.Distinct().ToList());
-            }
-
-            OnTaskChanged?.Invoke("updated", task);
-            return task;
+            throw new InvalidOperationException("concurrent update, try again");
         }
 
         public async Task<bool> DeleteAsync(string id)
@@ -313,45 +328,59 @@ namespace Saturn.Data.Tasks
 
         public async Task<SaturnTask?> CompleteAsync(string id, bool success = true, string? note = null)
         {
-            var task = await FindAsync(id);
-            if (task == null)
+            // Reload-and-reapply on conflict: for a recurring task the reloaded row
+            // carries a NextRunAt the recurrence sweep may have advanced while we
+            // were writing, so this loop never stomps a concurrently claimed
+            // occurrence back to its pre-claim schedule.
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                return null;
-            }
-
-            if (task.IsRecurring)
-            {
-                var outcome = note ?? (success ? TaskStatuses.Done : TaskStatuses.Failed);
-                var repo = RepoOf(task);
-                var updated = await repo.SetLatestRunOutcomeAsync(task.Id, outcome);
-                if (updated == 0)
+                var task = await FindAsync(id);
+                if (task == null)
                 {
-                    // No TaskRuns row exists yet (the task has never fired via the
-                    // due-recurrence sweep). Record a run directly so dependents
-                    // relying on HasCompletedRunAsync don't stay blocked forever.
-                    var now = DateTime.UtcNow;
-                    await repo.InsertRunAsync(new TaskRun
-                    {
-                        TaskId = task.Id,
-                        ScheduledFor = now,
-                        FiredAt = now,
-                        Outcome = outcome
-                    });
+                    return null;
                 }
-                task.Status = TaskStatuses.Pending;
-                task.ClaimStatus = ClaimStatuses.None;
-                task.ClaimedBy = null;
-                task.CompletedAt = null;
-            }
-            else
-            {
-                task.Status = success ? TaskStatuses.Done : TaskStatuses.Failed;
-                task.CompletedAt = DateTime.UtcNow;
+
+                if (task.IsRecurring)
+                {
+                    var outcome = note ?? (success ? TaskStatuses.Done : TaskStatuses.Failed);
+                    var repo = RepoOf(task);
+                    var updated = await repo.SetLatestRunOutcomeAsync(task.Id, outcome);
+                    if (updated == 0)
+                    {
+                        // No TaskRuns row exists yet (the task has never fired via the
+                        // due-recurrence sweep). Record a run directly so dependents
+                        // relying on HasCompletedRunAsync don't stay blocked forever.
+                        // Safe across retry attempts: once inserted, the next
+                        // SetLatestRunOutcomeAsync matches this row and returns 1.
+                        var now = DateTime.UtcNow;
+                        await repo.InsertRunAsync(new TaskRun
+                        {
+                            TaskId = task.Id,
+                            ScheduledFor = now,
+                            FiredAt = now,
+                            Outcome = outcome
+                        });
+                    }
+                    task.Status = TaskStatuses.Pending;
+                    task.ClaimStatus = ClaimStatuses.None;
+                    task.ClaimedBy = null;
+                    task.CompletedAt = null;
+                }
+                else
+                {
+                    task.Status = success ? TaskStatuses.Done : TaskStatuses.Failed;
+                    task.CompletedAt = DateTime.UtcNow;
+                }
+
+                if (!await RepoOf(task).UpdateTaskAsync(task))
+                {
+                    continue;
+                }
+                OnTaskChanged?.Invoke("completed", task);
+                return task;
             }
 
-            await RepoOf(task).UpdateTaskAsync(task);
-            OnTaskChanged?.Invoke("completed", task);
-            return task;
+            throw new InvalidOperationException("concurrent update, try again");
         }
 
         public async Task<List<SaturnTask>> GetNewlyUnblockedAsync(string completedId)

@@ -156,6 +156,11 @@ Examples
                 
                 ValidatePathSecurity(path);
                 var fullPath = Path.GetFullPath(path);
+                var root = Path.GetPathRoot(fullPath) ?? string.Empty;
+                if (fullPath.Length > root.Length)
+                {
+                    fullPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                }
                 
                 if (!Directory.Exists(fullPath))
                 {
