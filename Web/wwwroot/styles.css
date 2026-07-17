@@ -537,6 +537,9 @@ textarea.input { resize: vertical; font-family: inherit; }
 }
 .rail-list li > :last-child { overflow: hidden; text-overflow: ellipsis; }
 .rail-empty { color: var(--dim); font-size: 11.5px; }
+.rail-pri { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
+.rail-pri.high { background: var(--warn); }
+.rail-pri.low { opacity: 0.5; }
 #rail-activity li { display: block; overflow: hidden; text-overflow: ellipsis; }
 #rail-activity b { color: var(--text); font-weight: 600; }
 

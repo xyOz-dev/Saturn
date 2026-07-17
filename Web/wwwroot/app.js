@@ -241,7 +241,7 @@ async function refreshView(name) {
     if (name === "overview") await loadOverview();
     else if (name === "agents") await loadAgents();
     else if (name === "work") await Promise.all([loadTodos(), loadTasks(), loadWakes()]);
-    else if (name === "orchestrator") await Promise.all([loadTranscript(), loadAgents(), loadTasks()]);
+    else if (name === "orchestrator") await Promise.all([loadTranscript(), loadAgents(), loadTasks(), loadTodos()]);
     else if (name === "sessions") await loadSessions();
     else if (name === "approvals") await loadApprovals();
     else if (name === "settings") await loadSettings();
@@ -402,6 +402,12 @@ function renderRail() {
     .slice(0, 6)
     .map((t) => `<li title="${esc(t.description)}"><span class="status-dot working"></span><span>${esc(t.description)}</span></li>`)
     .join("") || '<li class="rail-empty">idle</li>';
+  const openTodos = state.todos.filter((t) => !isTerminal(t.status));
+  $("#rail-queue").textContent = state.overview?.todos.open ?? openTodos.length;
+  $("#rail-queue-list").innerHTML = openTodos
+    .slice(0, 6)
+    .map((t) => `<li title="${esc(t.title)}"><span class="rail-pri ${esc(t.priority)}"></span><span>${esc(t.title)}</span></li>`)
+    .join("") || '<li class="rail-empty">nothing queued</li>';
   $("#rail-activity").innerHTML = state.activity
     .slice(0, 10)
     .map((a) => `<li>${a.html}</li>`)
@@ -1058,6 +1064,7 @@ async function loadTodos() {
   state.todos = await api.get(`/todos?${params}`);
   await loadBoards();
   renderTodos();
+  renderRail();
 }
 
 async function loadBoards() {
@@ -2069,8 +2076,8 @@ function connectEvents() {
 
   es.addEventListener("agents.cleared", () => refreshIf(["agents", "work", "orchestrator"], [loadAgents, loadTasks]));
   es.addEventListener("tasks.cleared", () => refreshIf(["work"], [loadTasks]));
-  es.addEventListener("todos.changed", () => refreshIf(["work"], [loadTodos]));
-  es.addEventListener("tasks.changed", () => refreshIf(["work"], [loadTodos, loadWakes]));
+  es.addEventListener("todos.changed", () => refreshIf(["work", "orchestrator"], [loadTodos]));
+  es.addEventListener("tasks.changed", () => refreshIf(["work", "orchestrator"], [loadTodos, loadWakes]));
   es.addEventListener("settings.changed", () => refreshIf(["settings"], [loadSettings]));
   es.addEventListener("wake.enqueued", (e) => {
     const d = JSON.parse(e.data);
@@ -2085,12 +2092,12 @@ function connectEvents() {
   es.addEventListener("task.unblocked", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`task unblocked: <b>${esc(d.title)}</b>`);
-    refreshIf(["work"], [loadTodos]);
+    refreshIf(["work", "orchestrator"], [loadTodos]);
   });
   es.addEventListener("task.dispatched", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`task <b>${esc(d.taskId)}</b> dispatched to <b>${esc(d.agentName)}</b>`);
-    refreshIf(["work", "agents"], [loadTodos, loadAgents]);
+    refreshIf(["work", "agents", "orchestrator"], [loadTodos, loadAgents]);
   });
 
   es.addEventListener("approval.requested", (e) => {
