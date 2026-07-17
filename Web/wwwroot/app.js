@@ -1704,13 +1704,14 @@ function renderApprovals() {
 }
 
 async function resolveApproval(id, approved) {
-  // Drop the toast either way: on success the resolved event confirms it,
-  // and a failure means the request is already gone (timeout, other client).
-  removeApprovalToast(id);
   try {
     await api.post(`/approvals/${id}`, { approved });
+    removeApprovalToast(id);
     await Promise.all([loadApprovals(), loadOverview()]);
   } catch (err) {
+    // 404 means it was already resolved elsewhere (or timed out) — stale
+    // either way. On transient failures keep the actions available.
+    if (err.status === 404) removeApprovalToast(id);
     toast(`<b>Error:</b> ${esc(err.message)}`);
   }
 }
