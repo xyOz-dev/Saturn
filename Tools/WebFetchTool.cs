@@ -92,6 +92,8 @@ Limits:
 
         private static readonly ConcurrentDictionary<string, CachedContent> _cache = new();
         private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+        private const int MaxCacheEntries = 256;
+        private static readonly object _cacheEvictionLock = new();
         private static readonly HashSet<string> AllowedSchemes = new() { "http", "https" };
         private static readonly HashSet<string> BlockedHosts = new() { "localhost", "127.0.0.1", "0.0.0.0", "::1" };
 
@@ -345,6 +347,7 @@ Limits:
                         Result = result,
                         CachedAt = DateTime.UtcNow
                     };
+                    EvictCacheIfOverCap();
                 }
 
                 return result;
@@ -364,6 +367,50 @@ Limits:
             catch (Exception ex)
             {
                 return CreateErrorResult($"Error fetching URL: {ex.Message}");
+            }
+        }
+
+        // The cache is unbounded by key over a long-lived process; entries are only
+        // dropped when the exact same key is re-requested after expiring. Sweep
+        // expired entries first, then trim the oldest by CachedAt if still over cap.
+        private static void EvictCacheIfOverCap()
+        {
+            if (_cache.Count <= MaxCacheEntries)
+            {
+                return;
+            }
+
+            lock (_cacheEvictionLock)
+            {
+                if (_cache.Count <= MaxCacheEntries)
+                {
+                    return;
+                }
+
+                var now = DateTime.UtcNow;
+                foreach (var kvp in _cache)
+                {
+                    if (now - kvp.Value.CachedAt >= CacheDuration)
+                    {
+                        _cache.TryRemove(kvp.Key, out _);
+                    }
+                }
+
+                if (_cache.Count <= MaxCacheEntries)
+                {
+                    return;
+                }
+
+                var oldest = _cache
+                    .OrderBy(kvp => kvp.Value.CachedAt)
+                    .Select(kvp => kvp.Key)
+                    .Take(_cache.Count - MaxCacheEntries)
+                    .ToList();
+
+                foreach (var key in oldest)
+                {
+                    _cache.TryRemove(key, out _);
+                }
             }
         }
 
