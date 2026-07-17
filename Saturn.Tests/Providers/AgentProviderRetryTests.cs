@@ -182,10 +182,32 @@ namespace Saturn.Tests.Providers
             client.Requests.Should().HaveCount(2);
             agent.RetryWaits.Should().HaveCount(1);
             // The retry notice is display-only status; the real content is not.
-            chunks.Should().Contain(c => c.Content.Contains("retrying") && c.IsTransientNotice);
+            chunks.Should().Contain(c => c.Content!.Contains("retrying") && c.IsTransientNotice);
             chunks.Should().Contain(c => c.Content == "hello back" && !c.IsTransientNotice);
             agent.ChatHistory.Select(m => m.Role).Should().Equal("system", "user", "assistant");
             agent.ChatHistory[^1].Content.GetString().Should().Be("hello back");
+        }
+
+        [Fact]
+        public async Task ExecuteStream_ProviderRejectsStreaming_EmitsFallbackTextAsContent()
+        {
+            var client = new FakeLlmClient();
+            client.StreamExceptionQueue.Enqueue(new OpenRouterException(
+                HttpStatusCode.BadRequest, "Streaming is unsupported for this model"));
+            var agent = CreateAgent(client, enableStreaming: true);
+
+            var chunks = new List<StreamChunk>();
+            var result = await agent.ExecuteStreamAsync("hello", chunk =>
+            {
+                chunks.Add(chunk);
+                return Task.CompletedTask;
+            });
+
+            // The non-streaming fallback answered; its text must reach the consumer
+            // as a real content chunk, not just the transient fallback notice.
+            result.Content.GetString().Should().Be("ok");
+            chunks.Should().Contain(c => c.Content == "ok" && !c.IsTransientNotice);
+            chunks.Should().Contain(c => c.IsTransientNotice && c.Content!.Contains("falling back"));
         }
 
         [Fact]

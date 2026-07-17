@@ -1067,6 +1067,12 @@ namespace Saturn.Agents.Core
                         {
                             await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant", IsTransientNotice = true });
                             finalResponse = await ExecuteWithTools(currentMessages, cancellationToken);
+                            // The fallback ran outside the streaming loop, so its text was
+                            // never chunked; emit it or the consumer records an empty message.
+                            if (!string.IsNullOrEmpty(finalResponse?.Content))
+                            {
+                                await onChunk(new StreamChunk { Content = finalResponse.Content, Role = finalResponse.Role ?? "assistant" });
+                            }
                             contentBuffer.Clear();
                             toolCallBuffer.Clear();
                             continueProcessing = false;
