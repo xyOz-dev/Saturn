@@ -2139,7 +2139,7 @@ function connectEvents() {
   });
 
   es.addEventListener("agents.cleared", () => refreshIf(["agents", "work", "orchestrator"], [loadAgents, loadTasks]));
-  es.addEventListener("tasks.cleared", () => refreshIf(["work"], [loadTasks]));
+  es.addEventListener("tasks.cleared", () => refreshIf(["work", "orchestrator"], [loadTasks]));
   es.addEventListener("todos.changed", () => refreshIf(["work", "orchestrator"], [loadTodos]));
   es.addEventListener("tasks.changed", () => refreshIf(["work", "orchestrator"], [loadTodos, loadWakes]));
   es.addEventListener("settings.changed", () => refreshIf(["settings"], [loadSettings]));
