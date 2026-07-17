@@ -134,10 +134,26 @@ namespace Saturn.Web
 
                     await _agent.ExecuteStreamAsync(message, chunk =>
                     {
+                        // A retry is about to re-send the turn; drop the partial output
+                        // so it is not duplicated in the final transcript entry.
+                        if (chunk.ResetContent)
+                        {
+                            buffer.Clear();
+                            _hub.Publish("orchestrator.chunk", new { reset = true });
+                        }
                         if (!string.IsNullOrEmpty(chunk.Content) && !chunk.IsToolCall)
                         {
-                            buffer.Append(chunk.Content);
-                            _hub.Publish("orchestrator.chunk", new { content = chunk.Content });
+                            // Transient notices (rate-limit waits etc.) are live status,
+                            // not message content — stream them but never persist them.
+                            if (chunk.IsTransientNotice)
+                            {
+                                _hub.Publish("orchestrator.chunk", new { content = chunk.Content, transient = true });
+                            }
+                            else
+                            {
+                                buffer.Append(chunk.Content);
+                                _hub.Publish("orchestrator.chunk", new { content = chunk.Content });
+                            }
                         }
                         return Task.CompletedTask;
                     }, cts.Token);

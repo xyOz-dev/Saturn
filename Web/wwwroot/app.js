@@ -907,6 +907,9 @@ $("#work-tabs").addEventListener("click", (e) => {
 /* ---------- orchestrator ---------- */
 
 let streamBuffer = "";
+// Live status line (e.g. a rate-limit retry wait) shown under the streamed
+// text; it is display-only and never part of the final message.
+let streamNotice = "";
 let streamRenderPending = false;
 
 // Re-parsing the whole buffer per chunk is wasteful at high token rates;
@@ -921,7 +924,7 @@ function scheduleStreamRender() {
     // the follow margin must exceed that or following silently stops.
     const stick = isNearBottom(340);
     const el = $("#chat-stream-text");
-    renderMarkdown(el, streamBuffer);
+    renderMarkdown(el, streamNotice ? `${streamBuffer}\n\n*${streamNotice}*` : streamBuffer);
     el.scrollTop = el.scrollHeight;
     if (stick) scrollChatToBottom();
   }, 80);
@@ -1082,6 +1085,7 @@ function setOrchestratorBusy(busy) {
     $("#chat-stream-text").innerHTML = "";
     $("#tool-log").innerHTML = "";
     streamBuffer = "";
+    streamNotice = "";
   }
 }
 
@@ -2258,7 +2262,16 @@ function connectEvents() {
 
   es.addEventListener("orchestrator.chunk", (e) => {
     const d = JSON.parse(e.data);
-    streamBuffer += d.content;
+    if (d.reset) streamBuffer = "";
+    if (d.content) {
+      if (d.transient) {
+        streamNotice = d.content.trim();
+      } else {
+        // Real content arriving means any retry wait is over.
+        streamBuffer += d.content;
+        streamNotice = "";
+      }
+    }
     $("#chat-stream").hidden = false;
     scheduleStreamRender();
   });
