@@ -24,7 +24,7 @@ namespace Saturn.OpenRouter.Services
 
             var response = await _http.SendJsonAsync<ChatCompletionResponse>(HttpMethod.Post, "chat/completions", request, null, cancellationToken).ConfigureAwait(false);
 
-            if (response?.Error != null)
+            if (response?.Error != null && (response.Error.Code != null || !string.IsNullOrWhiteSpace(response.Error.Message)))
             {
                 var status = response.Error.Code is >= 400 and <= 599
                     ? (System.Net.HttpStatusCode)response.Error.Code.Value
