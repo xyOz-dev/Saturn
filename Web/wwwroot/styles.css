@@ -482,7 +482,7 @@ textarea.input { resize: vertical; font-family: inherit; }
 
 .orch-layout { display: flex; gap: 20px; height: 100%; justify-content: center; }
 
-.chat { display: flex; flex-direction: column; height: 100%; flex: 1; max-width: 860px; min-width: 0; }
+.chat { display: flex; flex-direction: column; height: 100%; flex: 1; max-width: 1100px; min-width: 0; }
 
 .orch-rail {
   width: 236px;
@@ -541,6 +541,9 @@ textarea.input { resize: vertical; font-family: inherit; }
 #rail-activity b { color: var(--text); font-weight: 600; }
 
 .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; }
+/* Anchor short conversations to the input, like any chat app — the slack
+   collects above the conversation instead of between it and the input. */
+.chat-log > :first-child { margin-top: auto; }
 .chat-log:empty::before {
   content: "No conversation yet. Give the orchestrator an instruction below — it can plan work, spawn sub-agents and hand tasks off to them.";
   color: var(--dim);
@@ -552,7 +555,7 @@ textarea.input { resize: vertical; font-family: inherit; }
 }
 
 .chat-msg {
-  max-width: 82%;
+  max-width: min(82%, 720px);
   padding: 10px 14px;
   border-radius: 12px;
   font-size: 13.5px;
@@ -1152,7 +1155,7 @@ button.task-badge:hover { background: var(--panel-3); }
 
 /* Markdown inside chat bubbles and panels */
 .chat-msg.md { white-space: normal; }
-.chat-msg.assistant.md { max-width: 88%; }
+.chat-msg.assistant.md { max-width: min(92%, 900px); }
 .result-pre.md { white-space: normal; font-family: inherit; font-size: 13px; color: var(--text); }
 .msg-content.md { white-space: normal; color: var(--text); }
 
