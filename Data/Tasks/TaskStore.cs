@@ -140,6 +140,7 @@ namespace Saturn.Data.Tasks
                 }
 
                 var originalScope = task.Scope;
+                var wasTerminal = TaskStatuses.IsTerminal(task.Status);
 
                 if (spec.Title != null && !string.IsNullOrWhiteSpace(spec.Title)) task.Title = spec.Title.Trim();
                 if (spec.Notes != null) task.Notes = string.IsNullOrWhiteSpace(spec.Notes) ? null : spec.Notes.Trim();
@@ -221,7 +222,8 @@ namespace Saturn.Data.Tasks
                     await RepoOf(task).SetDependenciesAsync(task.Id, spec.BlockedBy.Distinct().ToList());
                 }
 
-                OnTaskChanged?.Invoke("updated", task);
+                var becameTerminal = !wasTerminal && TaskStatuses.IsTerminal(task.Status);
+                OnTaskChanged?.Invoke(becameTerminal ? "completed" : "updated", task);
                 return task;
             }
 
