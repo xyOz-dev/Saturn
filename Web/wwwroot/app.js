@@ -158,6 +158,38 @@ function toast(html, ms = 3500) {
   }, ms);
 }
 
+// Approval toasts persist until the request is resolved (here, in the
+// Approvals view, from another client, or by timeout) — never auto-dismiss.
+function approvalToast(a) {
+  removeApprovalToast(a.id);
+  const el = document.createElement("div");
+  el.className = "toast approval-toast";
+  el.dataset.approvalId = a.id;
+  el.innerHTML = `
+    <div class="toast-title">⚑ Approval needed${a.agentName ? ` · ${esc(a.agentName)}` : ""}</div>
+    <div class="toast-body">${esc(a.title)}</div>
+    ${a.command ? `<div class="toast-command">${esc(a.command.slice(0, 160))}</div>` : ""}
+    <div class="toast-actions">
+      <button class="btn sm primary" data-act="approve">Approve</button>
+      <button class="btn sm danger" data-act="deny">Deny</button>
+      <button class="btn ghost sm" data-act="view">View</button>
+    </div>`;
+  el.querySelector('[data-act="approve"]').addEventListener("click", () => resolveApproval(a.id, true));
+  el.querySelector('[data-act="deny"]').addEventListener("click", () => resolveApproval(a.id, false));
+  el.querySelector('[data-act="view"]').addEventListener("click", () => {
+    removeApprovalToast(a.id);
+    showView("approvals");
+  });
+  $("#toasts").appendChild(el);
+}
+
+function removeApprovalToast(id) {
+  $$(`.approval-toast[data-approval-id="${CSS.escape(id)}"]`).forEach((el) => {
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 350);
+  });
+}
+
 /* ---------- state ---------- */
 
 const state = {
@@ -1379,6 +1411,9 @@ function renderApprovals() {
 }
 
 async function resolveApproval(id, approved) {
+  // Drop the toast either way: on success the resolved event confirms it,
+  // and a failure means the request is already gone (timeout, other client).
+  removeApprovalToast(id);
   try {
     await api.post(`/approvals/${id}`, { approved });
     await Promise.all([loadApprovals(), loadOverview()]);
@@ -1831,12 +1866,13 @@ function connectEvents() {
     const d = JSON.parse(e.data);
     const what = d.command || d.title || "decision";
     logActivity(`approval requested: <b>${esc(what.slice(0, 60))}</b>`);
-    toast(`<b>Approval needed:</b> ${esc(what.slice(0, 80))}`, 6000);
+    if (state.view !== "approvals") approvalToast(d);
     refreshIf(["approvals"], [loadApprovals]);
   });
 
   es.addEventListener("approval.resolved", (e) => {
     const d = JSON.parse(e.data);
+    removeApprovalToast(d.id);
     logDecision(`${d.approved ? "approved" : "denied"} by <b>${esc(d.resolvedBy || "user")}</b>${d.command ? `: ${esc(d.command.slice(0, 70))}` : ""}${d.reason ? ` — ${esc(d.reason.slice(0, 80))}` : ""}`);
     refreshIf(["approvals"], [loadApprovals]);
   });

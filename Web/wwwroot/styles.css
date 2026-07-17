@@ -855,6 +855,24 @@ button.task-badge:hover { background: var(--panel-3); }
 .toast.out { animation: toast-out 0.3s var(--ease) forwards; }
 .toast b { font-weight: 600; }
 
+.approval-toast { border-color: var(--border-strong); }
+.toast-title { font-weight: 600; font-size: 12.5px; margin-bottom: 4px; }
+.toast-body { color: var(--muted); font-size: 12.5px; }
+.toast-command {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 76px;
+  overflow: hidden;
+}
+.toast-actions { display: flex; gap: 8px; margin-top: 10px; }
+
 /* ---------- markdown ---------- */
 
 .md { line-height: 1.6; overflow-wrap: break-word; }
