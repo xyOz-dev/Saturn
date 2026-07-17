@@ -580,11 +580,6 @@ textarea.input { resize: vertical; font-family: inherit; }
   animation: rise-in 0.25s var(--ease);
 }
 
-/* Off-screen bubbles skip layout and paint entirely. */
-.chat-msg, .chat-task {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 48px;
-}
 
 .chat-older {
   align-self: center;

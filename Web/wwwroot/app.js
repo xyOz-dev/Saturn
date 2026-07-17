@@ -1005,7 +1005,10 @@ function growChatWindow() {
 
 $("#chat-scroll").addEventListener("scroll", () => {
   const scroll = $("#chat-scroll");
-  if (scroll.scrollTop < CHAT_LOAD_MARGIN && state.chatWindow < state.transcript.length) {
+  // Both conditions matter: near the top AND away from the bottom. On a
+  // transcript shorter than the margin the two overlap, and without the
+  // second check sitting at the bottom would grow the window forever.
+  if (scroll.scrollTop < CHAT_LOAD_MARGIN && !isNearBottom(200) && state.chatWindow < state.transcript.length) {
     growChatWindow();
   }
 });
