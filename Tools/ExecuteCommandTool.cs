@@ -266,6 +266,10 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 };
             }
 
+            var exitTcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            process.EnableRaisingEvents = true;
+            process.Exited += (sender, e) => exitTcs.TrySetResult(null);
+
             process.Start();
 
             if (captureOutput)
@@ -278,23 +282,39 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
             cts.CancelAfter(timeout);
 
             var timedOut = false;
+            var pipeHeldOpen = false;
             try
             {
-                await process.WaitForExitAsync(cts.Token);
+                // Wait on process exit rather than WaitForExitAsync alone: WaitForExitAsync
+                // also waits for the redirected output pipes to reach EOF, which never
+                // happens while a detached child holds them open (e.g. "cmd /c start /b ...").
+                await exitTcs.Task.WaitAsync(cts.Token);
             }
             catch (OperationCanceledException)
             {
-                timedOut = true;
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch { }
+                timedOut = !process.HasExited;
 
-                try { await process.WaitForExitAsync(); } catch { }
+                if (!process.HasExited)
+                {
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch { }
+                }
+
+                try { process.WaitForExit(5000); } catch { }
             }
 
-            try { process.WaitForExit(); } catch { }
+            if (captureOutput)
+            {
+                // Give the redirected streams a short grace period to flush buffered
+                // output. If a lingering child still holds the pipe open, this times
+                // out instead of hanging until the overall timeout.
+                using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                try { await process.WaitForExitAsync(drainCts.Token); }
+                catch (OperationCanceledException) { pipeHeldOpen = true; }
+            }
 
             stopwatch.Stop();
 
@@ -308,8 +328,13 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 errorBuilder.AppendLine("... [capture limit reached; subsequent error output was discarded] ...");
             }
 
+            if (!timedOut && pipeHeldOpen)
+            {
+                outputBuilder.AppendLine("... [a child process is still holding the output stream; output may be incomplete and background children may still be running] ...");
+            }
+
             int exitCode;
-            try { exitCode = process.ExitCode; } catch { exitCode = -1; }
+            try { exitCode = process.HasExited ? process.ExitCode : -1; } catch { exitCode = -1; }
 
             return new CommandResult
             {
