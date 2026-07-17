@@ -516,8 +516,14 @@ namespace Saturn.UI
             {
                 if (isProcessing && cancellationTokenSource != null)
                 {
-                    cancellationTokenSource.Cancel();
-                    
+                    try
+                    {
+                        cancellationTokenSource.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
+
                     AgentManager.Instance.TerminateAllAgents();
                     
                     sendButton.Text = "Send";
@@ -595,7 +601,8 @@ namespace Saturn.UI
                 return;
 
             isProcessing = true;
-            cancellationTokenSource = new CancellationTokenSource();
+            var cts = new CancellationTokenSource();
+            cancellationTokenSource = cts;
 
             try
             {
@@ -665,7 +672,7 @@ namespace Saturn.UI
                                         });
                                     }
                                 },
-                                cancellationTokenSource.Token);
+                                cts.Token);
 
                             Application.MainLoop.Invoke(() =>
                             {
@@ -775,15 +782,18 @@ namespace Saturn.UI
             }
             finally
             {
-                sendButton.Text = "Send";
-                sendButton.Enabled = true;
-                inputField.ReadOnly = false;
-                isProcessing = false;
-                cancellationTokenSource?.Dispose();
-                cancellationTokenSource = null;
-                UpdateAgentStatus("Ready");
-                inputField.SetFocus();
-                Application.Refresh();
+                if (ReferenceEquals(cancellationTokenSource, cts))
+                {
+                    cancellationTokenSource = null;
+                    isProcessing = false;
+                    sendButton.Text = "Send";
+                    sendButton.Enabled = true;
+                    inputField.ReadOnly = false;
+                    UpdateAgentStatus("Ready");
+                    inputField.SetFocus();
+                    Application.Refresh();
+                }
+                cts.Dispose();
             }
         }
 
