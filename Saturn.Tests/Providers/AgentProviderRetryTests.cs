@@ -95,6 +95,34 @@ namespace Saturn.Tests.Providers
         }
 
         [Fact]
+        public async Task Execute_CloudflareEdgeTimeout524_IsRetried()
+        {
+            var client = new FakeLlmClient();
+            // A stalled upstream surfaces as a bare Cloudflare status with no JSON body.
+            client.ChatExceptionQueue.Enqueue(new OpenRouterException((HttpStatusCode)524, "error code: 524"));
+            var agent = CreateAgent(client);
+
+            var result = await agent.Execute<Message>("hello");
+
+            result.Content.GetString().Should().Be("ok");
+            client.Requests.Should().HaveCount(2);
+            agent.RetryWaits.Should().HaveCount(1);
+        }
+
+        [Fact]
+        public async Task Execute_GatewayTimeout504_IsRetried()
+        {
+            var client = new FakeLlmClient();
+            client.ChatExceptionQueue.Enqueue(new OpenRouterException(HttpStatusCode.GatewayTimeout, "Provider returned error"));
+            var agent = CreateAgent(client);
+
+            var result = await agent.Execute<Message>("hello");
+
+            result.Content.GetString().Should().Be("ok");
+            client.Requests.Should().HaveCount(2);
+        }
+
+        [Fact]
         public async Task Execute_NonRetryableError_ThrowsWithoutRetrying()
         {
             var client = new FakeLlmClient();
@@ -140,12 +168,12 @@ namespace Saturn.Tests.Providers
             });
             var agent = CreateAgent(client, enableStreaming: true);
 
-            var notices = new List<string>();
+            var chunks = new List<StreamChunk>();
             var result = await agent.ExecuteStreamAsync("hello", chunk =>
             {
                 if (!string.IsNullOrEmpty(chunk.Content))
                 {
-                    notices.Add(chunk.Content);
+                    chunks.Add(chunk);
                 }
                 return Task.CompletedTask;
             });
@@ -153,7 +181,9 @@ namespace Saturn.Tests.Providers
             result.Content.GetString().Should().Be("hello back");
             client.Requests.Should().HaveCount(2);
             agent.RetryWaits.Should().HaveCount(1);
-            notices.Should().Contain(n => n.Contains("retrying"));
+            // The retry notice is display-only status; the real content is not.
+            chunks.Should().Contain(c => c.Content.Contains("retrying") && c.IsTransientNotice);
+            chunks.Should().Contain(c => c.Content == "hello back" && !c.IsTransientNotice);
             agent.ChatHistory.Select(m => m.Role).Should().Equal("system", "user", "assistant");
             agent.ChatHistory[^1].Content.GetString().Should().Be("hello back");
         }

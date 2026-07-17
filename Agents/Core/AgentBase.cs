@@ -392,7 +392,10 @@ namespace Saturn.Agents.Core
             }
 
             // OpenRouter wraps transient upstream/routing failures in 5xx responses.
-            if (status == 500 || status == 502 || status == 503 || status == 529)
+            // Cloudflare fronts its edge, so a stalled upstream (e.g. a rate-limited
+            // provider) can also surface as a bare 52x such as "error code: 524".
+            if (status == 408 || status == 500 || status == 502 || status == 503 || status == 504
+                || (status >= 520 && status <= 527) || status == 529)
             {
                 return true;
             }
@@ -1045,7 +1048,8 @@ namespace Saturn.Agents.Core
                         await onChunk(new StreamChunk
                         {
                             Content = $"\n[Provider rate-limited/unavailable; waiting {delay.TotalSeconds:F0}s before retrying (attempt {retryAttempt}/{MaxProviderRetryAttempts})]\n",
-                            Role = "assistant"
+                            Role = "assistant",
+                            IsTransientNotice = true
                         });
                         await WaitForProviderRetryAsync(delay, cancellationToken);
                         attemptStream = true;
@@ -1061,7 +1065,7 @@ namespace Saturn.Agents.Core
 
                         if (looksLikeStreamingNotAllowed)
                         {
-                            await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant" });
+                            await onChunk(new StreamChunk { Content = "[Provider rejected streaming; falling back to non-streaming]", Role = "assistant", IsTransientNotice = true });
                             finalResponse = await ExecuteWithTools(currentMessages, cancellationToken);
                             contentBuffer.Clear();
                             toolCallBuffer.Clear();
