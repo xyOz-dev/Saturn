@@ -18,6 +18,18 @@ namespace Saturn.Tests.TestHelpers
             var workspace = Path.Combine(Path.GetTempPath(), $"SaturnTodoStoreTest_{Guid.NewGuid():N}");
             Directory.CreateDirectory(workspace);
             TodoStore.OverrideRepositoryFactory(() => new ChatHistoryRepository(workspace));
+
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            {
+                try
+                {
+                    Directory.Delete(workspace, recursive: true);
+                }
+                catch
+                {
+                    // Best-effort cleanup; the DB file may still be locked.
+                }
+            };
         }
     }
 }
