@@ -637,14 +637,25 @@ namespace Saturn.Web
                 {
                     return Results.BadRequest(new { error = ex.Message });
                 }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.Conflict(new { error = ex.Message });
+                }
             });
 
             api.MapPost("/todos/{id}/complete", async (string id, TaskCompleteRequest request) =>
             {
-                var task = await _tasks.CompleteAsync(id, request.Success ?? true, request.Note);
-                return task == null
-                    ? Results.NotFound(new { error = $"Task {id} not found" })
-                    : Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
+                try
+                {
+                    var task = await _tasks.CompleteAsync(id, request.Success ?? true, request.Note);
+                    return task == null
+                        ? Results.NotFound(new { error = $"Task {id} not found" })
+                        : Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.Conflict(new { error = ex.Message });
+                }
             });
 
             api.MapPost("/todos/{id}/dispatch", async (string id, TaskDispatchRequest request) =>
