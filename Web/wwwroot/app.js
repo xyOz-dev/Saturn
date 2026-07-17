@@ -576,10 +576,37 @@ $("#qa-terminate-all").addEventListener("click", terminateAll);
 
 /* ---------- modals ---------- */
 
+/* Overlays move focus in on open, trap Tab inside, and hand focus back to
+   the element that opened them on close. */
+const FOCUSABLE = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+let modalOpener = null;
+let drawerOpener = null;
+
+function trapTab(container, e) {
+  const items = [...container.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+function restoreFocus(opener) {
+  if (opener?.isConnected) opener.focus();
+}
+
 function openModal(title, bodyHtml) {
+  modalOpener = document.activeElement;
   $("#modal-title").textContent = title;
   $("#modal-body").innerHTML = bodyHtml;
   $("#modal-backdrop").hidden = false;
+  // Callers that focus a specific field afterwards win — this is the default.
+  ($("#modal-body").querySelector(FOCUSABLE) || $("#modal-close")).focus();
 }
 
 // Set by confirmModal so dismissing any way (✕, backdrop, Escape) counts as "no".
@@ -588,6 +615,8 @@ let onModalDismiss = null;
 function closeModal() {
   $("#modal-backdrop").hidden = true;
   $("#modal-body").innerHTML = "";
+  restoreFocus(modalOpener);
+  modalOpener = null;
   const cb = onModalDismiss;
   onModalDismiss = null;
   if (cb) cb();
@@ -619,23 +648,35 @@ $("#modal-backdrop").addEventListener("mousedown", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (!$("#modal-backdrop").hidden) closeModal();
+  if ($("#todo-menu")) closeTodoMenu();
+  else if (!$("#modal-backdrop").hidden) closeModal();
   else if (!$("#drawer-backdrop").hidden) closeDrawer();
+});
+
+$("#modal-backdrop").addEventListener("keydown", (e) => {
+  if (e.key === "Tab") trapTab($("#modal"), e);
+});
+$("#drawer-backdrop").addEventListener("keydown", (e) => {
+  if (e.key === "Tab") trapTab($("#drawer"), e);
 });
 
 /* ---------- drawer (transcripts and other long reads) ---------- */
 
 function openDrawer(title, sub) {
+  drawerOpener = document.activeElement;
   $("#drawer-title").textContent = title;
   $("#drawer-sub").textContent = sub || "";
   $("#drawer-body").innerHTML = "";
   $("#drawer-backdrop").hidden = false;
+  $("#drawer-close").focus();
   return $("#drawer-body");
 }
 
 function closeDrawer() {
   $("#drawer-backdrop").hidden = true;
   $("#drawer-body").innerHTML = "";
+  restoreFocus(drawerOpener);
+  drawerOpener = null;
 }
 
 $("#drawer-close").addEventListener("click", closeDrawer);
@@ -1269,14 +1310,29 @@ function openTodoMenu(anchor, taskId) {
   menu.className = "popmenu";
   menu.id = "todo-menu";
   menu.dataset.taskId = taskId;
+  menu.setAttribute("role", "menu");
   menu.innerHTML = `
-    <button data-menu="detail">Details</button>
-    <button data-menu="edit">Edit</button>
-    <button data-menu="delete" class="danger">Delete</button>`;
+    <button role="menuitem" data-menu="detail">Details</button>
+    <button role="menuitem" data-menu="edit">Edit</button>
+    <button role="menuitem" data-menu="delete" class="danger">Delete</button>`;
+  menu.addEventListener("keydown", (e) => {
+    const items = [...menu.querySelectorAll("button")];
+    const idx = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      items[(idx + dir + items.length) % items.length].focus();
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      closeTodoMenu();
+      anchor.focus();
+    }
+  });
   document.body.appendChild(menu);
   const r = anchor.getBoundingClientRect();
   menu.style.top = `${Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8)}px`;
   menu.style.left = `${Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)}px`;
+  menu.querySelector("button").focus();
   menu.querySelector('[data-menu="detail"]').addEventListener("click", () => { closeTodoMenu(); openTaskDetail(taskId); });
   menu.querySelector('[data-menu="edit"]').addEventListener("click", () => { closeTodoMenu(); openTaskModal(taskId); });
   menu.querySelector('[data-menu="delete"]').addEventListener("click", async () => {

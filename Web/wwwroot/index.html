@@ -424,23 +424,23 @@
   </div>
 
   <div class="drawer-backdrop" id="drawer-backdrop" hidden>
-    <aside class="drawer">
+    <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
       <div class="drawer-head">
         <div class="drawer-titles">
           <h3 id="drawer-title">Transcript</h3>
           <span class="drawer-sub" id="drawer-sub"></span>
         </div>
-        <button class="btn ghost sm" id="drawer-close">✕</button>
+        <button class="btn ghost sm" id="drawer-close" aria-label="Close">✕</button>
       </div>
       <div class="drawer-body" id="drawer-body"></div>
     </aside>
   </div>
 
   <div class="modal-backdrop" id="modal-backdrop" hidden>
-    <div class="modal" id="modal">
+    <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-head">
         <h3 id="modal-title">Modal</h3>
-        <button class="btn ghost sm" id="modal-close">✕</button>
+        <button class="btn ghost sm" id="modal-close" aria-label="Close">✕</button>
       </div>
       <div class="modal-body" id="modal-body"></div>
     </div>
