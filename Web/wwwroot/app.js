@@ -701,7 +701,7 @@ function renderTasks() {
       (t) => `
       <div class="task-row clickable" data-task="${esc(t.taskId)}">
         <span class="task-status ${t.success ? "done" : "failed"}">${t.success ? "done" : "failed"}</span>
-        <span class="task-desc">${esc(t.result.slice(0, 160))}</span>
+        <span class="task-desc" title="${esc(t.description || "")}">${esc(t.description || t.result.slice(0, 160))}</span>
         <span class="task-agent">${esc(t.agentName)}</span>
         <span class="task-time">${fmtDuration(t.durationSeconds)}</span>
       </div>`
@@ -718,6 +718,7 @@ function renderTasks() {
         <div class="kv"><span>Agent</span><span>${esc(t.agentName)} (${esc(t.agentId)})</span></div>
         <div class="kv"><span>Duration</span><span>${fmtDuration(t.durationSeconds)}</span></div>
         <div class="kv"><span>Finished</span><span>${new Date(t.completedAt).toLocaleString()}</span></div>
+        ${t.description ? `<div class="hint" style="margin-top:10px;white-space:pre-wrap">${esc(t.description)}</div>` : ""}
         <div class="result-pre md" id="task-result-md" style="margin-top:14px"></div>`
       );
       renderMarkdown($("#task-result-md"), t.result);
@@ -1916,8 +1917,9 @@ function connectEvents() {
 
   es.addEventListener("task.completed", (e) => {
     const d = JSON.parse(e.data);
-    logActivity(`task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "failed"} (${esc(d.agentName)})`);
-    toast(`Task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "<b>failed</b>"} — ${esc(d.agentName)}`);
+    const desc = d.description ? `: ${esc(d.description.slice(0, 60))}` : "";
+    logActivity(`task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "failed"} (${esc(d.agentName)})${desc}`);
+    toast(`Task ${d.success ? "completed" : "<b>failed</b>"} — ${esc(d.agentName)}${desc}`);
     refreshIf(["work", "agents"], [loadTasks, loadAgents]);
   });
 
