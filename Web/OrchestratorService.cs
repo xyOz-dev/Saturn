@@ -31,6 +31,7 @@ namespace Saturn.Web
         private CancellationTokenSource? _cts;
         private int _busy;
         private bool _parentWired;
+        private int _sessionEpoch; // guarded by _transcriptLock
 
         public event Action? OnIdle;
 
@@ -118,6 +119,12 @@ namespace Saturn.Web
             var cts = new CancellationTokenSource();
             _cts = cts;
 
+            int epoch;
+            lock (_transcriptLock)
+            {
+                epoch = _sessionEpoch;
+            }
+
             _ = Task.Run(async () =>
             {
                 var buffer = new StringBuilder();
@@ -135,15 +142,15 @@ namespace Saturn.Web
                         return Task.CompletedTask;
                     }, cts.Token);
 
-                    AddEntry("assistant", buffer.ToString());
+                    AddEntryIfCurrent(epoch, "assistant", buffer.ToString());
                 }
                 catch (OperationCanceledException)
                 {
-                    AddEntry("system", "Response cancelled.");
+                    AddEntryIfCurrent(epoch, "system", "Response cancelled.");
                 }
                 catch (Exception ex)
                 {
-                    AddEntry("system", $"Error: {ex.Message}");
+                    AddEntryIfCurrent(epoch, "system", $"Error: {ex.Message}");
                 }
                 finally
                 {
@@ -220,9 +227,26 @@ namespace Saturn.Web
             _parentWired = false;
             lock (_transcriptLock)
             {
+                _sessionEpoch++;
                 _transcript.Clear();
             }
             _hub.Publish("orchestrator.cleared");
+        }
+
+        private void AddEntryIfCurrent(int epoch, string role, string content, string source = "user")
+        {
+            var entry = new TranscriptEntry { Role = role, Content = content, Source = source };
+            lock (_transcriptLock)
+            {
+                // A new session may have started while this run was unwinding;
+                // its entries belong to the old transcript and must not leak in.
+                if (_sessionEpoch != epoch)
+                {
+                    return;
+                }
+                _transcript.Add(entry);
+            }
+            _hub.Publish("orchestrator.message", entry);
         }
 
         private void AddEntry(string role, string content, string source = "user")
