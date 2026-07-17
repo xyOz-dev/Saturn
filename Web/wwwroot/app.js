@@ -204,6 +204,8 @@ const state = {
   todoScope: "all",
   todoBoard: null,
   sessions: [],
+  chatSessions: [],
+  chatSessionId: null,
   approvals: [],
   transcript: [],
   orchestratorBusy: false,
@@ -231,6 +233,7 @@ function showView(name) {
   state.view = name;
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
+  $("#nav-chats").hidden = name !== "orchestrator";
   $("#view-title").textContent = VIEW_TITLES[name] || name;
   updateApprovalBanner();
   syncHash();
@@ -242,7 +245,7 @@ async function refreshView(name) {
     if (name === "overview") await loadOverview();
     else if (name === "agents") await loadAgents();
     else if (name === "work") await Promise.all([loadTodos(), loadTasks(), loadWakes()]);
-    else if (name === "orchestrator") await Promise.all([loadTranscript(), loadAgents(), loadTasks(), loadTodos()]);
+    else if (name === "orchestrator") await Promise.all([loadTranscript(), loadChatSessions(), loadAgents(), loadTasks(), loadTodos()]);
     else if (name === "sessions") await loadSessions();
     else if (name === "approvals") await loadApprovals();
     else if (name === "settings") await loadSettings();
@@ -945,8 +948,118 @@ function isNearBottom(margin = 160) {
 async function loadTranscript() {
   const t = await api.get("/orchestrator/transcript");
   state.transcript = t.entries;
+  state.chatSessionId = t.sessionId;
   setOrchestratorBusy(t.busy);
   renderTranscript({ stick: true });
+  renderChatSessions();
+}
+
+/* ---------- sidebar chat history ---------- */
+
+async function loadChatSessions() {
+  const sessions = await api.get("/sessions?limit=100");
+  state.chatSessions = sessions.filter((s) => s.chatType === "main");
+  renderChatSessions();
+}
+
+function renderChatSessions() {
+  const list = $("#nav-chat-list");
+  list.innerHTML = state.chatSessions
+    .map(
+      (s) => `
+      <li class="nav-chat${s.id === state.chatSessionId ? " active" : ""}" data-chat="${esc(s.id)}" title="${esc(s.title || s.id)}">
+        <span class="nav-chat-title">${esc(s.title || s.id)}</span>
+        <span class="nav-chat-actions">
+          <button class="nav-chat-btn" data-chat-rename="${esc(s.id)}" title="rename">✎</button>
+          <button class="nav-chat-btn danger" data-chat-delete="${esc(s.id)}" title="delete">✕</button>
+        </span>
+      </li>`
+    )
+    .join("");
+
+  list.querySelectorAll("[data-chat]").forEach((row) =>
+    row.addEventListener("click", () => switchChatSession(row.dataset.chat))
+  );
+  list.querySelectorAll("[data-chat-rename]").forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      startChatRename(btn.dataset.chatRename);
+    })
+  );
+  list.querySelectorAll("[data-chat-delete]").forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteChatSession(btn.dataset.chatDelete);
+    })
+  );
+}
+
+async function switchChatSession(id) {
+  if (id === state.chatSessionId) return;
+  if (state.orchestratorBusy) {
+    toast("The assistant is busy — cancel the current run before switching chats.");
+    return;
+  }
+  try {
+    await api.post(`/orchestrator/sessions/${id}/switch`);
+    await loadTranscript();
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+}
+
+// Rename happens inline: the title swaps for an input; Enter saves, Escape or
+// clicking away cancels.
+function startChatRename(id) {
+  const row = $(`#nav-chat-list [data-chat="${CSS.escape(id)}"]`);
+  const session = state.chatSessions.find((s) => s.id === id);
+  if (!row || !session) return;
+  const input = document.createElement("input");
+  input.className = "input nav-chat-edit";
+  input.value = session.title || "";
+  row.replaceChildren(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    const title = input.value.trim();
+    if (save && title && title !== session.title) {
+      try {
+        await api.put(`/sessions/${id}`, { title });
+        session.title = title;
+      } catch (err) {
+        toast(`<b>Error:</b> ${esc(err.message)}`);
+      }
+    }
+    renderChatSessions();
+  };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") finish(true);
+    if (e.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("click", (e) => e.stopPropagation());
+}
+
+async function deleteChatSession(id) {
+  const session = state.chatSessions.find((s) => s.id === id);
+  const ok = await confirmModal(
+    "Delete this chat?",
+    `“${esc(session?.title || id)}” and its messages are removed permanently.`,
+    "Delete"
+  );
+  if (!ok) return;
+  try {
+    await api.del(`/sessions/${id}`);
+    state.chatSessions = state.chatSessions.filter((s) => s.id !== id);
+    renderChatSessions();
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
 }
 
 function summarizeToolArgs(argsJson) {
@@ -1118,6 +1231,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
   currentTurnTools = [];
   setOrchestratorBusy(true);
   $("#chat-text").value = "";
+  autosizeChatText();
 
   try {
     await api.post("/orchestrator/message", { message });
@@ -1125,6 +1239,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
     state.transcript = state.transcript.filter((x) => x !== entry);
     renderTranscript();
     $("#chat-text").value = message;
+    autosizeChatText();
     if (err.status === 409) {
       // A scheduler-initiated run is already in progress; the server's state
       // events keep driving the busy UI, so don't tear down the live stream.
@@ -1146,19 +1261,26 @@ $("#chat-text").addEventListener("keydown", (e) => {
 $("#chat-cancel").addEventListener("click", () => api.post("/orchestrator/cancel").catch(() => {}));
 
 $("#chat-new").addEventListener("click", async () => {
-  const ok = await confirmModal(
-    "Start a fresh conversation?",
-    "The current chat context is closed. History stays available in Sessions.",
-    "New chat",
-    false
-  );
-  if (!ok) return;
+  // Already on a blank chat — nothing to do.
+  if (!state.chatSessionId && state.transcript.length === 0) return;
   try {
     await api.post("/orchestrator/new-session");
+    state.chatSessionId = null;
+    await loadChatSessions();
   } catch (err) {
     toast(`<b>Error:</b> ${esc(err.message)}`);
   }
 });
+
+// The input starts one row tall and grows with the draft, like any chat app.
+const chatText = $("#chat-text");
+function autosizeChatText() {
+  chatText.style.height = "auto";
+  // scrollHeight excludes the 2px of border that border-box height includes;
+  // without it the field shrinks 2px on first input.
+  chatText.style.height = `${Math.min(chatText.scrollHeight + 2, 200)}px`;
+}
+chatText.addEventListener("input", autosizeChatText);
 
 /* ---------- todos / task manager ---------- */
 
@@ -2258,6 +2380,12 @@ function connectEvents() {
       renderToolLog();
     }
     setOrchestratorBusy(d.busy);
+    // A finished turn may have created the session (first message) or bumped
+    // its timestamp — refresh the sidebar list.
+    if (!d.busy && state.view === "orchestrator") {
+      loadChatSessions().catch(() => {});
+      if (!state.chatSessionId) loadTranscript().catch(() => {});
+    }
   });
 
   es.addEventListener("orchestrator.chunk", (e) => {
@@ -2307,10 +2435,26 @@ function connectEvents() {
 
   es.addEventListener("orchestrator.cleared", () => {
     state.transcript = [];
+    state.chatSessionId = null;
     currentTurnTools = [];
     setOrchestratorBusy(false);
-    if (state.view === "orchestrator") renderTranscript({ stick: true });
+    if (state.view === "orchestrator") {
+      renderTranscript({ stick: true });
+      renderChatSessions();
+    }
     toast("Started a <b>new conversation</b>");
+  });
+
+  es.addEventListener("orchestrator.session", () => {
+    if (state.view === "orchestrator") {
+      loadTranscript().catch(() => {});
+      loadChatSessions().catch(() => {});
+    }
+  });
+
+  es.addEventListener("sessions.changed", () => {
+    if (state.view === "orchestrator") loadChatSessions().catch(() => {});
+    if (state.view === "sessions") loadSessions().catch(() => {});
   });
 
   es.addEventListener("provider.changed", (e) => {

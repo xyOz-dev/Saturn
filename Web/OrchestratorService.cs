@@ -47,6 +47,8 @@ namespace Saturn.Web
 
         public string Model => _agent.Configuration.Model;
 
+        public string? CurrentSessionId => _agent.CurrentSessionId;
+
         public List<TranscriptEntry> GetTranscript()
         {
             lock (_transcriptLock)
@@ -65,22 +67,7 @@ namespace Saturn.Web
                     return;
                 }
 
-                var messages = await history.GetMessagesAsync(sessions[0].Id);
-                // Tool-call turns are stored with a literal "null" content; they are not part of the visible conversation.
-                var restored = messages
-                    .Where(m => (m.Role == "user" || m.Role == "assistant")
-                        && !string.IsNullOrWhiteSpace(m.Content)
-                        && m.Content != "null")
-                    .Select(m => new TranscriptEntry
-                    {
-                        Role = m.Role,
-                        Content = m.Content,
-                        Timestamp = m.Timestamp,
-                        // Persisted messages carry no source; recover the scheduler tag
-                        // from the prompt prefix so they keep their styling after restart.
-                        Source = m.Role == "user" && m.Content.StartsWith("[Saturn Scheduler]") ? "scheduler" : "user"
-                    })
-                    .ToList();
+                var restored = ToTranscriptEntries(await history.GetMessagesAsync(sessions[0].Id));
 
                 if (restored.Count == 0)
                 {
@@ -234,6 +221,56 @@ namespace Saturn.Web
                 _transcript.Add(entry);
             }
             _hub.Publish("orchestrator.message", entry);
+        }
+
+        // Tool-call turns are stored with a literal "null" content; they are not part of the visible conversation.
+        private static List<TranscriptEntry> ToTranscriptEntries(IEnumerable<Saturn.Data.Models.ChatMessage> messages)
+        {
+            return messages
+                .Where(m => (m.Role == "user" || m.Role == "assistant")
+                    && !string.IsNullOrWhiteSpace(m.Content)
+                    && m.Content != "null")
+                .Select(m => new TranscriptEntry
+                {
+                    Role = m.Role,
+                    Content = m.Content,
+                    Timestamp = m.Timestamp,
+                    // Persisted messages carry no source; recover the scheduler tag
+                    // from the prompt prefix so they keep their styling after restart.
+                    Source = m.Role == "user" && m.Content.StartsWith("[Saturn Scheduler]") ? "scheduler" : "user"
+                })
+                .ToList();
+        }
+
+        /// <summary>
+        /// Points the orchestrator at an existing main-chat session: the current
+        /// session is closed and the target's history becomes the live context.
+        /// Returns false when a run is in flight — switching mid-response would
+        /// interleave two conversations.
+        /// </summary>
+        public async Task<bool> SwitchSessionAsync(string sessionId, ChatHistoryRepository history)
+        {
+            if (IsBusy)
+            {
+                return false;
+            }
+
+            var restored = ToTranscriptEntries(await history.GetMessagesAsync(sessionId));
+
+            _agent.ClearHistory();
+            _parentWired = false;
+            _agent.CurrentSessionId = sessionId;
+            await history.SetSessionActiveAsync(sessionId);
+            _agent.RehydrateHistory(restored.Select(e => (e.Role, e.Content)).ToList());
+
+            lock (_transcriptLock)
+            {
+                _sessionEpoch++;
+                _transcript.Clear();
+                _transcript.AddRange(restored);
+            }
+            _hub.Publish("orchestrator.session", new { sessionId });
+            return true;
         }
 
         public void StartNewSession()

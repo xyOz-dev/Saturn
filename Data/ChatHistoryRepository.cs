@@ -633,6 +633,80 @@ public class ChatHistoryRepository : IDisposable
         });
     }
 
+    public async Task SetSessionActiveAsync(string sessionId)
+    {
+        await WithDbLockAsync(async () =>
+        {
+            using var connection = CreateConnection();
+
+            var sql = "UPDATE ChatSessions SET IsActive = 1 WHERE Id = @Id";
+            using var cmd = new SqliteCommand(sql, connection);
+            cmd.Parameters.AddWithValue("@Id", sessionId);
+
+            await cmd.ExecuteNonQueryAsync();
+        });
+    }
+
+    public async Task<bool> RenameSessionAsync(string sessionId, string title)
+    {
+        return await WithDbLockAsync(async () =>
+        {
+            using var connection = CreateConnection();
+
+            var sql = "UPDATE ChatSessions SET Title = @Title, UpdatedAt = @UpdatedAt WHERE Id = @Id";
+            using var cmd = new SqliteCommand(sql, connection);
+            cmd.Parameters.AddWithValue("@Id", sessionId);
+            cmd.Parameters.AddWithValue("@Title", title);
+            cmd.Parameters.AddWithValue("@UpdatedAt", DateTime.UtcNow.ToString("O"));
+
+            return await cmd.ExecuteNonQueryAsync() > 0;
+        });
+    }
+
+    public async Task<bool> DeleteSessionAsync(string sessionId)
+    {
+        return await WithDbLockAsync(async () =>
+        {
+            using var connection = CreateConnection();
+            using var transaction = connection.BeginTransaction();
+
+            try
+            {
+                // Sub-agent sessions hang off the parent; removing a chat removes
+                // the whole tree so no orphaned rows survive.
+                var scope = "SELECT Id FROM ChatSessions WHERE Id = @Id OR ParentSessionId = @Id";
+
+                foreach (var sql in new[]
+                {
+                    $"DELETE FROM ToolCalls WHERE SessionId IN ({scope})",
+                    $"DELETE FROM ChatMessages WHERE SessionId IN ({scope})",
+                    $"DELETE FROM SessionTodos WHERE SessionId IN ({scope})",
+                })
+                {
+                    using var cmd = new SqliteCommand(sql, connection, transaction);
+                    cmd.Parameters.AddWithValue("@Id", sessionId);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                int deleted;
+                using (var cmd = new SqliteCommand(
+                    "DELETE FROM ChatSessions WHERE Id = @Id OR ParentSessionId = @Id", connection, transaction))
+                {
+                    cmd.Parameters.AddWithValue("@Id", sessionId);
+                    deleted = await cmd.ExecuteNonQueryAsync();
+                }
+
+                await transaction.CommitAsync();
+                return deleted > 0;
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+    }
+
     public async Task SaveSessionTodosAsync(string sessionId, string? todosJson)
     {
         await WithDbLockAsync(async () =>

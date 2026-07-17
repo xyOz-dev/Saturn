@@ -23,6 +23,10 @@
         <button class="nav-item active" data-view="orchestrator">
           <span class="nav-icon">◈</span><span class="nav-label">Orchestrator</span>
         </button>
+        <div class="nav-chats" id="nav-chats" hidden>
+          <button class="nav-chats-new" id="chat-new">+ New chat</button>
+          <ul class="nav-chat-list" id="nav-chat-list"></ul>
+        </div>
         <button class="nav-item" data-view="overview">
           <span class="nav-icon">▣</span><span class="nav-label">Overview</span>
         </button>
@@ -148,11 +152,10 @@
             </div>
           </div>
           <form class="chat-input" id="chat-form">
-            <textarea id="chat-text" rows="2" placeholder="Instruct the orchestrator… (Enter to send, Shift+Enter for newline)"></textarea>
+            <textarea id="chat-text" rows="1" placeholder="Instruct the orchestrator… (Enter to send, Shift+Enter for newline)"></textarea>
             <div class="chat-buttons">
               <button type="submit" class="btn primary" id="chat-send">Send</button>
               <button type="button" class="btn danger" id="chat-cancel" hidden>Cancel</button>
-              <button type="button" class="btn ghost sm" id="chat-new" title="start a fresh conversation">New chat</button>
             </div>
           </form>
         </div>

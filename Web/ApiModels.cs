@@ -52,6 +52,8 @@ namespace Saturn.Web
 
     public record ApprovalDecisionRequest(bool Approved);
 
+    public record SessionRenameRequest(string? Title);
+
     public record ProviderSwitchRequest(string Provider, Dictionary<string, string?>? Settings, string? Model);
 
     public record SearchProviderSwitchRequest(string? Provider, Dictionary<string, string?>? Settings);
