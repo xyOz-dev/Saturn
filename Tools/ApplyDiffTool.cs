@@ -387,7 +387,12 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                             throw new InvalidOperationException($"Malformed patch at line {i + 1}: expected a hunk header like '@@ context @@' but found: {lines[i]}");
                         }
                     }
-                    
+
+                    if (hunks.Count == 0)
+                    {
+                        throw new InvalidOperationException($"Update section for '{filePath}' contains no hunks; expected at least one '@@ context @@' hunk followed by change lines");
+                    }
+
                     operations.Add(new PatchOperation { Type = OperationType.Update, FilePath = filePath, Hunks = hunks });
                 }
                 else if (line.StartsWith("*** Add File:"))
