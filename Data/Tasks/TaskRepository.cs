@@ -106,7 +106,16 @@ namespace Saturn.Data.Tasks
                         Orphaned INTEGER NOT NULL DEFAULT 0
                     );
                     CREATE INDEX IF NOT EXISTS idx_dispatch_mgr ON TaskDispatches(AgentManagerTaskId);
-                    CREATE INDEX IF NOT EXISTS idx_dispatch_open ON TaskDispatches(TaskId) WHERE CompletedAt IS NULL;
+
+                    UPDATE TaskDispatches SET Orphaned = 1
+                    WHERE CompletedAt IS NULL AND Orphaned = 0 AND Id NOT IN (
+                        SELECT d2.Id FROM TaskDispatches d2
+                        WHERE d2.CompletedAt IS NULL AND d2.Orphaned = 0 AND d2.TaskId = TaskDispatches.TaskId
+                        ORDER BY d2.StartedAt DESC LIMIT 1
+                    );
+
+                    DROP INDEX IF EXISTS idx_dispatch_open;
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_dispatch_open_unique ON TaskDispatches(TaskId) WHERE CompletedAt IS NULL AND Orphaned = 0;
 
                     CREATE TABLE IF NOT EXISTS WakeQueue (
                         Id TEXT PRIMARY KEY,
@@ -169,9 +178,23 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
+        // Optimistic concurrency: the write only lands if the row still carries the
+        // UpdatedAt the caller loaded. Returns false when a concurrent writer got
+        // there first (or the row is gone); callers reload, reapply and retry.
         public Task<bool> UpdateTaskAsync(SaturnTask t, CancellationToken ct = default)
         {
-            t.UpdatedAt = DateTime.UtcNow;
+            // UpdatedAt is stored via ToString("O") and read back with
+            // RoundtripKind, so the "O" string of the loaded value matches the
+            // stored text exactly; compare on that form rather than on ticks.
+            var expectedUpdatedAt = t.UpdatedAt.ToString("O");
+            var now = DateTime.UtcNow;
+            if (now <= t.UpdatedAt)
+            {
+                // Clock granularity can make back-to-back updates share a timestamp,
+                // which would let a stale writer still match; always move forward.
+                now = t.UpdatedAt.AddTicks(1);
+            }
+            t.UpdatedAt = now;
             return WithWriteLockAsync(async () =>
             {
                 using var connection = CreateConnection();
@@ -183,9 +206,10 @@ namespace Saturn.Data.Tasks
                         RecurrenceIntervalSeconds=@RecurrenceIntervalSeconds, RecurrenceCron=@RecurrenceCron,
                         CatchUpPolicy=@CatchUpPolicy, NextRunAt=@NextRunAt, LastRunAt=@LastRunAt,
                         UpdatedAt=@UpdatedAt, CompletedAt=@CompletedAt
-                    WHERE Id=@Id", connection);
+                    WHERE Id=@Id AND UpdatedAt=@ExpectedUpdatedAt", connection);
                 BindTask(cmd, t);
                 cmd.Parameters.AddWithValue("@SortOrder", t.SortOrder);
+                cmd.Parameters.AddWithValue("@ExpectedUpdatedAt", expectedUpdatedAt);
                 return await cmd.ExecuteNonQueryAsync(ct) > 0;
             }, ct);
         }
@@ -202,15 +226,26 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
-        public Task<bool> DeleteTaskAsync(string id, CancellationToken ct = default)
+        // expectedUpdatedAt, when given, guards the delete with the same
+        // optimistic-concurrency token as UpdateTaskAsync so a scope-move's
+        // delete+insert can't discard a write that landed after it loaded the row.
+        public Task<bool> DeleteTaskAsync(string id, DateTime? expectedUpdatedAt = null, CancellationToken ct = default)
         {
             return WithWriteLockAsync(async () =>
             {
                 using var connection = CreateConnection();
-                using var cmd = new SqliteCommand(
-                    "DELETE FROM Tasks WHERE Id = @Id; DELETE FROM TaskDependencies WHERE TaskId = @Id OR BlockedByTaskId = @Id;",
-                    connection);
+                var sql = "DELETE FROM Tasks WHERE Id = @Id";
+                if (expectedUpdatedAt.HasValue)
+                {
+                    sql += " AND UpdatedAt = @ExpectedUpdatedAt";
+                }
+                sql += "; DELETE FROM TaskDependencies WHERE TaskId = @Id OR BlockedByTaskId = @Id;";
+                using var cmd = new SqliteCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@Id", id);
+                if (expectedUpdatedAt.HasValue)
+                {
+                    cmd.Parameters.AddWithValue("@ExpectedUpdatedAt", expectedUpdatedAt.Value.ToString("O"));
+                }
                 return await cmd.ExecuteNonQueryAsync(ct) > 0;
             }, ct);
         }
@@ -349,9 +384,9 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
-        public Task SetLatestRunOutcomeAsync(string taskId, string outcome, CancellationToken ct = default)
+        public Task<int> SetLatestRunOutcomeAsync(string taskId, string outcome, CancellationToken ct = default)
         {
-            return WithWriteLockAsync<object?>(async () =>
+            return WithWriteLockAsync(async () =>
             {
                 using var connection = CreateConnection();
                 using var cmd = new SqliteCommand(@"
@@ -360,8 +395,7 @@ namespace Saturn.Data.Tasks
                     connection);
                 cmd.Parameters.AddWithValue("@TaskId", taskId);
                 cmd.Parameters.AddWithValue("@Outcome", outcome);
-                await cmd.ExecuteNonQueryAsync(ct);
-                return null;
+                return await cmd.ExecuteNonQueryAsync(ct);
             }, ct);
         }
 
@@ -388,6 +422,17 @@ namespace Saturn.Data.Tasks
                     });
                 }
                 return runs;
+            }, ct);
+        }
+
+        public Task<bool> DeleteRunsForTaskAsync(string taskId, CancellationToken ct = default)
+        {
+            return WithWriteLockAsync(async () =>
+            {
+                using var connection = CreateConnection();
+                using var cmd = new SqliteCommand("DELETE FROM TaskRuns WHERE TaskId = @TaskId", connection);
+                cmd.Parameters.AddWithValue("@TaskId", taskId);
+                return await cmd.ExecuteNonQueryAsync(ct) > 0;
             }, ct);
         }
 

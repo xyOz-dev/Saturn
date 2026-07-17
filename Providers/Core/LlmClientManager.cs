@@ -115,6 +115,8 @@ namespace Saturn.Providers
                 RetireClient(retired);
             }
 
+            ModelCatalog.Invalidate();
+
             ProviderChanged?.Invoke(this, new ProviderChangedEventArgs(previousName, provider.Name, candidate));
             return SwapResult.Ok(candidate);
         }

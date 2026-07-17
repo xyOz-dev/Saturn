@@ -18,6 +18,7 @@ namespace Saturn.Agents.MultiAgent.Objects
         public AgentTask? CurrentTask { get; set; }
         public int RevisionCount { get; set; } = 0;
         public CancellationTokenSource? Cancellation { get; set; }
+        public Task? ExecutionTask { get; set; }
         public bool DisposeOnTaskCompletion { get; set; }
     }
 }

@@ -45,8 +45,7 @@ namespace Saturn
                     var server = new Saturn.Web.WebServer(agent, client, port);
                     Console.WriteLine($"Saturn web UI running at {server.Url}");
                     Console.WriteLine("Press Ctrl+C to stop.");
-                    TryOpenBrowser(server.Url);
-                    await server.RunAsync();
+                    await server.RunAsync(onReady: () => TryOpenBrowser(server.Url));
                     return;
                 }
 
@@ -176,7 +175,7 @@ namespace Saturn
             // Persisted configs predate newer tools; backfill only those.
             // Re-adding the full default set would silently restore tools
             // the user deliberately removed (e.g. execute_command).
-            var backfillTools = new List<string> { "update_todos", "web_search" };
+            var backfillTools = new List<string> { "update_todos", "web_search", "spawn_agent", "get_agent_status" };
             if (isWebMode)
             {
                 backfillTools.AddRange(WebModeTaskTools);

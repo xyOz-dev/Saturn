@@ -516,8 +516,14 @@ namespace Saturn.UI
             {
                 if (isProcessing && cancellationTokenSource != null)
                 {
-                    cancellationTokenSource.Cancel();
-                    
+                    try
+                    {
+                        cancellationTokenSource.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
+
                     AgentManager.Instance.TerminateAllAgents();
                     
                     sendButton.Text = "Send";
@@ -595,7 +601,8 @@ namespace Saturn.UI
                 return;
 
             isProcessing = true;
-            cancellationTokenSource = new CancellationTokenSource();
+            var cts = new CancellationTokenSource();
+            cancellationTokenSource = cts;
 
             try
             {
@@ -665,7 +672,7 @@ namespace Saturn.UI
                                         });
                                     }
                                 },
-                                cancellationTokenSource.Token);
+                                cts.Token);
 
                             Application.MainLoop.Invoke(() =>
                             {
@@ -712,18 +719,18 @@ namespace Saturn.UI
                         }
                         else
                         {
-                            Message response = await agent.Execute<Message>(message);
+                            Message response = await agent.Execute<Message>(message, cancellationTokenSource.Token);
                             var responseText = response.Content.ToString();
                             var renderedResponse = markdownRenderer.RenderToTerminal(responseText);
 
                             Application.MainLoop.Invoke(() =>
                             {
                                 var currentText = chatView.Text;
-                                
+
                                 chatView.Text += renderedResponse;
-                                
+
                                 var updatedText = chatView.Text;
-                                bool endsWithNewline = updatedText.EndsWith("\n\n");
+                                bool endsWithNewline = updatedText.EndsWith("\n");
                                 bool endsWithDoubleNewline = updatedText.EndsWith("\n\n");
                                 
                                 var trimmedResponse = renderedResponse.TrimEnd();
@@ -775,15 +782,18 @@ namespace Saturn.UI
             }
             finally
             {
-                sendButton.Text = "Send";
-                sendButton.Enabled = true;
-                inputField.ReadOnly = false;
-                isProcessing = false;
-                cancellationTokenSource?.Dispose();
-                cancellationTokenSource = null;
-                UpdateAgentStatus("Ready");
-                inputField.SetFocus();
-                Application.Refresh();
+                if (ReferenceEquals(cancellationTokenSource, cts))
+                {
+                    cancellationTokenSource = null;
+                    isProcessing = false;
+                    sendButton.Text = "Send";
+                    sendButton.Enabled = true;
+                    inputField.ReadOnly = false;
+                    UpdateAgentStatus("Ready");
+                    inputField.SetFocus();
+                    Application.Refresh();
+                }
+                cts.Dispose();
             }
         }
 
@@ -941,8 +951,6 @@ namespace Saturn.UI
 
             if (!dialog.Applied) return;
 
-            ModelCatalog.Invalidate();
-
             var providerName = manager.ActiveProviderName;
             var capabilities = manager.Current.Capabilities;
 
@@ -968,7 +976,15 @@ namespace Saturn.UI
             agent.Configuration.Model = model;
             AgentManager.Instance.SetParentModel(model);
 
-            await ConfigurationManager.SaveProviderSelectionAsync(providerName, dialog.AppliedSettings ?? new ProviderSettings(), model);
+            try
+            {
+                await ConfigurationManager.SaveProviderSelectionAsync(providerName, dialog.AppliedSettings ?? new ProviderSettings(), model);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Provider",
+                    $"Provider switched for this session, but saving the configuration failed:\n{ex.Message}", "OK");
+            }
             await UpdateConfiguration();
 
             chatView.Text += $"\n[Provider switched to {capabilities.ProviderName} | Model: {model}]\n";
@@ -1448,8 +1464,8 @@ namespace Saturn.UI
         {
             var dialog = new ToolSelectionDialog(currentConfig.ToolNames);
             Application.Run(dialog);
-            
-            if (dialog.SelectedTools.Count > 0 || currentConfig.ToolNames?.Count > 0)
+
+            if (!dialog.WasCancelled)
             {
                 currentConfig.ToolNames = dialog.SelectedTools;
                 currentConfig.EnableTools = dialog.SelectedTools.Count > 0;

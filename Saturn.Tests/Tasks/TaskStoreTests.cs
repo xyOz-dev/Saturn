@@ -150,6 +150,31 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public async Task CompleteAsync_RecurringTaskThatNeverFired_RecordsRunAndUnblocksDependents()
+        {
+            var recurring = await CreateTaskAsync("nightly job", s =>
+            {
+                s.RecurrenceKind = RecurrenceKinds.Interval;
+                s.RecurrenceIntervalSeconds = 3600;
+            });
+            var dependent = await CreateTaskAsync("after nightly", s => s.BlockedBy = new List<string> { recurring.Id });
+
+            // No TaskRuns row exists yet: the due-recurrence sweep never fired this task.
+            (await _store.Project.GetRunsAsync(recurring.Id)).Should().BeEmpty();
+
+            var completed = await _store.CompleteAsync(recurring.Id, success: true);
+
+            completed!.Status.Should().Be(TaskStatuses.Pending);
+
+            var runs = await _store.Project.GetRunsAsync(recurring.Id);
+            runs.Should().ContainSingle().Which.Outcome.Should().NotBeNull();
+
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+            var blockers = await _store.GetBlockersAsync(dependent.Id);
+            blockers.Should().ContainSingle().Which.Satisfied.Should().BeTrue();
+        }
+
+        [Fact]
         public async Task CompleteAsync_RecurringTask_ResetsToPendingAndRecordsOutcome()
         {
             var recurring = await CreateTaskAsync("hourly job", s =>
@@ -187,6 +212,22 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public async Task UpdateAsync_SettingStatusToDone_FiresCompletedEvent()
+        {
+            var task = await CreateTaskAsync("finish via update");
+
+            var changes = new List<(string Change, string Status)>();
+            _store.OnTaskChanged += (change, changedTask) => changes.Add((change, changedTask.Status));
+
+            var updated = await _store.UpdateAsync(task.Id, new TaskUpdateSpec { Status = TaskStatuses.Done });
+
+            updated!.Status.Should().Be(TaskStatuses.Done);
+
+            // update_task must trigger the same unblock sweep as complete_task.
+            changes.Should().ContainSingle(c => c.Change == "completed" && c.Status == TaskStatuses.Done);
+        }
+
+        [Fact]
         public async Task UpdateAsync_ScopeChange_MovesTaskBetweenDatabases()
         {
             var task = await CreateTaskAsync("mover");
@@ -212,6 +253,66 @@ namespace Saturn.Tests.Tasks
 
             await _store.CompleteAsync(blocker.Id);
             (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task UpdateAsync_ScopeChange_MigratesRunHistorySoRecurringDependentsStayUnblocked()
+        {
+            var recurring = await CreateTaskAsync("nightly job", s =>
+            {
+                s.RecurrenceKind = RecurrenceKinds.Interval;
+                s.RecurrenceIntervalSeconds = 3600;
+            });
+            var dependent = await CreateTaskAsync("after nightly", s => s.BlockedBy = new List<string> { recurring.Id });
+
+            // Simulate one fired occurrence completing while the task is still project-scoped.
+            await _store.Project.InsertRunAsync(new TaskRun { TaskId = recurring.Id, ScheduledFor = DateTime.UtcNow });
+            await _store.CompleteAsync(recurring.Id, success: true);
+
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+
+            await _store.UpdateAsync(recurring.Id, new TaskUpdateSpec { Scope = TaskScopes.Global });
+
+            // The completed run must have moved with the task, or the dependent
+            // becomes re-blocked because its history is now invisible.
+            (await _store.Project.GetRunsAsync(recurring.Id)).Should().BeEmpty();
+            var migratedRuns = await _store.Global.GetRunsAsync(recurring.Id);
+            migratedRuns.Should().ContainSingle().Which.Outcome.Should().NotBeNull();
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task UpdateTaskAsync_RejectsStaleWrites()
+        {
+            var task = await CreateTaskAsync("contended");
+
+            var copyA = await _store.Project.GetTaskAsync(task.Id);
+            var copyB = await _store.Project.GetTaskAsync(task.Id);
+
+            copyA!.Notes = "first writer";
+            (await _store.Project.UpdateTaskAsync(copyA)).Should().BeTrue();
+
+            // copyB still carries the pre-update UpdatedAt, so its write must lose.
+            copyB!.Status = TaskStatuses.InProgress;
+            (await _store.Project.UpdateTaskAsync(copyB)).Should().BeFalse();
+
+            var current = await _store.Project.GetTaskAsync(task.Id);
+            current!.Notes.Should().Be("first writer");
+            current.Status.Should().Be(TaskStatuses.Pending);
+        }
+
+        [Fact]
+        public async Task UpdateAsync_ReappliesOnConflict_InsteadOfClobbering()
+        {
+            var task = await CreateTaskAsync("racy");
+
+            // A stale in-memory copy commits between our load and write paths;
+            // the store-level update must still land without reverting it.
+            await _store.CompleteAsync(task.Id);
+            var updated = await _store.UpdateAsync(task.Id, new TaskUpdateSpec { Notes = "late edit" });
+
+            updated!.Notes.Should().Be("late edit");
+            updated.Status.Should().Be(TaskStatuses.Done);
         }
 
         [Fact]

@@ -346,8 +346,8 @@ namespace Saturn.UI.Dialogs
         {
             var toolDialog = new ToolSelectionDialog(selectedTools);
             Application.Run(toolDialog);
-            
-            if (toolDialog.SelectedTools != null)
+
+            if (!toolDialog.WasCancelled)
             {
                 selectedTools = toolDialog.SelectedTools;
                 UpdateToolCountLabel();

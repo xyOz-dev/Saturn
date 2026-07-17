@@ -15,17 +15,22 @@ using Xunit;
 
 namespace Saturn.Tests.Tools
 {
+    [Collection("AgentManager")]
     public class SpawnAgentToolTests : IDisposable
     {
+        private readonly int _originalMaxAgents;
+
         public SpawnAgentToolTests()
         {
             AgentManager.Instance.SetParentSessionId(null);
             AgentManager.Instance.SetParentModel(null);
+            _originalMaxAgents = AgentManager.Instance.GetMaxConcurrentAgents();
         }
 
         public void Dispose()
         {
             AgentManager.Instance.TerminateAllAgents();
+            AgentManager.Instance.SetMaxConcurrentAgents(_originalMaxAgents);
         }
 
         private static Dictionary<string, object> Params(string name, string task, params (string key, object value)[] extra)
@@ -44,8 +49,8 @@ namespace Saturn.Tests.Tools
 
         private static async Task WaitForAgentCountAsync(int expected, int timeoutMs = 2000)
         {
-            var start = DateTime.Now;
-            while ((DateTime.Now - start).TotalMilliseconds < timeoutMs)
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            while (stopwatch.ElapsedMilliseconds < timeoutMs)
             {
                 if (AgentManager.Instance.GetCurrentAgentCount() == expected)
                 {
@@ -132,6 +137,29 @@ namespace Saturn.Tests.Tools
             completed.Should().ContainSingle(r => r.TaskId == taskId && r.Success);
 
             await WaitForAgentCountAsync(baseline);
+        }
+
+        [Fact]
+        public async Task Execute_AtAgentLimit_ReturnsErrorWithoutLeakingSlot()
+        {
+            var client = new BlockingLlmClient();
+            AgentManager.Instance.Initialize(new StaticClientSource(client, "fake"));
+            AgentManager.Instance.SetMaxConcurrentAgents(1);
+
+            var tool = new SpawnAgentTool();
+            var first = await tool.ExecuteAsync(Params("occupier", "Hold the only slot.", ("background", true)));
+            first.Success.Should().BeTrue();
+
+            var second = await tool.ExecuteAsync(Params("overflow", "Should not fit."));
+
+            second.Success.Should().BeFalse();
+            second.Error.Should().Contain("Maximum concurrent agent limit");
+            AgentManager.Instance.GetCurrentAgentCount().Should().Be(1);
+
+            client.Unblock();
+            var taskId = (string)((Dictionary<string, object>)first.RawData!)["task_id"];
+            await AgentManager.Instance.WaitForAllTasks(new List<string> { taskId }, 5000);
+            await WaitForAgentCountAsync(0);
         }
 
         [Fact]

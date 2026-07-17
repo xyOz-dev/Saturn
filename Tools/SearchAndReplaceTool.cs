@@ -155,18 +155,24 @@ Safety features:
             {
                 replacement = "";
             }
-            
+
+            // Escape dollar signs in replacement string for literal mode to prevent regex substitution tokens
+            if (!useRegex)
+            {
+                replacement = replacement.Replace("$", "$$");
+            }
+
             try
             {
                 ValidatePathSecurity(basePath);
-                
+
                 var files = await FindMatchingFiles(filePattern, basePath, exclude, maxFiles);
-                
+
                 if (files.Count == 0)
                 {
                     return CreateSuccessResult(new { Files = 0 }, $"No files found matching pattern '{filePattern}'");
                 }
-                
+
                 var regex = BuildSearchRegex(searchPattern, useRegex, caseSensitive, wholeWord);
                 var results = await ProcessFiles(files, regex, replacement, dryRun);
                 

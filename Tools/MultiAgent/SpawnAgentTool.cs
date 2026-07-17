@@ -61,6 +61,7 @@ Rules:
                 ["timeout_seconds"] = new Dictionary<string, object>
                 {
                     ["type"] = "number",
+                    ["default"] = 600,
                     ["description"] = "How long to wait for the agent before returning control (default: 600). Only used when background is false; on timeout the agent keeps running and you get a task_id to wait on."
                 }
             };

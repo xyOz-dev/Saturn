@@ -137,14 +137,10 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                 
                 await ValidateFilesForReading(filesNeeded);
                 await ValidateFilesForAdding(filesToAdd);
-                
-                var currentFiles = await LoadCurrentFiles(filesNeeded);
 
-                var operations = ParsePatchText(patchText, currentFiles);
-                
                 var allFiles = filesNeeded.Union(filesToAdd).ToList();
                 var lockedFiles = new List<string>();
-                
+
                 try
                 {
                     foreach (var file in allFiles)
@@ -160,7 +156,11 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                             lockedFiles.Add(absPath);
                         }
                     }
-                    
+
+                    var currentFiles = await LoadCurrentFiles(filesNeeded);
+
+                    var operations = ParsePatchText(patchText, currentFiles);
+
                     var commit = ConvertToCommit(operations, currentFiles);
                 
                 var stats = CalculateStatistics(commit);
@@ -347,16 +347,17 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                     
                     while (i < lines.Length && !lines[i].StartsWith("***"))
                     {
-                        if (lines[i].StartsWith("@@") && lines[i].EndsWith("@@") && lines[i].Length > 4)
+                        var trimmedLine = lines[i].TrimEnd();
+                        if (trimmedLine.StartsWith("@@") && trimmedLine.EndsWith("@@") && trimmedLine.Length > 4)
                         {
-                            var contextLine = lines[i].Substring(2, lines[i].Length - 4).Trim();
+                            var contextLine = trimmedLine.Substring(2, trimmedLine.Length - 4).Trim();
                             if (string.IsNullOrEmpty(contextLine))
                             {
                                 throw new InvalidOperationException($"Empty context line at line {i + 1}");
                             }
                             var changes = new List<PatchChange>();
                             i++;
-                            
+
                             while (i < lines.Length && !lines[i].StartsWith("@@") && !lines[i].StartsWith("***"))
                             {
                                 var changeLine = lines[i];
@@ -374,15 +375,24 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                                 }
                                 i++;
                             }
-                            
+
                             hunks.Add(new PatchHunk { ContextLine = contextLine, Changes = changes });
                         }
-                        else
+                        else if (string.IsNullOrWhiteSpace(lines[i]))
                         {
                             i++;
                         }
+                        else
+                        {
+                            throw new InvalidOperationException($"Malformed patch at line {i + 1}: expected a hunk header like '@@ context @@' but found: {lines[i]}");
+                        }
                     }
-                    
+
+                    if (hunks.Count == 0)
+                    {
+                        throw new InvalidOperationException($"Update section for '{filePath}' contains no hunks; expected at least one '@@ context @@' hunk followed by change lines");
+                    }
+
                     operations.Add(new PatchOperation { Type = OperationType.Update, FilePath = filePath, Hunks = hunks });
                 }
                 else if (line.StartsWith("*** Add File:"))

@@ -186,9 +186,15 @@ namespace Saturn.OpenRouter.Http
             string? payload = null;
             try
             {
+                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                readCts.CancelAfter(TimeSpan.FromSeconds(30));
                 payload = response.Content is null
                     ? null
-                    : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    : await response.Content.ReadAsStringAsync(readCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch
             {
