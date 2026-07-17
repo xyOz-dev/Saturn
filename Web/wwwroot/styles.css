@@ -579,6 +579,25 @@ textarea.input { resize: vertical; font-family: inherit; }
   overflow-wrap: break-word;
   animation: rise-in 0.25s var(--ease);
 }
+
+/* Off-screen bubbles skip layout and paint entirely. */
+.chat-msg, .chat-task {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+
+.chat-older {
+  align-self: center;
+  color: var(--dim);
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  padding: 6px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.chat-older:hover { color: var(--text); border-color: var(--muted); }
 .chat-msg.user { align-self: flex-end; background: var(--white); color: #000; border-bottom-right-radius: 4px; }
 .chat-msg.pending { opacity: 0.65; }
 .chat-msg.user.scheduler {

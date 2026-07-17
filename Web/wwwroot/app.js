@@ -195,6 +195,7 @@ function removeApprovalToast(id) {
 const state = {
   view: "orchestrator",
   workTab: "queue",
+  chatWindow: 20,
   overview: null,
   agents: [],
   tasks: { running: [], completed: [] },
@@ -934,12 +935,29 @@ function buildToolStrip(tools) {
   return details;
 }
 
+/* Only a window of recent messages lives in the DOM. While following the
+   bottom the window trims back to CHAT_WINDOW (older nodes are disposed);
+   scrolling toward the top restores CHAT_WINDOW_STEP more at a time, starting
+   CHAT_LOAD_MARGIN px before the rendered history runs out. */
+const CHAT_WINDOW = 20;
+const CHAT_WINDOW_STEP = 20;
+const CHAT_LOAD_MARGIN = 800;
+
 function renderTranscript(opts = {}) {
   // Compute stickiness before wiping the log — the wipe changes scrollHeight.
   const stick = opts.stick ?? isNearBottom();
+  if (stick) state.chatWindow = CHAT_WINDOW;
   const log = $("#chat-log");
   log.innerHTML = "";
-  for (const e of state.transcript) {
+  const hidden = Math.max(0, state.transcript.length - state.chatWindow);
+  if (hidden > 0) {
+    const older = document.createElement("button");
+    older.className = "chat-older";
+    older.textContent = `↑ ${hidden} earlier message${hidden === 1 ? "" : "s"}`;
+    older.addEventListener("click", growChatWindow);
+    log.appendChild(older);
+  }
+  for (const e of state.transcript.slice(-state.chatWindow)) {
     if (e.role === "task") {
       const card = document.createElement("details");
       card.className = `chat-task${e.success === false ? " failed" : ""}`;
@@ -972,6 +990,25 @@ function renderTranscript(opts = {}) {
   }
   if (stick) scrollChatToBottom();
 }
+
+function growChatWindow() {
+  if (state.chatWindow >= state.transcript.length) return;
+  const scroll = $("#chat-scroll");
+  const prevHeight = scroll.scrollHeight;
+  const prevTop = scroll.scrollTop;
+  state.chatWindow = Math.min(state.transcript.length, state.chatWindow + CHAT_WINDOW_STEP);
+  renderTranscript({ stick: false });
+  // Older content was prepended; offset by the height it added so the
+  // message the user was looking at stays put.
+  scroll.scrollTop = prevTop + (scroll.scrollHeight - prevHeight);
+}
+
+$("#chat-scroll").addEventListener("scroll", () => {
+  const scroll = $("#chat-scroll");
+  if (scroll.scrollTop < CHAT_LOAD_MARGIN && state.chatWindow < state.transcript.length) {
+    growChatWindow();
+  }
+});
 
 let workingSince = null;
 let workingTimer = null;
