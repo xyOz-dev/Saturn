@@ -150,6 +150,31 @@ namespace Saturn.Tests.Tasks
         }
 
         [Fact]
+        public async Task CompleteAsync_RecurringTaskThatNeverFired_RecordsRunAndUnblocksDependents()
+        {
+            var recurring = await CreateTaskAsync("nightly job", s =>
+            {
+                s.RecurrenceKind = RecurrenceKinds.Interval;
+                s.RecurrenceIntervalSeconds = 3600;
+            });
+            var dependent = await CreateTaskAsync("after nightly", s => s.BlockedBy = new List<string> { recurring.Id });
+
+            // No TaskRuns row exists yet: the due-recurrence sweep never fired this task.
+            (await _store.Project.GetRunsAsync(recurring.Id)).Should().BeEmpty();
+
+            var completed = await _store.CompleteAsync(recurring.Id, success: true);
+
+            completed!.Status.Should().Be(TaskStatuses.Pending);
+
+            var runs = await _store.Project.GetRunsAsync(recurring.Id);
+            runs.Should().ContainSingle().Which.Outcome.Should().NotBeNull();
+
+            (await _store.IsBlockedAsync(dependent.Id)).Should().BeFalse();
+            var blockers = await _store.GetBlockersAsync(dependent.Id);
+            blockers.Should().ContainSingle().Which.Satisfied.Should().BeTrue();
+        }
+
+        [Fact]
         public async Task CompleteAsync_RecurringTask_ResetsToPendingAndRecordsOutcome()
         {
             var recurring = await CreateTaskAsync("hourly job", s =>

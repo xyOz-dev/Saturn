@@ -384,9 +384,9 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
-        public Task SetLatestRunOutcomeAsync(string taskId, string outcome, CancellationToken ct = default)
+        public Task<int> SetLatestRunOutcomeAsync(string taskId, string outcome, CancellationToken ct = default)
         {
-            return WithWriteLockAsync<object?>(async () =>
+            return WithWriteLockAsync(async () =>
             {
                 using var connection = CreateConnection();
                 using var cmd = new SqliteCommand(@"
@@ -395,8 +395,7 @@ namespace Saturn.Data.Tasks
                     connection);
                 cmd.Parameters.AddWithValue("@TaskId", taskId);
                 cmd.Parameters.AddWithValue("@Outcome", outcome);
-                await cmd.ExecuteNonQueryAsync(ct);
-                return null;
+                return await cmd.ExecuteNonQueryAsync(ct);
             }, ct);
         }
 
