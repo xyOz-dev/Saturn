@@ -47,34 +47,10 @@ namespace Saturn.Configuration
         {
             try
             {
-                if (!File.Exists(ConfigFilePath))
-                {
-                    return null;
-                }
-
-                var json = await File.ReadAllTextAsync(ConfigFilePath);
-                var config = JsonSerializer.Deserialize<PersistedAgentConfiguration>(json, JsonOptions);
-
-                if (config != null && config.RequireCommandApproval == null)
-                {
-                    config.RequireCommandApproval = true;
-                }
-
-                if (config != null && config.EnableUserRules == null)
-                {
-                    config.EnableUserRules = true;
-                }
-
-                if (config != null)
-                {
-                    MigrateLegacyProviderFields(config);
-                }
-
-                return config;
+                return await LoadFromDiskAsync();
             }
-            catch (Exception ex)
+            catch
             {
-
                 return null;
             }
         }
@@ -90,38 +66,43 @@ namespace Saturn.Configuration
         /// </summary>
         private static async Task<PersistedAgentConfiguration?> LoadForRewriteAsync()
         {
-            if (!File.Exists(ConfigFilePath))
-            {
-                return null;
-            }
-
             try
             {
-                var json = await File.ReadAllTextAsync(ConfigFilePath);
-                var config = JsonSerializer.Deserialize<PersistedAgentConfiguration>(json, JsonOptions);
-
-                if (config != null && config.RequireCommandApproval == null)
-                {
-                    config.RequireCommandApproval = true;
-                }
-
-                if (config != null && config.EnableUserRules == null)
-                {
-                    config.EnableUserRules = true;
-                }
-
-                if (config != null)
-                {
-                    MigrateLegacyProviderFields(config);
-                }
-
-                return config;
+                return await LoadFromDiskAsync();
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Failed to load existing configuration for save: {ex.Message}");
                 throw new IOException($"Refusing to save configuration: existing config file at '{ConfigFilePath}' could not be read ({ex.Message}).", ex);
             }
+        }
+
+        private static async Task<PersistedAgentConfiguration?> LoadFromDiskAsync()
+        {
+            if (!File.Exists(ConfigFilePath))
+            {
+                return null;
+            }
+
+            var json = await File.ReadAllTextAsync(ConfigFilePath);
+            var config = JsonSerializer.Deserialize<PersistedAgentConfiguration>(json, JsonOptions);
+
+            if (config != null && config.RequireCommandApproval == null)
+            {
+                config.RequireCommandApproval = true;
+            }
+
+            if (config != null && config.EnableUserRules == null)
+            {
+                config.EnableUserRules = true;
+            }
+
+            if (config != null)
+            {
+                MigrateLegacyProviderFields(config);
+            }
+
+            return config;
         }
 
         private static void MigrateLegacyProviderFields(PersistedAgentConfiguration config)
@@ -301,7 +282,7 @@ namespace Saturn.Configuration
 
         private static async Task SaveSearchProviderSelectionLockedAsync(string providerName, ProviderSettings settings)
         {
-            var config = await LoadConfigurationAsync() ?? new PersistedAgentConfiguration();
+            var config = await LoadForRewriteAsync() ?? new PersistedAgentConfiguration();
 
             config.SearchProvider = providerName;
             config.SearchProviders ??= new Dictionary<string, PersistedProviderConfiguration>(StringComparer.OrdinalIgnoreCase);
