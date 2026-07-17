@@ -873,10 +873,14 @@ function scheduleStreamRender() {
   streamRenderPending = true;
   setTimeout(() => {
     streamRenderPending = false;
+    // Capture stickiness before the render grows the scroll height. The
+    // stream bubble can grow up to its 300px inner cap between renders, so
+    // the follow margin must exceed that or following silently stops.
+    const stick = isNearBottom(340);
     const el = $("#chat-stream-text");
     renderMarkdown(el, streamBuffer);
     el.scrollTop = el.scrollHeight;
-    scrollChatToBottom();
+    if (stick) scrollChatToBottom();
   }, 80);
 }
 
@@ -885,11 +889,18 @@ function scrollChatToBottom() {
   scroll.scrollTop = scroll.scrollHeight;
 }
 
+// "Following" the conversation means the user is within `margin` px of the
+// bottom; anyone who scrolled up to read history is left alone.
+function isNearBottom(margin = 160) {
+  const scroll = $("#chat-scroll");
+  return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < margin;
+}
+
 async function loadTranscript() {
   const t = await api.get("/orchestrator/transcript");
   state.transcript = t.entries;
   setOrchestratorBusy(t.busy);
-  renderTranscript();
+  renderTranscript({ stick: true });
 }
 
 function summarizeToolArgs(argsJson) {
@@ -923,7 +934,9 @@ function buildToolStrip(tools) {
   return details;
 }
 
-function renderTranscript() {
+function renderTranscript(opts = {}) {
+  // Compute stickiness before wiping the log — the wipe changes scrollHeight.
+  const stick = opts.stick ?? isNearBottom();
   const log = $("#chat-log");
   log.innerHTML = "";
   for (const e of state.transcript) {
@@ -957,7 +970,7 @@ function renderTranscript() {
     }
     log.appendChild(div);
   }
-  scrollChatToBottom();
+  if (stick) scrollChatToBottom();
 }
 
 let workingSince = null;
@@ -976,7 +989,7 @@ function setOrchestratorBusy(busy) {
   if (busy) {
     if (!workingSince) workingSince = Date.now();
     $("#chat-stream").hidden = false;
-    scrollChatToBottom();
+    if (isNearBottom(340)) scrollChatToBottom();
     updateWorkingLabel();
     if (!workingTimer) workingTimer = setInterval(updateWorkingLabel, 1000);
   } else {
@@ -993,7 +1006,8 @@ function setOrchestratorBusy(busy) {
 let currentTurnTools = [];
 
 function renderToolLog() {
-  $("#tool-log").innerHTML = currentTurnTools
+  const el = $("#tool-log");
+  el.innerHTML = currentTurnTools
     .map(
       (t, i) => `
       <div class="tool-row ${i === currentTurnTools.length - 1 ? "latest" : ""}">
@@ -1002,6 +1016,7 @@ function renderToolLog() {
       </div>`
     )
     .join("");
+  el.scrollTop = el.scrollHeight;
 }
 
 $("#chat-form").addEventListener("submit", async (e) => {
@@ -1013,7 +1028,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
   // server round-trip; the SSE echo confirms it (or the catch rolls it back).
   const entry = { role: "user", content: message, optimistic: true };
   state.transcript.push(entry);
-  renderTranscript();
+  renderTranscript({ stick: true });
   currentTurnTools = [];
   setOrchestratorBusy(true);
   $("#chat-text").value = "";
@@ -2176,7 +2191,7 @@ function connectEvents() {
     state.transcript = [];
     currentTurnTools = [];
     setOrchestratorBusy(false);
-    if (state.view === "orchestrator") renderTranscript();
+    if (state.view === "orchestrator") renderTranscript({ stick: true });
     toast("Started a <b>new conversation</b>");
   });
 
