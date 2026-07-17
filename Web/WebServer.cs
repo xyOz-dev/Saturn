@@ -722,6 +722,7 @@ namespace Saturn.Web
             {
                 busy = _orchestrator.IsBusy,
                 model = _orchestrator.Model,
+                sessionId = _orchestrator.CurrentSessionId,
                 entries = _orchestrator.GetTranscript()
             }));
 
@@ -982,6 +983,57 @@ namespace Saturn.Web
             api.MapPost("/orchestrator/new-session", () =>
             {
                 _orchestrator.StartNewSession();
+                return Results.Ok();
+            });
+
+            api.MapPost("/orchestrator/sessions/{id}/switch", async (string id) =>
+            {
+                var session = await _history.GetSessionAsync(id);
+                if (session == null || session.ChatType != "main")
+                {
+                    return Results.NotFound(new { error = $"Chat session {id} not found" });
+                }
+                if (id == _orchestrator.CurrentSessionId)
+                {
+                    return Results.Ok(new { sessionId = id });
+                }
+                if (!await _orchestrator.SwitchSessionAsync(id, _history))
+                {
+                    return Results.Conflict(new { error = "Orchestrator is busy; cancel the current run first" });
+                }
+                return Results.Ok(new { sessionId = id });
+            });
+
+            api.MapPut("/sessions/{id}", async (string id, SessionRenameRequest request) =>
+            {
+                var title = request.Title?.Trim();
+                if (string.IsNullOrEmpty(title))
+                {
+                    return Results.BadRequest(new { error = "Title is required" });
+                }
+                if (!await _history.RenameSessionAsync(id, title))
+                {
+                    return Results.NotFound(new { error = $"Session {id} not found" });
+                }
+                _hub.Publish("sessions.changed", new { sessionId = id });
+                return Results.Ok();
+            });
+
+            api.MapDelete("/sessions/{id}", async (string id) =>
+            {
+                if (id == _orchestrator.CurrentSessionId)
+                {
+                    if (_orchestrator.IsBusy)
+                    {
+                        return Results.Conflict(new { error = "Orchestrator is busy; cancel the current run first" });
+                    }
+                    _orchestrator.StartNewSession();
+                }
+                if (!await _history.DeleteSessionAsync(id))
+                {
+                    return Results.NotFound(new { error = $"Session {id} not found" });
+                }
+                _hub.Publish("sessions.changed", new { sessionId = id });
                 return Results.Ok();
             });
         }
