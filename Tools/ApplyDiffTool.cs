@@ -137,14 +137,10 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                 
                 await ValidateFilesForReading(filesNeeded);
                 await ValidateFilesForAdding(filesToAdd);
-                
-                var currentFiles = await LoadCurrentFiles(filesNeeded);
 
-                var operations = ParsePatchText(patchText, currentFiles);
-                
                 var allFiles = filesNeeded.Union(filesToAdd).ToList();
                 var lockedFiles = new List<string>();
-                
+
                 try
                 {
                     foreach (var file in allFiles)
@@ -160,7 +156,11 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                             lockedFiles.Add(absPath);
                         }
                     }
-                    
+
+                    var currentFiles = await LoadCurrentFiles(filesNeeded);
+
+                    var operations = ParsePatchText(patchText, currentFiles);
+
                     var commit = ConvertToCommit(operations, currentFiles);
                 
                 var stats = CalculateStatistics(commit);
