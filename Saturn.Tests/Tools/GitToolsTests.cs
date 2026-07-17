@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Saturn.Tools.Core;
 using Saturn.Tools.Git;
 using Xunit;
 
@@ -114,7 +115,7 @@ namespace Saturn.Tests.Tools
             File.WriteAllText(Path.Combine(_repo, "a.txt"), "a\n");
             File.WriteAllText(Path.Combine(_repo, "b.txt"), "b\n");
 
-            var result = await new GitCommitTool().ExecuteAsync(new Dictionary<string, object>
+            var result = await new GitCommitTool(new CommandApprovalService(false)).ExecuteAsync(new Dictionary<string, object>
             {
                 ["message"] = "add a only",
                 ["files"] = new[] { "a.txt" },
@@ -133,7 +134,7 @@ namespace Saturn.Tests.Tools
         {
             File.WriteAllText(Path.Combine(_repo, "secret.txt"), "do not stage me\n");
 
-            var result = await new GitCommitTool().ExecuteAsync(new Dictionary<string, object>
+            var result = await new GitCommitTool(new CommandApprovalService(false)).ExecuteAsync(new Dictionary<string, object>
             {
                 ["message"] = "sneaky",
                 ["files"] = new[] { "-A" },

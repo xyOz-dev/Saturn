@@ -8,8 +8,17 @@ namespace Saturn.Tools.Git
 {
     public class GitCommitTool : ToolBase
     {
+        private readonly ICommandApprovalService _approvalService;
+
+        public GitCommitTool() : this(null!) { }
+
+        public GitCommitTool(ICommandApprovalService approvalService)
+        {
+            _approvalService = approvalService ?? new CommandApprovalService(true);
+        }
+
         public override string Name => "git_commit";
-        public override string Description => "Creates a new git commit with the specified message.";
+        public override string Description => "Creates a new git commit with the specified message. The user may be asked to approve the commit before it runs; a denied commit returns an error.";
 
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -61,6 +70,16 @@ namespace Saturn.Tools.Git
                 return CreateErrorResult($"Working directory does not exist: {workingDirectory}");
             }
 
+            if (AgentContext.RequireCommandApproval)
+            {
+                var approved = await _approvalService.RequestApprovalAsync(
+                    DescribeCommand(message, files), workingDirectory);
+                if (!approved)
+                {
+                    return CreateErrorResult("Git commit denied by user");
+                }
+            }
+
             try
             {
                 if (files != null && files.Length > 0)
@@ -91,6 +110,16 @@ namespace Saturn.Tools.Git
             {
                 return CreateErrorResult($"Exception executing git commit: {ex.Message}");
             }
+        }
+
+        private static string DescribeCommand(string message, string[]? files)
+        {
+            var commit = $"git commit -m \"{message}\"";
+            if (files == null || files.Length == 0)
+            {
+                return commit;
+            }
+            return $"git add {string.Join(" ", files)} && {commit}";
         }
     }
 }
