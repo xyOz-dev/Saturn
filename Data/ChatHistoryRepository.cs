@@ -210,6 +210,15 @@ public class ChatHistoryRepository : IDisposable
     private Task WithDbLockAsync(Func<Task> action, CancellationToken cancellationToken = default)
         => WithWriteLockAsync(action, cancellationToken);
 
+    // Tool-call-only assistant messages carry a JSON null content; store those as
+    // empty rather than the literal "null" GetRawText() would produce.
+    private static string ContentToString(JsonElement content) => content.ValueKind switch
+    {
+        JsonValueKind.String => content.GetString() ?? string.Empty,
+        JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+        _ => content.GetRawText()
+    };
+
     public async Task<ChatSession> CreateSessionAsync(string title, string chatType = "main", 
         string? parentSessionId = null, string? agentName = null, string? model = null,
         string? systemPrompt = null, double? temperature = null, int? maxTokens = null,
@@ -265,9 +274,7 @@ public class ChatHistoryRepository : IDisposable
             {
                 SessionId = sessionId,
                 Role = message.Role ?? "assistant",
-                Content = message.Content.ValueKind == JsonValueKind.String 
-                    ? message.Content.GetString() ?? string.Empty
-                    : message.Content.GetRawText(),
+                Content = ContentToString(message.Content),
                 Name = message.Name,
                 AgentName = agentName,
                 SequenceNumber = sequenceNumber ?? await GetNextSequenceNumberAsync(sessionId, cancellationToken),
@@ -331,9 +338,7 @@ public class ChatHistoryRepository : IDisposable
                     {
                         SessionId = sessionId,
                         Role = message.Role ?? "assistant",
-                        Content = message.Content.ValueKind == JsonValueKind.String 
-                            ? message.Content.GetString() ?? string.Empty
-                            : message.Content.GetRawText(),
+                        Content = ContentToString(message.Content),
                         Name = message.Name,
                         AgentName = agentName,
                         SequenceNumber = startSequence++,

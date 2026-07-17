@@ -1694,6 +1694,12 @@ function renderSessions() {
   );
 }
 
+// Tool-call-only assistant rows were historically persisted with the literal
+// string "null" as content; treat those as empty so old sessions render clean.
+function msgContent(m) {
+  return m.content === "null" && m.toolCalls?.length ? "" : m.content;
+}
+
 async function openSessionDrawer(session) {
   try {
     const messages = await api.get(`/sessions/${session.id}/messages`);
@@ -1705,17 +1711,18 @@ async function openSessionDrawer(session) {
       .map(
         (m, i) => `
         <div class="msg-row">
-          <div class="msg-role">${esc(m.role)}${m.agentName ? ` · ${esc(m.agentName)}` : ""}</div>
-          <div class="msg-content${m.role === "assistant" ? " md" : ""}" data-msg-index="${i}"></div>
+          <div class="msg-role">${esc(m.role)}${m.role === "tool" && m.toolName ? ` · ${esc(m.toolName)}` : ""}${m.agentName ? ` · ${esc(m.agentName)}` : ""}</div>
+          ${m.toolCalls?.length ? `<div class="msg-content" style="opacity:.7;font-style:italic">→ ${m.toolCalls.map(esc).join(", ")}</div>` : ""}
+          ${msgContent(m) ? `<div class="msg-content${m.role === "assistant" ? " md" : ""}" data-msg-index="${i}"></div>` : ""}
         </div>`
       )
       .join("") || '<div class="hint">No messages in this session.</div>'}</div>`;
     body.querySelectorAll("[data-msg-index]").forEach((el) => {
       const m = messages[Number(el.dataset.msgIndex)];
-      if (m.role === "assistant" && m.content !== "null") {
-        renderMarkdown(el, m.content);
+      if (m.role === "assistant") {
+        renderMarkdown(el, msgContent(m));
       } else {
-        el.textContent = m.content;
+        el.textContent = msgContent(m);
       }
     });
   } catch (err) {
