@@ -70,7 +70,7 @@ namespace Saturn.Web
 
         public string Url => $"http://localhost:{_port}";
 
-        public async Task RunAsync(CancellationToken cancellationToken = default)
+        public async Task RunAsync(CancellationToken cancellationToken = default, Action? onReady = null)
         {
             CommandApprovalService.GlobalOverride = _approvalCoordinator;
             TaskSystem.Store = _tasks;
@@ -142,6 +142,11 @@ namespace Saturn.Web
 
             MapStaticAssets(app);
             MapApi(app);
+
+            if (onReady != null)
+            {
+                app.Lifetime.ApplicationStarted.Register(onReady);
+            }
 
             await app.RunAsync(cancellationToken);
         }
@@ -632,14 +637,25 @@ namespace Saturn.Web
                 {
                     return Results.BadRequest(new { error = ex.Message });
                 }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.Conflict(new { error = ex.Message });
+                }
             });
 
             api.MapPost("/todos/{id}/complete", async (string id, TaskCompleteRequest request) =>
             {
-                var task = await _tasks.CompleteAsync(id, request.Success ?? true, request.Note);
-                return task == null
-                    ? Results.NotFound(new { error = $"Task {id} not found" })
-                    : Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
+                try
+                {
+                    var task = await _tasks.CompleteAsync(id, request.Success ?? true, request.Note);
+                    return task == null
+                        ? Results.NotFound(new { error = $"Task {id} not found" })
+                        : Results.Ok(ProjectTaskView(await _tasks.BuildViewAsync(task)));
+                }
+                catch (InvalidOperationException ex)
+                {
+                    return Results.Conflict(new { error = ex.Message });
+                }
             });
 
             api.MapPost("/todos/{id}/dispatch", async (string id, TaskDispatchRequest request) =>
@@ -917,12 +933,15 @@ namespace Saturn.Web
 
             api.MapPut("/user-rules", async (UserRulesUpdateRequest request) =>
             {
-                var saved = await Saturn.Core.UserRulesManager.SaveRulesAsync(request.Content ?? "");
-                if (!saved)
+                try
                 {
-                    return Results.Problem("Failed to save rules file");
+                    await Saturn.Core.UserRulesManager.SaveRulesAsync(request.Content ?? "");
+                    return Results.Ok(new { saved = true });
                 }
-                return Results.Ok(new { saved = true });
+                catch (InvalidOperationException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
             });
 
             // ---------- modes ----------
