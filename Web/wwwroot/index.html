@@ -27,16 +27,12 @@
           <span class="nav-icon">⬡</span> Agents
           <span class="nav-badge" id="badge-agents">0</span>
         </button>
-        <button class="nav-item" data-view="tasks">
-          <span class="nav-icon">≡</span> Tasks
-          <span class="nav-badge" id="badge-tasks">0</span>
+        <button class="nav-item" data-view="work">
+          <span class="nav-icon">≡</span> Work
+          <span class="nav-badge" id="badge-work">0</span>
         </button>
         <button class="nav-item" data-view="orchestrator">
           <span class="nav-icon">◈</span> Orchestrator
-        </button>
-        <button class="nav-item" data-view="todos">
-          <span class="nav-icon">☑</span> Todo List
-          <span class="nav-badge" id="badge-todos">0</span>
         </button>
         <button class="nav-item" data-view="sessions">
           <span class="nav-icon">◷</span> Sessions
@@ -76,12 +72,12 @@
             <div class="stat-label">active agents</div>
             <div class="stat-sub" id="stat-agents-sub">0 working · max 0</div>
           </div>
-          <div class="stat-card" data-goto="tasks">
+          <div class="stat-card" data-goto="work" data-goto-tab="running">
             <div class="stat-value" id="stat-running">0</div>
             <div class="stat-label">tasks running</div>
             <div class="stat-sub" id="stat-tasks-sub">0 done · 0 failed</div>
           </div>
-          <div class="stat-card" data-goto="todos">
+          <div class="stat-card" data-goto="work">
             <div class="stat-value" id="stat-todos">0</div>
             <div class="stat-label">open todos</div>
             <div class="stat-sub" id="stat-todos-sub">0 completed</div>
@@ -135,21 +131,6 @@
         <div class="empty" id="agents-empty">No agents running. Spawn one to get started.</div>
       </section>
 
-      <!-- TASKS -->
-      <section class="view" id="view-tasks">
-        <div class="toolbar">
-          <span class="toolbar-title">Running</span>
-          <div class="toolbar-spacer"></div>
-          <button class="btn" id="btn-clear-tasks">Clear completed</button>
-        </div>
-        <div class="task-list" id="task-running"></div>
-        <div class="toolbar">
-          <span class="toolbar-title">Completed</span>
-        </div>
-        <div class="task-list" id="task-completed"></div>
-        <div class="empty" id="tasks-empty">No tasks yet. Hand work off to an agent.</div>
-      </section>
-
       <!-- ORCHESTRATOR -->
       <section class="view" id="view-orchestrator">
         <div class="chat">
@@ -173,8 +154,17 @@
         </div>
       </section>
 
-      <!-- TODOS / TASK MANAGER -->
-      <section class="view" id="view-todos">
+      <!-- WORK: queue (todos), running dispatches, history -->
+      <section class="view" id="view-work">
+        <div class="toolbar">
+          <div class="seg work-tabs" id="work-tabs">
+            <button class="seg-item active" data-worktab="queue">Queue <span class="seg-count" id="workcount-queue"></span></button>
+            <button class="seg-item" data-worktab="running">Running <span class="seg-count" id="workcount-running"></span></button>
+            <button class="seg-item" data-worktab="history">History</button>
+          </div>
+        </div>
+
+        <div class="work-pane" id="work-pane-queue">
         <div class="toolbar">
           <div class="seg" id="todo-scope">
             <button class="seg-item active" data-scope="all">all</button>
@@ -207,6 +197,19 @@
         </form>
         <ul class="todo-list" id="todo-list"></ul>
         <div class="empty" id="todos-empty">Nothing here. Add your first task above.</div>
+        </div>
+
+        <div class="work-pane" id="work-pane-running" hidden>
+          <div class="task-list" id="task-running"></div>
+        </div>
+
+        <div class="work-pane" id="work-pane-history" hidden>
+          <div class="toolbar">
+            <div class="toolbar-spacer"></div>
+            <button class="btn" id="btn-clear-tasks">Clear completed</button>
+          </div>
+          <div class="task-list" id="task-completed"></div>
+        </div>
       </section>
 
       <!-- SESSIONS -->

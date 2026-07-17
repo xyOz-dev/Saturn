@@ -264,6 +264,8 @@ textarea.input { resize: vertical; font-family: inherit; }
 .seg-item { padding: 4px 12px; border-radius: 6px; font-size: 12px; color: var(--muted); transition: all 0.15s var(--ease); }
 .seg-item:hover { color: var(--text); }
 .seg-item.active { background: var(--panel-3); color: var(--white); }
+.seg-count { font-family: var(--font-mono); font-size: 10px; color: var(--dim); }
+.seg-item.active .seg-count { color: var(--muted); }
 
 /* ---------- overview ---------- */
 

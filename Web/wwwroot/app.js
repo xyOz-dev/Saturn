@@ -162,6 +162,7 @@ function toast(html, ms = 3500) {
 
 const state = {
   view: "overview",
+  workTab: "queue",
   overview: null,
   agents: [],
   tasks: { running: [], completed: [] },
@@ -184,9 +185,8 @@ const state = {
 const VIEW_TITLES = {
   overview: "Overview",
   agents: "Agents",
-  tasks: "Tasks",
+  work: "Work",
   orchestrator: "Orchestrator",
-  todos: "Todo List",
   sessions: "Sessions",
   approvals: "Approvals",
   settings: "Settings",
@@ -204,9 +204,8 @@ async function refreshView(name) {
   try {
     if (name === "overview") { await loadOverview(); await loadWakes(); }
     else if (name === "agents") await loadAgents();
-    else if (name === "tasks") await loadTasks();
+    else if (name === "work") await Promise.all([loadTodos(), loadTasks()]);
     else if (name === "orchestrator") await loadTranscript();
-    else if (name === "todos") await loadTodos();
     else if (name === "sessions") await loadSessions();
     else if (name === "approvals") await loadApprovals();
     else if (name === "settings") await loadSettings();
@@ -216,7 +215,12 @@ async function refreshView(name) {
 }
 
 $$(".nav-item").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
-$$("[data-goto]").forEach((el) => el.addEventListener("click", () => showView(el.dataset.goto)));
+$$("[data-goto]").forEach((el) =>
+  el.addEventListener("click", () => {
+    showView(el.dataset.goto);
+    if (el.dataset.gotoTab) showWorkTab(el.dataset.gotoTab);
+  })
+);
 
 /* ---------- activity feed ---------- */
 
@@ -280,9 +284,10 @@ function updateBadges() {
   const o = state.overview;
   if (!o) return;
   setBadge("#badge-agents", o.agents.total);
-  setBadge("#badge-tasks", o.tasks.running);
-  setBadge("#badge-todos", o.todos.open);
+  setBadge("#badge-work", o.todos.open);
   setBadge("#badge-approvals", o.pendingApprovals);
+  $("#workcount-queue").textContent = o.todos.open || "";
+  $("#workcount-running").textContent = o.tasks.running || "";
 }
 
 function setBadge(sel, value) {
@@ -575,7 +580,6 @@ async function loadTasks() {
 
 function renderTasks() {
   const { running, completed } = state.tasks;
-  $("#tasks-empty").classList.toggle("show", running.length === 0 && completed.length === 0);
 
   $("#task-running").innerHTML = running
     .map(
@@ -622,6 +626,22 @@ $("#btn-clear-tasks").addEventListener("click", async () => {
   await api.post("/tasks/clear-completed");
   await Promise.all([loadTasks(), loadOverview()]);
   toast("Completed tasks cleared");
+});
+
+/* ---------- work sub-tabs ---------- */
+
+function showWorkTab(tab) {
+  state.workTab = tab;
+  $$("#work-tabs .seg-item").forEach((b) => b.classList.toggle("active", b.dataset.worktab === tab));
+  ["queue", "running", "history"].forEach((t) => {
+    $(`#work-pane-${t}`).hidden = t !== tab;
+  });
+  (tab === "queue" ? loadTodos() : loadTasks()).catch(() => {});
+}
+
+$("#work-tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest(".seg-item");
+  if (btn) showWorkTab(btn.dataset.worktab);
 });
 
 /* ---------- orchestrator ---------- */
@@ -1770,20 +1790,20 @@ function connectEvents() {
   es.addEventListener("agent.status", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`<b>${esc(d.name)}</b> → ${esc(d.status)}`);
-    refreshIf(["agents", "tasks"], [loadAgents, loadTasks]);
+    refreshIf(["agents", "work"], [loadAgents, loadTasks]);
   });
 
   es.addEventListener("task.completed", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "failed"} (${esc(d.agentName)})`);
     toast(`Task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "<b>failed</b>"} — ${esc(d.agentName)}`);
-    refreshIf(["tasks", "agents"], [loadTasks, loadAgents]);
+    refreshIf(["work", "agents"], [loadTasks, loadAgents]);
   });
 
-  es.addEventListener("agents.cleared", () => refreshIf(["agents", "tasks"], [loadAgents, loadTasks]));
-  es.addEventListener("tasks.cleared", () => refreshIf(["tasks"], [loadTasks]));
-  es.addEventListener("todos.changed", () => refreshIf(["todos"], [loadTodos]));
-  es.addEventListener("tasks.changed", () => refreshIf(["todos", "overview"], [loadTodos, loadWakes]));
+  es.addEventListener("agents.cleared", () => refreshIf(["agents", "work"], [loadAgents, loadTasks]));
+  es.addEventListener("tasks.cleared", () => refreshIf(["work"], [loadTasks]));
+  es.addEventListener("todos.changed", () => refreshIf(["work"], [loadTodos]));
+  es.addEventListener("tasks.changed", () => refreshIf(["work", "overview"], [loadTodos, loadWakes]));
   es.addEventListener("settings.changed", () => refreshIf(["settings"], [loadSettings]));
   es.addEventListener("wake.enqueued", (e) => {
     const d = JSON.parse(e.data);
@@ -1798,12 +1818,12 @@ function connectEvents() {
   es.addEventListener("task.unblocked", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`task unblocked: <b>${esc(d.title)}</b>`);
-    refreshIf(["todos"], [loadTodos]);
+    refreshIf(["work"], [loadTodos]);
   });
   es.addEventListener("task.dispatched", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`task <b>${esc(d.taskId)}</b> dispatched to <b>${esc(d.agentName)}</b>`);
-    refreshIf(["todos", "agents"], [loadTodos, loadAgents]);
+    refreshIf(["work", "agents"], [loadTodos, loadAgents]);
   });
 
   es.addEventListener("approval.requested", (e) => {
@@ -1899,6 +1919,6 @@ function connectEvents() {
   setInterval(() => {
     loadOverview().catch(() => {});
     if (state.view === "agents") loadAgents().catch(() => {});
-    if (state.view === "tasks") loadTasks().catch(() => {});
+    if (state.view === "work") loadTasks().catch(() => {});
   }, 10000);
 })();
