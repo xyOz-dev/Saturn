@@ -143,7 +143,12 @@ namespace Saturn.Core.Tasks
                         $"Recurring task '{task.Title}' ({task.Id}) is due.{missedNote} " +
                         $"Notes: {task.Notes ?? "(none)"}. Use list_tasks/claim_task/dispatch_task to act on it, " +
                         "and complete_task when the work is done.",
-                        $"recur:{task.Id}:{scheduledFor:yyyy-MM-ddTHH:mm}");
+                        $"recur:{task.Id}:{scheduledFor:yyyy-MM-ddTHH:mm}",
+                        // The budget was already checked before the claim above; going
+                        // through the throttled path again could drop the wake if a
+                        // critical wake consumed the budget in between, losing the
+                        // occurrence after NextRunAt has irreversibly advanced.
+                        critical: true);
                 }
             }
         }
