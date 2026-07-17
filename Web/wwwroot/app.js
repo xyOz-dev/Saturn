@@ -224,12 +224,15 @@ const VIEW_TITLES = {
   settings: "Settings",
 };
 
+const WORK_TABS = ["queue", "running", "history", "schedule"];
+
 function showView(name) {
   state.view = name;
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   $("#view-title").textContent = VIEW_TITLES[name] || name;
   updateApprovalBanner();
+  syncHash();
   refreshView(name);
 }
 
@@ -246,6 +249,28 @@ async function refreshView(name) {
     toast(`<b>Error:</b> ${esc(err.message)}`);
   }
 }
+
+/* ---------- routing ---------- */
+
+// The view (and work sub-tab) live in the URL hash — #/agents, #/work/running —
+// so refresh keeps your place and views are linkable.
+function currentRoute() {
+  const parts = location.hash.replace(/^#\/?/, "").split("/");
+  const view = VIEW_TITLES[parts[0]] ? parts[0] : "overview";
+  const sub = view === "work" && WORK_TABS.includes(parts[1]) ? parts[1] : null;
+  return { view, sub };
+}
+
+function syncHash() {
+  const path = state.view === "work" ? `work/${state.workTab}` : state.view;
+  if (location.hash !== `#/${path}`) location.hash = `/${path}`;
+}
+
+window.addEventListener("hashchange", () => {
+  const { view, sub } = currentRoute();
+  if (view !== state.view) showView(view);
+  if (sub && sub !== state.workTab) showWorkTab(sub);
+});
 
 $$(".nav-item").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 $$("[data-goto]").forEach((el) =>
@@ -680,9 +705,10 @@ $("#btn-clear-tasks").addEventListener("click", async () => {
 function showWorkTab(tab) {
   state.workTab = tab;
   $$("#work-tabs .seg-item").forEach((b) => b.classList.toggle("active", b.dataset.worktab === tab));
-  ["queue", "running", "history", "schedule"].forEach((t) => {
+  WORK_TABS.forEach((t) => {
     $(`#work-pane-${t}`).hidden = t !== tab;
   });
+  syncHash();
   const load = tab === "queue" ? loadTodos : tab === "schedule" ? loadWakes : loadTasks;
   load().catch(() => {});
 }
@@ -1965,7 +1991,10 @@ function connectEvents() {
 (async function boot() {
   connectEvents();
   await loadOverview().catch(() => {});
-  await refreshView(state.view);
+  const { view, sub } = currentRoute();
+  if (sub) state.workTab = sub;
+  showView(view);
+  if (view === "work") showWorkTab(state.workTab);
   ensureModels();
 
   setInterval(() => {
