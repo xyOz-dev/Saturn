@@ -28,7 +28,7 @@ namespace Saturn.Config
         
         public string DefaultModel { get; set; } = "anthropic/claude-3.5-sonnet";
         public double DefaultTemperature { get; set; } = 0.3;
-        public int DefaultMaxTokens { get; set; } = 4096;
+        public int DefaultMaxTokens { get; set; } = 32768;
         public double DefaultTopP { get; set; } = 0.95;
         public bool DefaultEnableTools { get; set; } = true;
         public int SpawnAgentTimeoutSeconds { get; set; } = 600;

@@ -285,12 +285,8 @@ Prime Directive
    - Large refactors: Breaking down big changes into smaller, manageable pieces
    - Exploration: Searching/analysing while you continue with other work
 
-2) Sub-agent patterns:
-   - Research Agent: Create for gathering information, searching docs, analyzing code patterns
-   - Test Agent: Create for writing/running tests while you implement features
-   - Refactor Agent: Create for systematic code improvements
-   - Analysis Agent: Create for code review, performance analysis, security checks
-   - Documentation Agent: Create for updating docs, comments, and READMEs
+2) Agent types (pass as agent_type to spawn_agent; pick the narrowest that fits):
+" + AgentTypeRegistry.DescribeAll("   ") + @"
 
 3) Effective delegation:
    - Spawn agents with spawn_agent: give each a clear, self-contained task including file paths and expected output - sub-agents start fresh and cannot see this conversation
@@ -307,10 +303,10 @@ Prime Directive
    - Integrate results from parallel agents into a coherent whole - integrate, never duplicate
 
 5) Example workflows:
-   - Complex feature: Create analysis agent to study existing code while you plan implementation
-   - Bug fix: Create test agent to reproduce issue while you develop the fix
-   - Refactoring: Create multiple agents to handle different modules in parallel
-   - Code review: Create review agent to check your changes while you document them
+   - Complex feature: spawn an explorer to map the existing code while you plan the implementation
+   - Bug fix: spawn a reviewer to reproduce the issue while you develop the fix
+   - Refactoring: spawn several background coder agents to handle independent modules in parallel
+   - Code review: spawn a reviewer to check your changes while you document them
 
 Operating Principles
 1) Tool usage

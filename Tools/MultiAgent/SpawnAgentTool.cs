@@ -24,6 +24,7 @@ When NOT to use:
 - Single-fact lookups where you already know the file to check
 
 How to use:
+- Pick the narrowest agent_type that fits the task; types with fewer tools stay focused and cannot cause side effects.
 - The agent starts fresh with no memory of this conversation. Include everything it needs in 'task': the goal, relevant file paths, constraints, and what its report should contain.
 - By default this call blocks until the agent finishes and returns its report as the tool result. The report is returned to you, not shown to the user, so relay what matters.
 - Set background=true to get a task_id back immediately instead; collect the result later with wait_for_agent. Spawn several background agents in one message to run them in parallel.
@@ -47,10 +48,17 @@ Rules:
                     ["type"] = "string",
                     ["description"] = "Self-contained instructions: the goal, relevant file paths, constraints, and what the report should contain. The agent cannot see this conversation."
                 },
+                ["agent_type"] = new Dictionary<string, object>
+                {
+                    ["type"] = "string",
+                    ["enum"] = AgentTypeRegistry.Names,
+                    ["default"] = AgentTypeRegistry.DefaultTypeName,
+                    ["description"] = "The kind of agent to spawn:\n" + AgentTypeRegistry.DescribeAll()
+                },
                 ["purpose"] = new Dictionary<string, object>
                 {
                     ["type"] = "string",
-                    ["description"] = "Optional one-line role statement for the agent's system prompt, e.g. 'Explore code and report findings without modifying anything'"
+                    ["description"] = "Optional one-line role statement for the agent's system prompt, e.g. 'Explore code and report findings without modifying anything'. Defaults to the agent_type's standard role."
                 },
                 ["background"] = new Dictionary<string, object>
                 {
@@ -87,15 +95,28 @@ Rules:
             {
                 var name = parameters["name"].ToString()!;
                 var task = parameters["task"].ToString()!;
+
+                var agentTypeName = GetParameter<string?>(parameters, "agent_type", null);
+                AgentTypeDefinition agentType;
+                if (string.IsNullOrWhiteSpace(agentTypeName))
+                {
+                    agentType = AgentTypeRegistry.Default;
+                }
+                else if (!AgentTypeRegistry.TryGet(agentTypeName, out agentType))
+                {
+                    return CreateErrorResult(
+                        $"Unknown agent_type '{agentTypeName}'. Valid types: {string.Join(", ", AgentTypeRegistry.Names)}");
+                }
+
                 var purpose = GetParameter<string?>(parameters, "purpose", null);
                 if (string.IsNullOrWhiteSpace(purpose))
                 {
-                    purpose = "Complete the assigned task accurately and report the results";
+                    purpose = agentType.Description;
                 }
                 var background = GetParameter<bool>(parameters, "background", false);
 
                 var prefs = SubAgentPreferences.Instance;
-                var config = prefs.GetConfigurationForPurpose(purpose);
+                var config = prefs.GetConfigurationForPurpose(agentType.Name);
                 var timeoutSeconds = parameters.ContainsKey("timeout_seconds")
                     ? Convert.ToInt32(parameters["timeout_seconds"])
                     : prefs.SpawnAgentTimeoutSeconds;
@@ -109,7 +130,9 @@ Rules:
                     config.MaxTokens,
                     config.TopP,
                     config.SystemPromptOverride,
-                    disposeOnTaskCompletion: true
+                    disposeOnTaskCompletion: true,
+                    allowedTools: agentType.ToolNames,
+                    systemPromptAddendum: agentType.SystemPromptAddendum
                 );
 
                 if (!created.success)

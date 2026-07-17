@@ -68,6 +68,7 @@ namespace Saturn.Providers
                     DisplayName = m.Name,
                     Description = m.Description,
                     ContextLength = m.ContextLength,
+                    MaxCompletionTokens = m.TopProvider?.MaxCompletionTokens,
                     PromptPrice = m.Pricing?.Prompt,
                     CompletionPrice = m.Pricing?.Completion
                 })

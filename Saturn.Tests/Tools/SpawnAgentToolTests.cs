@@ -25,12 +25,14 @@ namespace Saturn.Tests.Tools
             AgentManager.Instance.SetParentSessionId(null);
             AgentManager.Instance.SetParentModel(null);
             _originalMaxAgents = AgentManager.Instance.GetMaxConcurrentAgents();
+            ModelCatalog.Invalidate();
         }
 
         public void Dispose()
         {
             AgentManager.Instance.TerminateAllAgents();
             AgentManager.Instance.SetMaxConcurrentAgents(_originalMaxAgents);
+            ModelCatalog.Invalidate();
         }
 
         private static Dictionary<string, object> Params(string name, string task, params (string key, object value)[] extra)
@@ -137,6 +139,69 @@ namespace Saturn.Tests.Tools
             completed.Should().ContainSingle(r => r.TaskId == taskId && r.Success);
 
             await WaitForAgentCountAsync(baseline);
+        }
+
+        [Fact]
+        public async Task Execute_ExplorerType_GetsReadOnlyToolsAndAddendum()
+        {
+            var client = new BlockingLlmClient();
+            AgentManager.Instance.Initialize(new StaticClientSource(client, "fake"));
+
+            var tool = new SpawnAgentTool();
+            var result = await tool.ExecuteAsync(Params("scout", "Map the codebase.",
+                ("agent_type", "explorer"), ("background", true)));
+
+            result.Success.Should().BeTrue();
+            var context = AgentManager.Instance.GetAgentContexts().Single(c => c.Name == "scout");
+            context.Agent.Configuration.ToolNames.Should().Contain("grep");
+            context.Agent.Configuration.ToolNames.Should().NotContain(new[] { "apply_diff", "write_file", "execute_command" });
+            context.Agent.Configuration.SystemPrompt.ToString().Should().Contain("read-only");
+
+            client.Unblock();
+            var taskId = (string)((Dictionary<string, object>)result.RawData!)["task_id"];
+            await AgentManager.Instance.WaitForAllTasks(new List<string> { taskId }, 5000);
+            await WaitForAgentCountAsync(0);
+        }
+
+        [Fact]
+        public async Task TryCreateSubAgent_ClampsMaxTokensToModelLimit()
+        {
+            var client = new FakeLlmClient();
+            client.Models.Add(new ModelInfo { Id = "small-model", MaxCompletionTokens = 9000, IsLoaded = true });
+            AgentManager.Instance.Initialize(new StaticClientSource(client, "fake"));
+            ModelCatalog.Invalidate();
+
+            var created = await AgentManager.Instance.TryCreateSubAgent(
+                "clamped", "test clamp", "small-model", maxTokens: 32768);
+
+            created.success.Should().BeTrue();
+            var context = AgentManager.Instance.GetAgentContexts().Single(c => c.Name == "clamped");
+            context.Agent.Configuration.MaxTokens.Should().Be(9000);
+        }
+
+        [Fact]
+        public async Task Execute_UnknownAgentType_ReturnsErrorListingValidTypes()
+        {
+            var client = new FakeLlmClient();
+            AgentManager.Instance.Initialize(new StaticClientSource(client, "fake"));
+
+            var tool = new SpawnAgentTool();
+            var result = await tool.ExecuteAsync(Params("x", "y", ("agent_type", "warlock")));
+
+            result.Success.Should().BeFalse();
+            result.Error.Should().Contain("warlock").And.Contain("general").And.Contain("explorer");
+            AgentManager.Instance.GetCurrentAgentCount().Should().Be(0);
+        }
+
+        [Fact]
+        public void Schema_AgentTypeEnum_MatchesRegistry()
+        {
+            var tool = new SpawnAgentTool();
+            var properties = (Dictionary<string, object>)tool.GetParameters()["properties"];
+            var agentType = (Dictionary<string, object>)properties["agent_type"];
+
+            ((string[])agentType["enum"]).Should().BeEquivalentTo(AgentTypeRegistry.Names);
+            agentType["default"].Should().Be("general");
         }
 
         [Fact]

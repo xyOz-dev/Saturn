@@ -89,7 +89,9 @@ namespace Saturn.Agents.MultiAgent
             double? topP = null,
             string? systemPromptOverride = null,
             bool? includeUserRules = null,
-            bool disposeOnTaskCompletion = false)
+            bool disposeOnTaskCompletion = false,
+            IReadOnlyList<string>? allowedTools = null,
+            string? systemPromptAddendum = null)
         {
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
 
@@ -124,6 +126,15 @@ namespace Saturn.Agents.MultiAgent
             {
                 model = await ModelCatalog.ResolveModelAsync(_clientSource, model, _parentModel);
 
+                // Clamp to the model's advertised output limit so a generous default
+                // cannot turn into a 400 on models with smaller completion caps.
+                var effectiveMaxTokens = maxTokens ?? SubAgentPreferences.Instance.DefaultMaxTokens;
+                var modelMaxCompletion = await ModelCatalog.GetMaxCompletionTokensAsync(_clientSource, model);
+                if (modelMaxCompletion.HasValue && modelMaxCompletion.Value > 0)
+                {
+                    effectiveMaxTokens = Math.Min(effectiveMaxTokens, modelMaxCompletion.Value);
+                }
+
                 var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
 Your purpose: {purpose}
 
@@ -135,6 +146,19 @@ When the task is complete, report back concisely:
 - Anything you could not complete, and why
 Your report is consumed by an orchestrator agent, so keep it factual and free of filler.";
 
+                if (systemPromptOverride == null && !string.IsNullOrWhiteSpace(systemPromptAddendum))
+                {
+                    systemPrompt += $"\n\n{systemPromptAddendum}";
+                }
+
+                var subAgentTools = ToolRegistry.Instance.GetAllNames()
+                    .Where(toolName => !SubAgentExcludedTools.Contains(toolName));
+                if (allowedTools != null)
+                {
+                    subAgentTools = subAgentTools
+                        .Where(toolName => allowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase));
+                }
+
                 var config = new AgentConfiguration
                 {
                     Name = name,
@@ -142,14 +166,14 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     ClientSource = _clientSource,
                     Model = model,
                     Temperature = temperature ?? 0.3,
-                    MaxTokens = maxTokens ?? 4096,
+                    MaxTokens = effectiveMaxTokens,
                     TopP = topP ?? 0.95,
                     EnableTools = enableTools,
-                    ToolNames = ToolRegistry.Instance.GetAllNames()
-                        .Where(name => !SubAgentExcludedTools.Contains(name))
-                        .ToList(),
+                    ToolNames = subAgentTools.ToList(),
                     MaintainHistory = true,
-                    MaxHistoryMessages = 20
+                    // A real coding task is routinely 25+ tool round-trips; a low cap
+                    // makes the agent forget its own task mid-way.
+                    MaxHistoryMessages = 200
                 };
 
                 var agent = new Agent(config);
@@ -608,7 +632,7 @@ Your decision:";
                     return new ReviewDecision
                     {
                         Status = ReviewStatus.Approved,
-                        Feedback = "Review timed out - auto-approved"
+                        Feedback = "Reviewer timed out - result is UNREVIEWED"
                     };
                 }
 
