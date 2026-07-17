@@ -528,7 +528,29 @@ $("#modal-backdrop").addEventListener("mousedown", (e) => {
   if (e.target === $("#modal-backdrop")) closeModal();
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !$("#modal-backdrop").hidden) closeModal();
+  if (e.key !== "Escape") return;
+  if (!$("#modal-backdrop").hidden) closeModal();
+  else if (!$("#drawer-backdrop").hidden) closeDrawer();
+});
+
+/* ---------- drawer (transcripts and other long reads) ---------- */
+
+function openDrawer(title, sub) {
+  $("#drawer-title").textContent = title;
+  $("#drawer-sub").textContent = sub || "";
+  $("#drawer-body").innerHTML = "";
+  $("#drawer-backdrop").hidden = false;
+  return $("#drawer-body");
+}
+
+function closeDrawer() {
+  $("#drawer-backdrop").hidden = true;
+  $("#drawer-body").innerHTML = "";
+}
+
+$("#drawer-close").addEventListener("click", closeDrawer);
+$("#drawer-backdrop").addEventListener("mousedown", (e) => {
+  if (e.target === $("#drawer-backdrop")) closeDrawer();
 });
 
 async function ensureModels() {
@@ -1422,35 +1444,40 @@ function renderSessions() {
     .join("");
 
   $$("[data-session]").forEach((row) =>
-    row.addEventListener("click", async () => {
-      const id = row.dataset.session;
-      try {
-        const messages = await api.get(`/sessions/${id}/messages`);
-        openModal(
-          "Session transcript",
-          `<div class="msg-view">${messages
-            .map(
-              (m, i) => `
-              <div class="msg-row">
-                <div class="msg-role">${esc(m.role)}${m.agentName ? ` · ${esc(m.agentName)}` : ""}</div>
-                <div class="msg-content${m.role === "assistant" ? " md" : ""}" data-msg-index="${i}"></div>
-              </div>`
-            )
-            .join("") || '<div class="hint">No messages in this session.</div>'}</div>`
-        );
-        $$("#modal-body [data-msg-index]").forEach((el) => {
-          const m = messages[Number(el.dataset.msgIndex)];
-          if (m.role === "assistant" && m.content !== "null") {
-            renderMarkdown(el, m.content);
-          } else {
-            el.textContent = m.content;
-          }
-        });
-      } catch (err) {
-        toast(`<b>Error:</b> ${esc(err.message)}`);
-      }
+    row.addEventListener("click", () => {
+      const s = state.sessions.find((x) => x.id === row.dataset.session);
+      if (s) openSessionDrawer(s);
     })
   );
+}
+
+async function openSessionDrawer(session) {
+  try {
+    const messages = await api.get(`/sessions/${session.id}/messages`);
+    const body = openDrawer(
+      session.title || session.id,
+      `${session.chatType}${session.agentName ? ` · ${session.agentName}` : ""} · ${new Date(session.updatedAt).toLocaleString()}`
+    );
+    body.innerHTML = `<div class="msg-view drawer-msgs">${messages
+      .map(
+        (m, i) => `
+        <div class="msg-row">
+          <div class="msg-role">${esc(m.role)}${m.agentName ? ` · ${esc(m.agentName)}` : ""}</div>
+          <div class="msg-content${m.role === "assistant" ? " md" : ""}" data-msg-index="${i}"></div>
+        </div>`
+      )
+      .join("") || '<div class="hint">No messages in this session.</div>'}</div>`;
+    body.querySelectorAll("[data-msg-index]").forEach((el) => {
+      const m = messages[Number(el.dataset.msgIndex)];
+      if (m.role === "assistant" && m.content !== "null") {
+        renderMarkdown(el, m.content);
+      } else {
+        el.textContent = m.content;
+      }
+    });
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
 }
 
 $("#btn-refresh-sessions").addEventListener("click", loadSessions);

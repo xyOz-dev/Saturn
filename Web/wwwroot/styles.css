@@ -848,6 +848,42 @@ button.task-badge:hover { background: var(--panel-3); }
   color: var(--muted);
 }
 
+/* ---------- drawer ---------- */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #00000080;
+  z-index: 40;
+  animation: fade-in 0.2s;
+}
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(680px, 92vw);
+  background: var(--panel);
+  border-left: 1px solid var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  animation: drawer-in 0.28s var(--ease);
+}
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-titles { min-width: 0; }
+.drawer-head h3 { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer-sub { font-family: var(--font-mono); font-size: 11px; color: var(--dim); display: block; margin-top: 3px; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.drawer-msgs { max-height: none; }
+.drawer-msgs .msg-content { max-height: none; }
+
 /* ---------- toasts ---------- */
 
 .toasts {
@@ -1024,6 +1060,7 @@ button.task-badge:hover { background: var(--panel-3); }
 @keyframes rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes slide-left { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
 @keyframes modal-in { from { opacity: 0; transform: scale(0.95) translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes drawer-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes toast-in { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: none; } }
 @keyframes toast-out { to { opacity: 0; transform: translateX(30px); } }
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
