@@ -261,40 +261,85 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     
                     if (SubAgentPreferences.Instance.EnableReviewStage)
                     {
-                        agentContext.Status = AgentStatus.BeingReviewed;
+                        bool terminated;
+                        lock (_agentRegistrationLock)
+                        {
+                            terminated = agentContext.Status == AgentStatus.Terminated;
+                            if (!terminated)
+                            {
+                                agentContext.Status = AgentStatus.BeingReviewed;
+                            }
+                        }
+
+                        if (terminated)
+                        {
+                            CompleteTask(taskId, agentId, agentContext, false, "Task terminated before completion");
+                            return;
+                        }
+
                         OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Being Reviewed");
-                        
+
                         var currentResult = result.Content.ToString();
                         ReviewDecision reviewDecision = await StartReviewProcess(
-                            agentId, 
-                            taskId, 
-                            task, 
+                            agentId,
+                            taskId,
+                            task,
                             currentResult,
                             agentContext);
-                        
-                        while (reviewDecision.Status == ReviewStatus.RevisionRequested && 
+
+                        while (reviewDecision.Status == ReviewStatus.RevisionRequested &&
                                agentContext.RevisionCount < SubAgentPreferences.Instance.MaxRevisionCycles)
                         {
-                            agentContext.Status = AgentStatus.Revising;
-                            agentContext.RevisionCount++;
+                            lock (_agentRegistrationLock)
+                            {
+                                terminated = agentContext.Status == AgentStatus.Terminated;
+                                if (!terminated)
+                                {
+                                    agentContext.Status = AgentStatus.Revising;
+                                    agentContext.RevisionCount++;
+                                }
+                            }
+
+                            if (terminated)
+                            {
+                                break;
+                            }
+
                             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Revising (Attempt {agentContext.RevisionCount})");
-                            
+
                             var revisionInput = $"Please revise your previous work based on this feedback:\n{reviewDecision.Feedback}\n\nOriginal task: {task}";
                             var revisedResult = await agentContext.Agent.Execute<Message>(revisionInput, cancellation.Token);
                             currentResult = revisedResult.Content.ToString();
-                            
-                            agentContext.Status = AgentStatus.BeingReviewed;
+
+                            lock (_agentRegistrationLock)
+                            {
+                                terminated = agentContext.Status == AgentStatus.Terminated;
+                                if (!terminated)
+                                {
+                                    agentContext.Status = AgentStatus.BeingReviewed;
+                                }
+                            }
+
+                            if (terminated)
+                            {
+                                break;
+                            }
+
                             OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, $"Being Reviewed (Revision {agentContext.RevisionCount})");
-                            
+
                             reviewDecision = await StartReviewProcess(
-                                agentId, 
-                                taskId, 
-                                task, 
+                                agentId,
+                                taskId,
+                                task,
                                 currentResult,
                                 agentContext);
                         }
-                        
-                        if (reviewDecision.Status == ReviewStatus.Approved)
+
+                        if (terminated)
+                        {
+                            CompleteTask(taskId, agentId, agentContext, false, "Task terminated before completion");
+                        }
+                        else if (reviewDecision.Status == ReviewStatus.Approved)
                         {
                             var approvalMessage = agentContext.RevisionCount > 0 
                                 ? $"{currentResult}\n\n[Review: Approved after {agentContext.RevisionCount} revision(s) - {reviewDecision.Feedback}]"
