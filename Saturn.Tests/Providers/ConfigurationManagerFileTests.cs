@@ -160,6 +160,49 @@ namespace Saturn.Tests.Providers
         }
 
         [Fact]
+        public async Task SaveProviderSelection_UnreadableExistingConfig_ThrowsAndDoesNotClobberFile()
+        {
+            const string corrupt = "{ this is not valid json";
+            await File.WriteAllTextAsync(ConfigFile, corrupt);
+
+            var settings = new ProviderSettings();
+            settings.Set("apiKey", "sk-new");
+
+            var act = () => ConfigurationManager.SaveProviderSelectionAsync("openrouter", settings, "some-model");
+
+            await act.Should().ThrowAsync<IOException>();
+            (await File.ReadAllTextAsync(ConfigFile)).Should().Be(corrupt,
+                "a save must not overwrite a config file it could not read");
+        }
+
+        [Fact]
+        public async Task SaveSearchProviderSelection_UnreadableExistingConfig_ThrowsAndDoesNotClobberFile()
+        {
+            const string corrupt = "{ this is not valid json";
+            await File.WriteAllTextAsync(ConfigFile, corrupt);
+
+            var act = () => ConfigurationManager.SaveSearchProviderSelectionAsync("tavily", new ProviderSettings());
+
+            await act.Should().ThrowAsync<IOException>();
+            (await File.ReadAllTextAsync(ConfigFile)).Should().Be(corrupt);
+        }
+
+        [Fact]
+        public async Task SaveConfiguration_UnreadableExistingConfig_DoesNotClobberFile()
+        {
+            const string corrupt = "{ this is not valid json";
+            await File.WriteAllTextAsync(ConfigFile, corrupt);
+
+            await ConfigurationManager.SaveConfigurationAsync(new PersistedAgentConfiguration
+            {
+                Name = "Assistant",
+                Model = "some-model"
+            });
+
+            (await File.ReadAllTextAsync(ConfigFile)).Should().Be(corrupt);
+        }
+
+        [Fact]
         public async Task Save_LeavesNoTempFileBehind()
         {
             await ConfigurationManager.SaveConfigurationAsync(new PersistedAgentConfiguration { Name = "A", Model = "m" });

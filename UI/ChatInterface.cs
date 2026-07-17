@@ -976,7 +976,15 @@ namespace Saturn.UI
             agent.Configuration.Model = model;
             AgentManager.Instance.SetParentModel(model);
 
-            await ConfigurationManager.SaveProviderSelectionAsync(providerName, dialog.AppliedSettings ?? new ProviderSettings(), model);
+            try
+            {
+                await ConfigurationManager.SaveProviderSelectionAsync(providerName, dialog.AppliedSettings ?? new ProviderSettings(), model);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Provider",
+                    $"Provider switched for this session, but saving the configuration failed:\n{ex.Message}", "OK");
+            }
             await UpdateConfiguration();
 
             chatView.Text += $"\n[Provider switched to {capabilities.ProviderName} | Model: {model}]\n";
