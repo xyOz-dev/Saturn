@@ -65,7 +65,9 @@ namespace Saturn.Tools.Git
             {
                 if (files != null && files.Length > 0)
                 {
-                    var addArgs = new List<string> { "add" };
+                    // "--" stops flag parsing so a "file" like -A cannot silently
+                    // re-enable the add-everything behavior this parameter prevents.
+                    var addArgs = new List<string> { "add", "--" };
                     addArgs.AddRange(files);
                     
                     var addResult = await GitHelper.RunGitCommandAsync(addArgs, workingDirectory);

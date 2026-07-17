@@ -42,8 +42,17 @@ namespace Saturn.Tools.Git
             }
             catch (OperationCanceledException)
             {
-                process.Kill();
-                return (false, "", "Git command timed out.");
+                // Git spawns children (hooks, credential helpers); killing only the
+                // parent leaves them orphaned and holding the index lock.
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Already exited between the timeout and the kill.
+                }
+                return (false, "", $"Git command timed out after {timeoutSeconds}s.");
             }
 
             var output = await outputTask;

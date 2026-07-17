@@ -91,16 +91,25 @@ namespace Saturn.Tools.Git
                 }
 
                 var output = result.Output;
-                
+
                 if (string.IsNullOrEmpty(output))
                 {
-                    return CreateSuccessResult(new { Diff = "" }, "No differences found.");
+                    // Plain "git diff" cannot see untracked files; without this hint an
+                    // agent that just created new files concludes nothing has changed.
+                    var untrackedNote = staged ? "" : await DescribeUntrackedFilesAsync(workingDirectory, filePath);
+                    return CreateSuccessResult(new { Diff = "" }, $"No differences found.{untrackedNote}");
                 }
 
                 // Truncate if it's too large and not just a stat
                 if (!statOnly && output.Length > 50000)
                 {
-                    output = output.Substring(0, 50000) + "\n\n... [Diff truncated due to length. Use statOnly=true for a summary.]";
+                    var cut = 50000;
+                    // Never split a surrogate pair at the truncation boundary.
+                    if (char.IsHighSurrogate(output[cut - 1]))
+                    {
+                        cut--;
+                    }
+                    output = output.Substring(0, cut) + "\n\n... [Diff truncated due to length. Use statOnly=true for a summary.]";
                 }
 
                 return CreateSuccessResult(new { Diff = output }, output);
@@ -109,6 +118,32 @@ namespace Saturn.Tools.Git
             {
                 return CreateErrorResult($"Exception executing git diff: {ex.Message}");
             }
+        }
+
+        private static async Task<string> DescribeUntrackedFilesAsync(string workingDirectory, string filePath)
+        {
+            var args = new List<string> { "ls-files", "--others", "--exclude-standard" };
+            if (!string.IsNullOrEmpty(filePath))
+            {
+                args.Add("--");
+                args.Add(filePath);
+            }
+
+            var result = await GitHelper.RunGitCommandAsync(args, workingDirectory);
+            if (!result.Success)
+            {
+                return "";
+            }
+
+            var untracked = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (untracked.Length == 0)
+            {
+                return "";
+            }
+
+            var listed = string.Join(", ", untracked.Take(10));
+            var suffix = untracked.Length > 10 ? $" (and {untracked.Length - 10} more)" : "";
+            return $" Note: {untracked.Length} untracked file(s) are not shown by git diff: {listed}{suffix}";
         }
     }
 }
