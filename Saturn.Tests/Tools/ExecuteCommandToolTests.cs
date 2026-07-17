@@ -37,6 +37,30 @@ namespace Saturn.Tests.Tools
         }
 
         [Fact]
+        public async Task DetachedChildHoldingPipe_ReturnsPromptlyWithoutTimeout()
+        {
+            var tool = NewTool();
+
+            var command = IsWindows
+                ? "echo parent_done & start /b ping -n 30 127.0.0.1"
+                : "sleep 30 & echo parent_done";
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var result = await tool.ExecuteAsync(new Dictionary<string, object>
+            {
+                ["command"] = command,
+                ["timeout"] = 60
+            });
+            stopwatch.Stop();
+
+            result.Success.Should().BeTrue();
+            result.FormattedOutput.Should().Contain("parent_done");
+            result.FormattedOutput.Should().NotContain("TIMED OUT");
+            result.FormattedOutput.Should().Contain("holding the output stream");
+            stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(20));
+        }
+
+        [Fact]
         public async Task Background_StartsPollsAndCompletes()
         {
             var tool = NewTool();
