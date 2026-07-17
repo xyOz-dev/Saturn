@@ -175,7 +175,7 @@ namespace Saturn
             // Persisted configs predate newer tools; backfill only those.
             // Re-adding the full default set would silently restore tools
             // the user deliberately removed (e.g. execute_command).
-            var backfillTools = new List<string> { "update_todos", "web_search" };
+            var backfillTools = new List<string> { "update_todos", "web_search", "spawn_agent", "get_agent_status" };
             if (isWebMode)
             {
                 backfillTools.AddRange(WebModeTaskTools);
@@ -228,7 +228,7 @@ namespace Saturn
             {
                 "apply_diff", "grep", "glob", "read_file", "list_files",
                 "write_file", "search_and_replace", "delete_file",
-                "create_agent", "hand_off_to_agent", "get_agent_status",
+                "spawn_agent", "get_agent_status",
                 "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
                 "get_command_output", "kill_command", "web_fetch", "web_search",
                 "update_todos"
@@ -293,12 +293,11 @@ Prime Directive
    - Documentation Agent: Create for updating docs, comments, and READMEs
 
 3) Effective delegation:
-   - Create agents with clear, focused purposes
-   - Provide sufficient context in the task description
-   - Use hand_off_to_agent for fire-and-forget tasks
-   - Use wait_for_agent when you need results before proceeding
-   - Check agent status periodically for long-running tasks
-   - Aggregate results from multiple agents when working in parallel
+   - Spawn agents with spawn_agent: give each a clear, self-contained task including file paths and expected output - sub-agents start fresh and cannot see this conversation
+   - By default spawn_agent blocks and returns the agent's report directly; set background=true for work that should run while you continue
+   - For parallel work, spawn several background agents in one message, then collect them all with a single wait_for_agent call
+   - Sub-agent reports are returned to you, not shown to the user - relay what matters in your response
+   - Once you delegate a task, do not do it yourself as well - wait for the result and integrate it
    
 4) CRITICAL: Integrating sub-agent work:
    - DO NOT recreate or redo work completed by sub-agents

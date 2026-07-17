@@ -31,7 +31,7 @@ namespace Saturn.Agents.MultiAgent
         // (recursive create_agent, terminating siblings, or waiting on their own task).
         private static readonly HashSet<string> SubAgentExcludedTools = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "create_agent", "hand_off_to_agent", "terminate_agent",
+            "spawn_agent", "create_agent", "hand_off_to_agent", "terminate_agent",
             "wait_for_agent", "get_agent_status", "get_task_result",
             "claim_task", "dispatch_task", "list_due_tasks"
         };
@@ -88,7 +88,8 @@ namespace Saturn.Agents.MultiAgent
             int? maxTokens = null,
             double? topP = null,
             string? systemPromptOverride = null,
-            bool? includeUserRules = null)
+            bool? includeUserRules = null,
+            bool disposeOnTaskCompletion = false)
         {
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
 
@@ -99,7 +100,8 @@ namespace Saturn.Agents.MultiAgent
                 Purpose = purpose,
                 Status = AgentStatus.Idle,
                 CreatedAt = DateTime.Now,
-                CurrentTask = null
+                CurrentTask = null,
+                DisposeOnTaskCompletion = disposeOnTaskCompletion
             };
 
             // Reserve the slot atomically so a burst of concurrent creates can't exceed the cap.
@@ -704,8 +706,14 @@ Your decision:";
 
             // Publish the idle transition before completion handlers run: a handler
             // may immediately hand off another task, and its "Working" event must
-            // not be followed by a stale "Idle".
-            if (becameIdle)
+            // not be followed by a stale "Idle". One-shot agents (spawn_agent) are
+            // terminated instead, after their result is recorded, so they release
+            // their concurrency slot without orchestrator cleanup.
+            if (becameIdle && agentContext.DisposeOnTaskCompletion)
+            {
+                TerminateAgent(agentId);
+            }
+            else if (becameIdle)
             {
                 OnAgentStatusChanged?.Invoke(agentId, agentContext.Name, "Idle");
             }

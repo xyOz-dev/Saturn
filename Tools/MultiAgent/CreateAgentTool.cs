@@ -11,7 +11,7 @@ namespace Saturn.Tools.MultiAgent
     {
         public override string Name => "create_agent";
         
-        public override string Description => "Create a new sub-agent with specific capabilities and purpose";
+        public override string Description => "Create a persistent sub-agent that can be given multiple tasks over its lifetime via hand_off_to_agent. Prefer spawn_agent, the one-call alternative, unless you need to reuse the same agent across several tasks.";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {

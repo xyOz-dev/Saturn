@@ -31,7 +31,8 @@ namespace Saturn.Config
         public int DefaultMaxTokens { get; set; } = 4096;
         public double DefaultTopP { get; set; } = 0.95;
         public bool DefaultEnableTools { get; set; } = true;
-        
+        public int SpawnAgentTimeoutSeconds { get; set; } = 600;
+
         public bool EnableReviewStage { get; set; } = false;
         public string ReviewerModel { get; set; } = "anthropic/claude-3.5-sonnet";
         public int ReviewTimeoutSeconds { get; set; } = 300;
