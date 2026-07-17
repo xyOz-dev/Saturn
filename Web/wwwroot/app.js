@@ -158,10 +158,44 @@ function toast(html, ms = 3500) {
   }, ms);
 }
 
+// Approval toasts persist until the request is resolved (here, in the
+// Approvals view, from another client, or by timeout) — never auto-dismiss.
+function approvalToast(a) {
+  removeApprovalToast(a.id);
+  const el = document.createElement("div");
+  el.className = "toast approval-toast";
+  el.dataset.approvalId = a.id;
+  el.innerHTML = `
+    <div class="toast-title">⚑ Approval needed${a.agentName ? ` · ${esc(a.agentName)}` : ""}</div>
+    <div class="toast-body">${esc(a.title)}</div>
+    ${a.command ? `<div class="toast-command">${esc(a.command.slice(0, 160))}</div>` : ""}
+    <div class="toast-actions">
+      <button class="btn sm primary" data-act="approve">Approve</button>
+      <button class="btn sm danger" data-act="deny">Deny</button>
+      <button class="btn ghost sm" data-act="view">View</button>
+    </div>`;
+  el.querySelector('[data-act="approve"]').addEventListener("click", () => resolveApproval(a.id, true));
+  el.querySelector('[data-act="deny"]').addEventListener("click", () => resolveApproval(a.id, false));
+  el.querySelector('[data-act="view"]').addEventListener("click", () => {
+    removeApprovalToast(a.id);
+    showView("approvals");
+  });
+  $("#toasts").appendChild(el);
+}
+
+function removeApprovalToast(id) {
+  $$(`.approval-toast[data-approval-id="${CSS.escape(id)}"]`).forEach((el) => {
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 350);
+  });
+}
+
 /* ---------- state ---------- */
 
 const state = {
-  view: "overview",
+  view: "orchestrator",
+  workTab: "queue",
+  chatWindow: 20,
   overview: null,
   agents: [],
   tasks: { running: [], completed: [] },
@@ -184,29 +218,31 @@ const state = {
 const VIEW_TITLES = {
   overview: "Overview",
   agents: "Agents",
-  tasks: "Tasks",
+  work: "Work",
   orchestrator: "Orchestrator",
-  todos: "Todo List",
   sessions: "Sessions",
   approvals: "Approvals",
   settings: "Settings",
 };
+
+const WORK_TABS = ["queue", "running", "history", "schedule"];
 
 function showView(name) {
   state.view = name;
   $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   $("#view-title").textContent = VIEW_TITLES[name] || name;
+  updateApprovalBanner();
+  syncHash();
   refreshView(name);
 }
 
 async function refreshView(name) {
   try {
-    if (name === "overview") { await loadOverview(); await loadWakes(); }
+    if (name === "overview") await loadOverview();
     else if (name === "agents") await loadAgents();
-    else if (name === "tasks") await loadTasks();
-    else if (name === "orchestrator") await loadTranscript();
-    else if (name === "todos") await loadTodos();
+    else if (name === "work") await Promise.all([loadTodos(), loadTasks(), loadWakes()]);
+    else if (name === "orchestrator") await Promise.all([loadTranscript(), loadAgents(), loadTasks(), loadTodos()]);
     else if (name === "sessions") await loadSessions();
     else if (name === "approvals") await loadApprovals();
     else if (name === "settings") await loadSettings();
@@ -215,8 +251,67 @@ async function refreshView(name) {
   }
 }
 
+/* ---------- routing ---------- */
+
+// The view (and work sub-tab) live in the URL hash — #/agents, #/work/running —
+// so refresh keeps your place and views are linkable.
+function currentRoute() {
+  const parts = location.hash.replace(/^#\/?/, "").split("/");
+  // hasOwnProperty, not truthiness: "#/constructor" must not pass the check.
+  const view = Object.prototype.hasOwnProperty.call(VIEW_TITLES, parts[0]) ? parts[0] : "orchestrator";
+  const sub = view === "work" && WORK_TABS.includes(parts[1]) ? parts[1] : null;
+  return { view, sub };
+}
+
+function syncHash() {
+  const path = state.view === "work" ? `work/${state.workTab}` : state.view;
+  if (location.hash !== `#/${path}`) location.hash = `/${path}`;
+}
+
+window.addEventListener("hashchange", () => {
+  const { view, sub } = currentRoute();
+  if (view !== state.view) showView(view);
+  if (sub && sub !== state.workTab) showWorkTab(sub);
+});
+
+/* ---------- keyboard shortcuts ---------- */
+
+// 1-7 jump between views (nav order); "/" focuses the view's main input.
+// Disabled while typing or while a modal/drawer is open.
+const VIEW_ORDER = ["orchestrator", "overview", "agents", "work", "sessions", "approvals", "settings"];
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t.matches?.("input, textarea, select") || t.isContentEditable) return;
+  if (!$("#modal-backdrop").hidden || !$("#drawer-backdrop").hidden) return;
+
+  const idx = Number(e.key) - 1;
+  if (e.key >= "1" && e.key <= "7" && VIEW_ORDER[idx]) {
+    showView(VIEW_ORDER[idx]);
+    return;
+  }
+  if (e.key === "/") {
+    const target =
+      state.view === "orchestrator" ? $("#chat-text")
+      : state.view === "agents" ? $("#agent-search")
+      : state.view === "work" ? $("#todo-title")
+      : null;
+    // offsetParent is null for inputs inside a hidden work pane.
+    if (target && target.offsetParent !== null) {
+      e.preventDefault();
+      target.focus();
+    }
+  }
+});
+
 $$(".nav-item").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
-$$("[data-goto]").forEach((el) => el.addEventListener("click", () => showView(el.dataset.goto)));
+$$("[data-goto]").forEach((el) =>
+  el.addEventListener("click", () => {
+    showView(el.dataset.goto);
+    if (el.dataset.gotoTab) showWorkTab(el.dataset.gotoTab);
+  })
+);
 
 /* ---------- activity feed ---------- */
 
@@ -224,6 +319,7 @@ function logActivity(html) {
   state.activity.unshift({ time: new Date(), html });
   state.activity = state.activity.slice(0, 120);
   renderActivity();
+  renderRail();
 }
 
 function renderActivity() {
@@ -280,10 +376,58 @@ function updateBadges() {
   const o = state.overview;
   if (!o) return;
   setBadge("#badge-agents", o.agents.total);
-  setBadge("#badge-tasks", o.tasks.running);
-  setBadge("#badge-todos", o.todos.open);
+  setBadge("#badge-work", o.todos.open);
   setBadge("#badge-approvals", o.pendingApprovals);
+  $("#workcount-queue").textContent = o.todos.open || "";
+  $("#workcount-running").textContent = o.tasks.running || "";
+  updateApprovalBanner();
+  renderRail();
 }
+
+// Live status rail beside the orchestrator chat: enough situational awareness
+// to command without tabbing away. Each section links to its full view.
+function renderRail() {
+  if (state.view !== "orchestrator") return;
+  const o = state.overview;
+  if (o) {
+    $("#rail-agents").textContent = o.agents.total;
+    $("#rail-running").textContent = o.tasks.running;
+    const approvals = $("#rail-approvals");
+    approvals.textContent = o.pendingApprovals;
+    approvals.classList.toggle("warn", o.pendingApprovals > 0);
+  }
+  $("#rail-agent-list").innerHTML = state.agents
+    .slice(0, 8)
+    .map((a) => `<li title="${esc(a.purpose)}"><span class="status-dot ${a.currentTask ? "working" : ""}"></span><span>${esc(a.name)}</span></li>`)
+    .join("") || '<li class="rail-empty">no agents</li>';
+  $("#rail-task-list").innerHTML = state.tasks.running
+    .slice(0, 6)
+    .map((t) => `<li title="${esc(t.description)}"><span class="status-dot working"></span><span>${esc(t.description)}</span></li>`)
+    .join("") || '<li class="rail-empty">idle</li>';
+  const openTodos = state.todos.filter((t) => !isTerminal(t.status));
+  $("#rail-queue").textContent = state.overview?.todos.open ?? openTodos.length;
+  $("#rail-queue-list").innerHTML = openTodos
+    .slice(0, 6)
+    .map((t) => `<li title="${esc(t.title)}"><span class="rail-pri ${esc(t.priority)}"></span><span>${esc(t.title)}</span></li>`)
+    .join("") || '<li class="rail-empty">nothing queued</li>';
+  $("#rail-activity").innerHTML = state.activity
+    .slice(0, 10)
+    .map((a) => `<li>${a.html}</li>`)
+    .join("") || '<li class="rail-empty">quiet so far</li>';
+}
+
+// Pending approvals block agents mid-run, so they get a persistent banner
+// on every view except Approvals itself (where the cards are already visible).
+function updateApprovalBanner() {
+  const n = state.overview?.pendingApprovals || 0;
+  const show = n > 0 && state.view !== "approvals";
+  $("#approval-banner").hidden = !show;
+  if (show) {
+    $("#approval-banner-text").textContent = `${n} ${n === 1 ? "request is" : "requests are"} waiting for your approval`;
+  }
+}
+
+$("#approval-banner-btn").addEventListener("click", () => showView("approvals"));
 
 function setBadge(sel, value) {
   const el = $(sel);
@@ -327,6 +471,7 @@ async function loadWakes() {
 async function loadAgents() {
   state.agents = await api.get("/agents");
   renderAgents();
+  renderRail();
 }
 
 function renderAgents() {
@@ -361,6 +506,7 @@ function renderAgents() {
         ${a.currentTask ? `<div class="agent-task" title="${esc(a.currentTask.description)}">${esc(a.currentTask.description)}</div>` : ""}
         <div class="agent-actions">
           <button class="btn sm" data-handoff="${esc(a.agentId)}" ${working ? "disabled" : ""}>Hand off</button>
+          <button class="btn sm" data-log="${esc(a.agentId)}" title="open this agent's transcript">Log</button>
           <button class="btn sm danger" data-terminate="${esc(a.agentId)}">Terminate</button>
         </div>
       </div>`;
@@ -369,6 +515,9 @@ function renderAgents() {
 
   $$("#agent-grid [data-handoff]").forEach((b) =>
     b.addEventListener("click", () => openHandoffModal(b.dataset.handoff))
+  );
+  $$("#agent-grid [data-log]").forEach((b) =>
+    b.addEventListener("click", () => openAgentTranscript(b.dataset.log))
   );
   $$("#agent-grid [data-terminate]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -388,8 +537,31 @@ $("#agent-search").addEventListener("input", (e) => {
   renderAgents();
 });
 
+// Sessions come back newest-first, so the first match is the agent's
+// latest conversation.
+async function openAgentTranscript(agentId) {
+  const agent = state.agents.find((a) => a.agentId === agentId);
+  if (!agent) return;
+  try {
+    const sessions = await api.get("/sessions?limit=100");
+    const session = sessions.find((s) => s.agentName === agent.name);
+    if (!session) {
+      toast(`No transcript for <b>${esc(agent.name)}</b> yet — it hasn't exchanged any messages`);
+      return;
+    }
+    await openSessionDrawer(session);
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+}
+
 async function terminateAll() {
-  if (!confirm("Terminate all agents and clear completed tasks?")) return;
+  const ok = await confirmModal(
+    "Terminate all agents",
+    "Terminates every agent and clears completed tasks. Anything still running is lost.",
+    "Terminate all"
+  );
+  if (!ok) return;
   try {
     const r = await api.post("/agents/terminate-all");
     toast(`Terminated <b>${r.terminated}</b> agents`);
@@ -404,15 +576,70 @@ $("#qa-terminate-all").addEventListener("click", terminateAll);
 
 /* ---------- modals ---------- */
 
+/* Overlays move focus in on open, trap Tab inside, and hand focus back to
+   the element that opened them on close. */
+const FOCUSABLE = "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])";
+let modalOpener = null;
+let drawerOpener = null;
+
+function trapTab(container, e) {
+  const items = [...container.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+function restoreFocus(opener) {
+  if (opener?.isConnected) opener.focus();
+}
+
 function openModal(title, bodyHtml) {
+  modalOpener = document.activeElement;
   $("#modal-title").textContent = title;
   $("#modal-body").innerHTML = bodyHtml;
   $("#modal-backdrop").hidden = false;
+  // Callers that focus a specific field afterwards win — this is the default.
+  ($("#modal-body").querySelector(FOCUSABLE) || $("#modal-close")).focus();
 }
+
+// Set by confirmModal so dismissing any way (✕, backdrop, Escape) counts as "no".
+let onModalDismiss = null;
 
 function closeModal() {
   $("#modal-backdrop").hidden = true;
   $("#modal-body").innerHTML = "";
+  restoreFocus(modalOpener);
+  modalOpener = null;
+  const cb = onModalDismiss;
+  onModalDismiss = null;
+  if (cb) cb();
+}
+
+function confirmModal(title, body, confirmLabel = "Confirm", danger = true) {
+  return new Promise((resolve) => {
+    openModal(
+      title,
+      `
+      <p style="font-size:13px;color:var(--muted);margin:0">${body}</p>
+      <div class="modal-actions">
+        <button class="btn" id="cf-cancel">Cancel</button>
+        <button class="btn ${danger ? "danger" : "primary"}" id="cf-ok">${esc(confirmLabel)}</button>
+      </div>`
+    );
+    onModalDismiss = () => resolve(false);
+    $("#cf-cancel").addEventListener("click", closeModal);
+    $("#cf-ok").addEventListener("click", () => {
+      resolve(true);
+      closeModal();
+    });
+  });
 }
 
 $("#modal-close").addEventListener("click", closeModal);
@@ -420,7 +647,41 @@ $("#modal-backdrop").addEventListener("mousedown", (e) => {
   if (e.target === $("#modal-backdrop")) closeModal();
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !$("#modal-backdrop").hidden) closeModal();
+  if (e.key !== "Escape") return;
+  if ($("#todo-menu")) closeTodoMenu();
+  else if (!$("#modal-backdrop").hidden) closeModal();
+  else if (!$("#drawer-backdrop").hidden) closeDrawer();
+});
+
+$("#modal-backdrop").addEventListener("keydown", (e) => {
+  if (e.key === "Tab") trapTab($("#modal"), e);
+});
+$("#drawer-backdrop").addEventListener("keydown", (e) => {
+  if (e.key === "Tab") trapTab($("#drawer"), e);
+});
+
+/* ---------- drawer (transcripts and other long reads) ---------- */
+
+function openDrawer(title, sub) {
+  drawerOpener = document.activeElement;
+  $("#drawer-title").textContent = title;
+  $("#drawer-sub").textContent = sub || "";
+  $("#drawer-body").innerHTML = "";
+  $("#drawer-backdrop").hidden = false;
+  $("#drawer-close").focus();
+  return $("#drawer-body");
+}
+
+function closeDrawer() {
+  $("#drawer-backdrop").hidden = true;
+  $("#drawer-body").innerHTML = "";
+  restoreFocus(drawerOpener);
+  drawerOpener = null;
+}
+
+$("#drawer-close").addEventListener("click", closeDrawer);
+$("#drawer-backdrop").addEventListener("mousedown", (e) => {
+  if (e.target === $("#drawer-backdrop")) closeDrawer();
 });
 
 async function ensureModels() {
@@ -571,11 +832,11 @@ function openHandoffModal(agentId) {
 async function loadTasks() {
   state.tasks = await api.get("/tasks");
   renderTasks();
+  renderRail();
 }
 
 function renderTasks() {
   const { running, completed } = state.tasks;
-  $("#tasks-empty").classList.toggle("show", running.length === 0 && completed.length === 0);
 
   $("#task-running").innerHTML = running
     .map(
@@ -594,7 +855,7 @@ function renderTasks() {
       (t) => `
       <div class="task-row clickable" data-task="${esc(t.taskId)}">
         <span class="task-status ${t.success ? "done" : "failed"}">${t.success ? "done" : "failed"}</span>
-        <span class="task-desc">${esc(t.result.slice(0, 160))}</span>
+        <span class="task-desc" title="${esc(t.description || "")}">${esc(t.description || t.result.slice(0, 160))}</span>
         <span class="task-agent">${esc(t.agentName)}</span>
         <span class="task-time">${fmtDuration(t.durationSeconds)}</span>
       </div>`
@@ -611,6 +872,7 @@ function renderTasks() {
         <div class="kv"><span>Agent</span><span>${esc(t.agentName)} (${esc(t.agentId)})</span></div>
         <div class="kv"><span>Duration</span><span>${fmtDuration(t.durationSeconds)}</span></div>
         <div class="kv"><span>Finished</span><span>${new Date(t.completedAt).toLocaleString()}</span></div>
+        ${t.description ? `<div class="hint" style="margin-top:10px;white-space:pre-wrap">${esc(t.description)}</div>` : ""}
         <div class="result-pre md" id="task-result-md" style="margin-top:14px"></div>`
       );
       renderMarkdown($("#task-result-md"), t.result);
@@ -622,6 +884,24 @@ $("#btn-clear-tasks").addEventListener("click", async () => {
   await api.post("/tasks/clear-completed");
   await Promise.all([loadTasks(), loadOverview()]);
   toast("Completed tasks cleared");
+});
+
+/* ---------- work sub-tabs ---------- */
+
+function showWorkTab(tab) {
+  state.workTab = tab;
+  $$("#work-tabs .seg-item").forEach((b) => b.classList.toggle("active", b.dataset.worktab === tab));
+  WORK_TABS.forEach((t) => {
+    $(`#work-pane-${t}`).hidden = t !== tab;
+  });
+  syncHash();
+  const load = tab === "queue" ? loadTodos : tab === "schedule" ? loadWakes : loadTasks;
+  load().catch((err) => toast(`<b>Error:</b> ${esc(err.message)}`));
+}
+
+$("#work-tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest(".seg-item");
+  if (btn) showWorkTab(btn.dataset.worktab);
 });
 
 /* ---------- orchestrator ---------- */
@@ -636,17 +916,34 @@ function scheduleStreamRender() {
   streamRenderPending = true;
   setTimeout(() => {
     streamRenderPending = false;
+    // Capture stickiness before the render grows the scroll height. The
+    // stream bubble can grow up to its 300px inner cap between renders, so
+    // the follow margin must exceed that or following silently stops.
+    const stick = isNearBottom(340);
     const el = $("#chat-stream-text");
     renderMarkdown(el, streamBuffer);
     el.scrollTop = el.scrollHeight;
+    if (stick) scrollChatToBottom();
   }, 80);
+}
+
+function scrollChatToBottom() {
+  const scroll = $("#chat-scroll");
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+// "Following" the conversation means the user is within `margin` px of the
+// bottom; anyone who scrolled up to read history is left alone.
+function isNearBottom(margin = 160) {
+  const scroll = $("#chat-scroll");
+  return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < margin;
 }
 
 async function loadTranscript() {
   const t = await api.get("/orchestrator/transcript");
   state.transcript = t.entries;
   setOrchestratorBusy(t.busy);
-  renderTranscript();
+  renderTranscript({ stick: true });
 }
 
 function summarizeToolArgs(argsJson) {
@@ -680,10 +977,29 @@ function buildToolStrip(tools) {
   return details;
 }
 
-function renderTranscript() {
+/* Only a window of recent messages lives in the DOM. While following the
+   bottom the window trims back to CHAT_WINDOW (older nodes are disposed);
+   scrolling toward the top restores CHAT_WINDOW_STEP more at a time, starting
+   CHAT_LOAD_MARGIN px before the rendered history runs out. */
+const CHAT_WINDOW = 20;
+const CHAT_WINDOW_STEP = 20;
+const CHAT_LOAD_MARGIN = 800;
+
+function renderTranscript(opts = {}) {
+  // Compute stickiness before wiping the log — the wipe changes scrollHeight.
+  const stick = opts.stick ?? isNearBottom();
+  if (stick) state.chatWindow = CHAT_WINDOW;
   const log = $("#chat-log");
   log.innerHTML = "";
-  for (const e of state.transcript) {
+  const hidden = Math.max(0, state.transcript.length - state.chatWindow);
+  if (hidden > 0) {
+    const older = document.createElement("button");
+    older.className = "chat-older";
+    older.textContent = `↑ ${hidden} earlier message${hidden === 1 ? "" : "s"}`;
+    older.addEventListener("click", growChatWindow);
+    log.appendChild(older);
+  }
+  for (const e of state.transcript.slice(-state.chatWindow)) {
     if (e.role === "task") {
       const card = document.createElement("details");
       card.className = `chat-task${e.success === false ? " failed" : ""}`;
@@ -714,8 +1030,30 @@ function renderTranscript() {
     }
     log.appendChild(div);
   }
-  log.scrollTop = log.scrollHeight;
+  if (stick) scrollChatToBottom();
 }
+
+function growChatWindow() {
+  if (state.chatWindow >= state.transcript.length) return;
+  const scroll = $("#chat-scroll");
+  const prevHeight = scroll.scrollHeight;
+  const prevTop = scroll.scrollTop;
+  state.chatWindow = Math.min(state.transcript.length, state.chatWindow + CHAT_WINDOW_STEP);
+  renderTranscript({ stick: false });
+  // Older content was prepended; offset by the height it added so the
+  // message the user was looking at stays put.
+  scroll.scrollTop = prevTop + (scroll.scrollHeight - prevHeight);
+}
+
+$("#chat-scroll").addEventListener("scroll", () => {
+  const scroll = $("#chat-scroll");
+  // Both conditions matter: near the top AND away from the bottom. On a
+  // transcript shorter than the margin the two overlap, and without the
+  // second check sitting at the bottom would grow the window forever.
+  if (scroll.scrollTop < CHAT_LOAD_MARGIN && !isNearBottom(200) && state.chatWindow < state.transcript.length) {
+    growChatWindow();
+  }
+});
 
 let workingSince = null;
 let workingTimer = null;
@@ -733,6 +1071,7 @@ function setOrchestratorBusy(busy) {
   if (busy) {
     if (!workingSince) workingSince = Date.now();
     $("#chat-stream").hidden = false;
+    if (isNearBottom(340)) scrollChatToBottom();
     updateWorkingLabel();
     if (!workingTimer) workingTimer = setInterval(updateWorkingLabel, 1000);
   } else {
@@ -749,7 +1088,8 @@ function setOrchestratorBusy(busy) {
 let currentTurnTools = [];
 
 function renderToolLog() {
-  $("#tool-log").innerHTML = currentTurnTools
+  const el = $("#tool-log");
+  el.innerHTML = currentTurnTools
     .map(
       (t, i) => `
       <div class="tool-row ${i === currentTurnTools.length - 1 ? "latest" : ""}">
@@ -758,6 +1098,7 @@ function renderToolLog() {
       </div>`
     )
     .join("");
+  el.scrollTop = el.scrollHeight;
 }
 
 $("#chat-form").addEventListener("submit", async (e) => {
@@ -769,7 +1110,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
   // server round-trip; the SSE echo confirms it (or the catch rolls it back).
   const entry = { role: "user", content: message, optimistic: true };
   state.transcript.push(entry);
-  renderTranscript();
+  renderTranscript({ stick: true });
   currentTurnTools = [];
   setOrchestratorBusy(true);
   $("#chat-text").value = "";
@@ -801,7 +1142,13 @@ $("#chat-text").addEventListener("keydown", (e) => {
 $("#chat-cancel").addEventListener("click", () => api.post("/orchestrator/cancel").catch(() => {}));
 
 $("#chat-new").addEventListener("click", async () => {
-  if (!confirm("Start a fresh conversation? The current chat context is closed (history stays in Sessions).")) return;
+  const ok = await confirmModal(
+    "Start a fresh conversation?",
+    "The current chat context is closed. History stays available in Sessions.",
+    "New chat",
+    false
+  );
+  if (!ok) return;
   try {
     await api.post("/orchestrator/new-session");
   } catch (err) {
@@ -821,6 +1168,7 @@ async function loadTodos() {
   state.todos = await api.get(`/todos?${params}`);
   await loadBoards();
   renderTodos();
+  renderRail();
 }
 
 async function loadBoards() {
@@ -878,9 +1226,7 @@ function renderTodos() {
         ${state.todoScope === "all" ? `<span class="task-scope">${esc(t.scope)}${t.board !== "default" ? `/${esc(t.board)}` : ""}</span>` : ""}
         <button class="todo-pri ${esc(t.priority)}" data-id="${esc(t.id)}" data-pri="${esc(t.priority)}" title="cycle priority">${esc(t.priority)}</button>
         ${!isTerminal(t.status) && !t.dispatchedTo && !t.blocked ? `<button class="btn ghost sm" data-dispatch="${esc(t.id)}" title="hand off to an agent">▶</button>` : ""}
-        <button class="btn ghost sm" data-detail="${esc(t.id)}" title="details">ⓘ</button>
-        <button class="btn ghost sm" data-edit="${esc(t.id)}" title="edit">✎</button>
-        <button class="todo-del" data-del="${esc(t.id)}" title="delete">✕</button>
+        <button class="btn ghost sm" data-more="${esc(t.id)}" title="more actions">⋯</button>
       </li>`
     )
     .join("");
@@ -941,17 +1287,68 @@ function renderTodos() {
     })
   );
 
-  $$("[data-edit]").forEach((b) => b.addEventListener("click", () => openTaskModal(b.dataset.edit)));
-  $$("[data-detail]").forEach((b) => b.addEventListener("click", () => openTaskDetail(b.dataset.detail)));
   $$("[data-dispatch]").forEach((b) => b.addEventListener("click", () => openDispatchModal(b.dataset.dispatch)));
-
-  $$("[data-del]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      await api.del(`/todos/${b.dataset.del}`);
-      await Promise.all([loadTodos(), loadOverview()]);
-    })
-  );
+  $$("[data-more]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openTodoMenu(b, b.dataset.more);
+  }));
 }
+
+/* ---------- todo overflow menu ---------- */
+
+function closeTodoMenu() {
+  $("#todo-menu")?.remove();
+}
+
+function openTodoMenu(anchor, taskId) {
+  if ($("#todo-menu")?.dataset.taskId === taskId) {
+    closeTodoMenu();
+    return;
+  }
+  closeTodoMenu();
+  const menu = document.createElement("div");
+  menu.className = "popmenu";
+  menu.id = "todo-menu";
+  menu.dataset.taskId = taskId;
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = `
+    <button role="menuitem" data-menu="detail">Details</button>
+    <button role="menuitem" data-menu="edit">Edit</button>
+    <button role="menuitem" data-menu="delete" class="danger">Delete</button>`;
+  menu.addEventListener("keydown", (e) => {
+    const items = [...menu.querySelectorAll("button")];
+    const idx = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      items[(idx + dir + items.length) % items.length].focus();
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      closeTodoMenu();
+      anchor.focus();
+    }
+  });
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = `${Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8)}px`;
+  menu.style.left = `${Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)}px`;
+  menu.querySelector("button").focus();
+  menu.querySelector('[data-menu="detail"]').addEventListener("click", () => { closeTodoMenu(); openTaskDetail(taskId); });
+  menu.querySelector('[data-menu="edit"]').addEventListener("click", () => { closeTodoMenu(); openTaskModal(taskId); });
+  menu.querySelector('[data-menu="delete"]').addEventListener("click", async () => {
+    closeTodoMenu();
+    try {
+      await api.del(`/todos/${taskId}`);
+      await Promise.all([loadTodos(), loadOverview()]);
+    } catch (err) {
+      toast(`<b>Error:</b> ${esc(err.message)}`);
+    }
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#todo-menu")) closeTodoMenu();
+});
 
 async function updateTodo(id, patch) {
   try {
@@ -1290,35 +1687,40 @@ function renderSessions() {
     .join("");
 
   $$("[data-session]").forEach((row) =>
-    row.addEventListener("click", async () => {
-      const id = row.dataset.session;
-      try {
-        const messages = await api.get(`/sessions/${id}/messages`);
-        openModal(
-          "Session transcript",
-          `<div class="msg-view">${messages
-            .map(
-              (m, i) => `
-              <div class="msg-row">
-                <div class="msg-role">${esc(m.role)}${m.agentName ? ` · ${esc(m.agentName)}` : ""}</div>
-                <div class="msg-content${m.role === "assistant" ? " md" : ""}" data-msg-index="${i}"></div>
-              </div>`
-            )
-            .join("") || '<div class="hint">No messages in this session.</div>'}</div>`
-        );
-        $$("#modal-body [data-msg-index]").forEach((el) => {
-          const m = messages[Number(el.dataset.msgIndex)];
-          if (m.role === "assistant" && m.content !== "null") {
-            renderMarkdown(el, m.content);
-          } else {
-            el.textContent = m.content;
-          }
-        });
-      } catch (err) {
-        toast(`<b>Error:</b> ${esc(err.message)}`);
-      }
+    row.addEventListener("click", () => {
+      const s = state.sessions.find((x) => x.id === row.dataset.session);
+      if (s) openSessionDrawer(s);
     })
   );
+}
+
+async function openSessionDrawer(session) {
+  try {
+    const messages = await api.get(`/sessions/${session.id}/messages`);
+    const body = openDrawer(
+      session.title || session.id,
+      `${session.chatType}${session.agentName ? ` · ${session.agentName}` : ""} · ${new Date(session.updatedAt).toLocaleString()}`
+    );
+    body.innerHTML = `<div class="msg-view drawer-msgs">${messages
+      .map(
+        (m, i) => `
+        <div class="msg-row">
+          <div class="msg-role">${esc(m.role)}${m.agentName ? ` · ${esc(m.agentName)}` : ""}</div>
+          <div class="msg-content${m.role === "assistant" ? " md" : ""}" data-msg-index="${i}"></div>
+        </div>`
+      )
+      .join("") || '<div class="hint">No messages in this session.</div>'}</div>`;
+    body.querySelectorAll("[data-msg-index]").forEach((el) => {
+      const m = messages[Number(el.dataset.msgIndex)];
+      if (m.role === "assistant" && m.content !== "null") {
+        renderMarkdown(el, m.content);
+      } else {
+        el.textContent = m.content;
+      }
+    });
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
 }
 
 $("#btn-refresh-sessions").addEventListener("click", loadSessions);
@@ -1360,8 +1762,12 @@ function renderApprovals() {
 async function resolveApproval(id, approved) {
   try {
     await api.post(`/approvals/${id}`, { approved });
+    removeApprovalToast(id);
     await Promise.all([loadApprovals(), loadOverview()]);
   } catch (err) {
+    // 404 means it was already resolved elsewhere (or timed out) — stale
+    // either way. On transient failures keep the actions available.
+    if (err.status === 404) removeApprovalToast(id);
     toast(`<b>Error:</b> ${esc(err.message)}`);
   }
 }
@@ -1690,9 +2096,16 @@ $("#setting-approval").addEventListener("change", (e) =>
 );
 
 $("#setting-trust").addEventListener("change", async (e) => {
-  if (e.target.checked && !confirm("Trust mode auto-approves EVERY shell command from every agent. Enable?")) {
-    e.target.checked = false;
-    return;
+  if (e.target.checked) {
+    const ok = await confirmModal(
+      "Enable trust mode",
+      "Trust mode auto-approves EVERY shell command from every agent, with no review.",
+      "Enable trust mode"
+    );
+    if (!ok) {
+      e.target.checked = false;
+      return;
+    }
   }
   await putSetting({ trustMode: e.target.checked },
     e.target.checked ? "<b>Trust mode ON</b> — all commands auto-approve" : "Trust mode off");
@@ -1764,33 +2177,34 @@ function connectEvents() {
   es.addEventListener("agent.created", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`agent <b>${esc(d.name)}</b> created`);
-    refreshIf(["agents"], [loadAgents]);
+    refreshIf(["agents", "orchestrator"], [loadAgents]);
   });
 
   es.addEventListener("agent.status", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`<b>${esc(d.name)}</b> → ${esc(d.status)}`);
-    refreshIf(["agents", "tasks"], [loadAgents, loadTasks]);
+    refreshIf(["agents", "work", "orchestrator"], [loadAgents, loadTasks]);
   });
 
   es.addEventListener("task.completed", (e) => {
     const d = JSON.parse(e.data);
-    logActivity(`task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "failed"} (${esc(d.agentName)})`);
-    toast(`Task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "<b>failed</b>"} — ${esc(d.agentName)}`);
-    refreshIf(["tasks", "agents"], [loadTasks, loadAgents]);
+    const desc = d.description ? `: ${esc(d.description.slice(0, 60))}` : "";
+    logActivity(`task <b>${esc(d.taskId)}</b> ${d.success ? "completed" : "failed"} (${esc(d.agentName)})${desc}`);
+    toast(`Task ${d.success ? "completed" : "<b>failed</b>"} — ${esc(d.agentName)}${desc}`);
+    refreshIf(["work", "agents", "orchestrator"], [loadTasks, loadAgents]);
   });
 
-  es.addEventListener("agents.cleared", () => refreshIf(["agents", "tasks"], [loadAgents, loadTasks]));
-  es.addEventListener("tasks.cleared", () => refreshIf(["tasks"], [loadTasks]));
-  es.addEventListener("todos.changed", () => refreshIf(["todos"], [loadTodos]));
-  es.addEventListener("tasks.changed", () => refreshIf(["todos", "overview"], [loadTodos, loadWakes]));
+  es.addEventListener("agents.cleared", () => refreshIf(["agents", "work", "orchestrator"], [loadAgents, loadTasks]));
+  es.addEventListener("tasks.cleared", () => refreshIf(["work", "orchestrator"], [loadTasks]));
+  es.addEventListener("todos.changed", () => refreshIf(["work", "orchestrator"], [loadTodos]));
+  es.addEventListener("tasks.changed", () => refreshIf(["work", "orchestrator"], [loadTodos, loadWakes]));
   es.addEventListener("settings.changed", () => refreshIf(["settings"], [loadSettings]));
   es.addEventListener("wake.enqueued", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`wake queued: <b>${esc(d.kind)}</b>${d.taskId ? ` (${esc(d.taskId)})` : ""}`);
-    refreshIf(["overview"], [loadWakes]);
+    refreshIf(["work"], [loadWakes]);
   });
-  es.addEventListener("wake.delivered", () => refreshIf(["overview"], [loadWakes]));
+  es.addEventListener("wake.delivered", () => refreshIf(["work"], [loadWakes]));
   es.addEventListener("task.due", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`recurring task due: <b>${esc(d.title)}</b>${d.skipped ? " (skipped)" : ""}`);
@@ -1798,24 +2212,25 @@ function connectEvents() {
   es.addEventListener("task.unblocked", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`task unblocked: <b>${esc(d.title)}</b>`);
-    refreshIf(["todos"], [loadTodos]);
+    refreshIf(["work", "orchestrator"], [loadTodos]);
   });
   es.addEventListener("task.dispatched", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`task <b>${esc(d.taskId)}</b> dispatched to <b>${esc(d.agentName)}</b>`);
-    refreshIf(["todos", "agents"], [loadTodos, loadAgents]);
+    refreshIf(["work", "agents", "orchestrator"], [loadTodos, loadAgents]);
   });
 
   es.addEventListener("approval.requested", (e) => {
     const d = JSON.parse(e.data);
     const what = d.command || d.title || "decision";
     logActivity(`approval requested: <b>${esc(what.slice(0, 60))}</b>`);
-    toast(`<b>Approval needed:</b> ${esc(what.slice(0, 80))}`, 6000);
+    if (state.view !== "approvals") approvalToast(d);
     refreshIf(["approvals"], [loadApprovals]);
   });
 
   es.addEventListener("approval.resolved", (e) => {
     const d = JSON.parse(e.data);
+    removeApprovalToast(d.id);
     logDecision(`${d.approved ? "approved" : "denied"} by <b>${esc(d.resolvedBy || "user")}</b>${d.command ? `: ${esc(d.command.slice(0, 70))}` : ""}${d.reason ? ` — ${esc(d.reason.slice(0, 80))}` : ""}`);
     refreshIf(["approvals"], [loadApprovals]);
   });
@@ -1874,7 +2289,7 @@ function connectEvents() {
     state.transcript = [];
     currentTurnTools = [];
     setOrchestratorBusy(false);
-    if (state.view === "orchestrator") renderTranscript();
+    if (state.view === "orchestrator") renderTranscript({ stick: true });
     toast("Started a <b>new conversation</b>");
   });
 
@@ -1893,12 +2308,15 @@ function connectEvents() {
 (async function boot() {
   connectEvents();
   await loadOverview().catch(() => {});
-  await refreshView(state.view);
+  const { view, sub } = currentRoute();
+  if (sub) state.workTab = sub;
+  showView(view);
+  if (view === "work") showWorkTab(state.workTab);
   ensureModels();
 
   setInterval(() => {
     loadOverview().catch(() => {});
-    if (state.view === "agents") loadAgents().catch(() => {});
-    if (state.view === "tasks") loadTasks().catch(() => {});
+    if (state.view === "agents" || state.view === "orchestrator") loadAgents().catch(() => {});
+    if (state.view === "work" || state.view === "orchestrator") loadTasks().catch(() => {});
   }, 10000);
 })();

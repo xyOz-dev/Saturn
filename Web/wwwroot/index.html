@@ -20,33 +20,29 @@
       </div>
 
       <nav class="nav">
-        <button class="nav-item active" data-view="overview">
-          <span class="nav-icon">▣</span> Overview
+        <button class="nav-item active" data-view="orchestrator">
+          <span class="nav-icon">◈</span><span class="nav-label">Orchestrator</span>
+        </button>
+        <button class="nav-item" data-view="overview">
+          <span class="nav-icon">▣</span><span class="nav-label">Overview</span>
         </button>
         <button class="nav-item" data-view="agents">
-          <span class="nav-icon">⬡</span> Agents
+          <span class="nav-icon">⬡</span><span class="nav-label">Agents</span>
           <span class="nav-badge" id="badge-agents">0</span>
         </button>
-        <button class="nav-item" data-view="tasks">
-          <span class="nav-icon">≡</span> Tasks
-          <span class="nav-badge" id="badge-tasks">0</span>
-        </button>
-        <button class="nav-item" data-view="orchestrator">
-          <span class="nav-icon">◈</span> Orchestrator
-        </button>
-        <button class="nav-item" data-view="todos">
-          <span class="nav-icon">☑</span> Todo List
-          <span class="nav-badge" id="badge-todos">0</span>
+        <button class="nav-item" data-view="work">
+          <span class="nav-icon">≡</span><span class="nav-label">Work</span>
+          <span class="nav-badge" id="badge-work">0</span>
         </button>
         <button class="nav-item" data-view="sessions">
-          <span class="nav-icon">◷</span> Sessions
+          <span class="nav-icon">◷</span><span class="nav-label">Sessions</span>
         </button>
         <button class="nav-item" data-view="approvals">
-          <span class="nav-icon">⚑</span> Approvals
+          <span class="nav-icon">⚑</span><span class="nav-label">Approvals</span>
           <span class="nav-badge alert" id="badge-approvals">0</span>
         </button>
         <button class="nav-item" data-view="settings">
-          <span class="nav-icon">⚙</span> Settings
+          <span class="nav-icon">⚙</span><span class="nav-label">Settings</span>
         </button>
       </nav>
 
@@ -61,27 +57,32 @@
 
     <main class="main">
       <header class="topbar">
-        <h1 id="view-title">Overview</h1>
+        <h1 id="view-title">Orchestrator</h1>
         <div class="topbar-right">
           <span class="model-chip" id="model-chip">—</span>
           <span class="uptime" id="uptime-chip">up 0s</span>
         </div>
       </header>
 
+      <div class="approval-banner" id="approval-banner" hidden>
+        <span id="approval-banner-text">approvals waiting</span>
+        <button class="btn sm" id="approval-banner-btn">Review</button>
+      </div>
+
       <!-- OVERVIEW -->
-      <section class="view active" id="view-overview">
+      <section class="view" id="view-overview">
         <div class="stat-grid">
           <div class="stat-card" data-goto="agents">
             <div class="stat-value" id="stat-agents">0</div>
             <div class="stat-label">active agents</div>
             <div class="stat-sub" id="stat-agents-sub">0 working · max 0</div>
           </div>
-          <div class="stat-card" data-goto="tasks">
+          <div class="stat-card" data-goto="work" data-goto-tab="running">
             <div class="stat-value" id="stat-running">0</div>
             <div class="stat-label">tasks running</div>
             <div class="stat-sub" id="stat-tasks-sub">0 done · 0 failed</div>
           </div>
-          <div class="stat-card" data-goto="todos">
+          <div class="stat-card" data-goto="work">
             <div class="stat-value" id="stat-todos">0</div>
             <div class="stat-label">open todos</div>
             <div class="stat-sub" id="stat-todos-sub">0 completed</div>
@@ -114,10 +115,6 @@
               <button class="btn ghost sm" id="clear-activity">clear</button>
             </div>
             <ul class="activity-feed" id="activity-feed"></ul>
-            <div class="panel-head" style="margin-top:18px">
-              <h2>Scheduler queue</h2>
-            </div>
-            <ul class="wake-list" id="wake-list"></ul>
           </div>
         </div>
       </section>
@@ -135,32 +132,20 @@
         <div class="empty" id="agents-empty">No agents running. Spawn one to get started.</div>
       </section>
 
-      <!-- TASKS -->
-      <section class="view" id="view-tasks">
-        <div class="toolbar">
-          <span class="toolbar-title">Running</span>
-          <div class="toolbar-spacer"></div>
-          <button class="btn" id="btn-clear-tasks">Clear completed</button>
-        </div>
-        <div class="task-list" id="task-running"></div>
-        <div class="toolbar">
-          <span class="toolbar-title">Completed</span>
-        </div>
-        <div class="task-list" id="task-completed"></div>
-        <div class="empty" id="tasks-empty">No tasks yet. Hand work off to an agent.</div>
-      </section>
-
       <!-- ORCHESTRATOR -->
-      <section class="view" id="view-orchestrator">
+      <section class="view active" id="view-orchestrator">
+        <div class="orch-layout">
         <div class="chat">
-          <div class="chat-log" id="chat-log"></div>
-          <div class="chat-stream" id="chat-stream" hidden>
-            <div class="chat-stream-head">
-              <span class="pulse-dot"></span>
-              <span id="working-label">assistant is working</span>
+          <div class="chat-scroll" id="chat-scroll">
+            <div class="chat-log" id="chat-log"></div>
+            <div class="chat-stream" id="chat-stream" hidden>
+              <div class="chat-stream-head">
+                <span class="pulse-dot"></span>
+                <span id="working-label">assistant is working</span>
+              </div>
+              <div class="tool-log" id="tool-log"></div>
+              <div class="md stream-md" id="chat-stream-text"></div>
             </div>
-            <div class="tool-log" id="tool-log"></div>
-            <div class="md stream-md" id="chat-stream-text"></div>
           </div>
           <form class="chat-input" id="chat-form">
             <textarea id="chat-text" rows="2" placeholder="Instruct the orchestrator… (Enter to send, Shift+Enter for newline)"></textarea>
@@ -171,10 +156,43 @@
             </div>
           </form>
         </div>
+
+        <aside class="orch-rail">
+          <div class="rail-section" data-goto="agents">
+            <div class="rail-head"><span>Agents</span><span class="rail-count" id="rail-agents">0</span></div>
+            <ul class="rail-list" id="rail-agent-list"></ul>
+          </div>
+          <div class="rail-section" data-goto="work" data-goto-tab="running">
+            <div class="rail-head"><span>Running</span><span class="rail-count" id="rail-running">0</span></div>
+            <ul class="rail-list" id="rail-task-list"></ul>
+          </div>
+          <div class="rail-section" data-goto="work" data-goto-tab="queue">
+            <div class="rail-head"><span>Queue</span><span class="rail-count" id="rail-queue">0</span></div>
+            <ul class="rail-list" id="rail-queue-list"></ul>
+          </div>
+          <div class="rail-section" data-goto="approvals">
+            <div class="rail-head"><span>Approvals</span><span class="rail-count" id="rail-approvals">0</span></div>
+          </div>
+          <div class="rail-section rail-grow">
+            <div class="rail-head"><span>Activity</span></div>
+            <ul class="rail-list" id="rail-activity"></ul>
+          </div>
+        </aside>
+        </div>
       </section>
 
-      <!-- TODOS / TASK MANAGER -->
-      <section class="view" id="view-todos">
+      <!-- WORK: queue (todos), running dispatches, history -->
+      <section class="view" id="view-work">
+        <div class="toolbar">
+          <div class="seg work-tabs" id="work-tabs">
+            <button class="seg-item active" data-worktab="queue">Queue <span class="seg-count" id="workcount-queue"></span></button>
+            <button class="seg-item" data-worktab="running">Running <span class="seg-count" id="workcount-running"></span></button>
+            <button class="seg-item" data-worktab="history">History</button>
+            <button class="seg-item" data-worktab="schedule">Schedule</button>
+          </div>
+        </div>
+
+        <div class="work-pane" id="work-pane-queue">
         <div class="toolbar">
           <div class="seg" id="todo-scope">
             <button class="seg-item active" data-scope="all">all</button>
@@ -207,6 +225,26 @@
         </form>
         <ul class="todo-list" id="todo-list"></ul>
         <div class="empty" id="todos-empty">Nothing here. Add your first task above.</div>
+        </div>
+
+        <div class="work-pane" id="work-pane-running" hidden>
+          <div class="task-list" id="task-running"></div>
+        </div>
+
+        <div class="work-pane" id="work-pane-history" hidden>
+          <div class="toolbar">
+            <div class="toolbar-spacer"></div>
+            <button class="btn" id="btn-clear-tasks">Clear completed</button>
+          </div>
+          <div class="task-list" id="task-completed"></div>
+        </div>
+
+        <div class="work-pane" id="work-pane-schedule" hidden>
+          <div class="toolbar">
+            <span class="toolbar-title">Scheduler queue — wakes waiting for the orchestrator</span>
+          </div>
+          <ul class="wake-list" id="wake-list"></ul>
+        </div>
       </section>
 
       <!-- SESSIONS -->
@@ -385,11 +423,24 @@
     </main>
   </div>
 
+  <div class="drawer-backdrop" id="drawer-backdrop" hidden>
+    <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer-head">
+        <div class="drawer-titles">
+          <h3 id="drawer-title">Transcript</h3>
+          <span class="drawer-sub" id="drawer-sub"></span>
+        </div>
+        <button class="btn ghost sm" id="drawer-close" aria-label="Close">✕</button>
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+  </div>
+
   <div class="modal-backdrop" id="modal-backdrop" hidden>
-    <div class="modal" id="modal">
+    <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-head">
         <h3 id="modal-title">Modal</h3>
-        <button class="btn ghost sm" id="modal-close">✕</button>
+        <button class="btn ghost sm" id="modal-close" aria-label="Close">✕</button>
       </div>
       <div class="modal-body" id="modal-body"></div>
     </div>

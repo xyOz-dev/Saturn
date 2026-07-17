@@ -11,6 +11,7 @@ namespace Saturn.Agents.MultiAgent.Objects
         public string TaskId { get; set; } = "";
         public string AgentId { get; set; } = "";
         public string AgentName { get; set; } = "";
+        public string Description { get; set; } = "";
         public bool Success { get; set; }
         public string Result { get; set; } = "";
         public DateTime CompletedAt { get; set; }
