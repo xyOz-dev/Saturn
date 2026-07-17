@@ -194,7 +194,13 @@ namespace Saturn.Data.Tasks
                         dependentEdges[dependentId] = await sourceRepo.GetDependenciesAsync(dependentId);
                     }
 
-                    await sourceRepo.DeleteTaskAsync(task.Id);
+                    // Guard the delete with the row's loaded UpdatedAt so a writer
+                    // that committed since we read it isn't silently discarded by
+                    // the move; reload and reapply the whole spec on conflict.
+                    if (!await sourceRepo.DeleteTaskAsync(task.Id, task.UpdatedAt))
+                    {
+                        continue;
+                    }
                     task.Scope = spec.Scope;
                     await RepoOf(task).InsertTaskAsync(task);
                     await RepoOf(task).SetDependenciesAsync(task.Id, deps);

@@ -217,15 +217,26 @@ namespace Saturn.Data.Tasks
             }, ct);
         }
 
-        public Task<bool> DeleteTaskAsync(string id, CancellationToken ct = default)
+        // expectedUpdatedAt, when given, guards the delete with the same
+        // optimistic-concurrency token as UpdateTaskAsync so a scope-move's
+        // delete+insert can't discard a write that landed after it loaded the row.
+        public Task<bool> DeleteTaskAsync(string id, DateTime? expectedUpdatedAt = null, CancellationToken ct = default)
         {
             return WithWriteLockAsync(async () =>
             {
                 using var connection = CreateConnection();
-                using var cmd = new SqliteCommand(
-                    "DELETE FROM Tasks WHERE Id = @Id; DELETE FROM TaskDependencies WHERE TaskId = @Id OR BlockedByTaskId = @Id;",
-                    connection);
+                var sql = "DELETE FROM Tasks WHERE Id = @Id";
+                if (expectedUpdatedAt.HasValue)
+                {
+                    sql += " AND UpdatedAt = @ExpectedUpdatedAt";
+                }
+                sql += "; DELETE FROM TaskDependencies WHERE TaskId = @Id OR BlockedByTaskId = @Id;";
+                using var cmd = new SqliteCommand(sql, connection);
                 cmd.Parameters.AddWithValue("@Id", id);
+                if (expectedUpdatedAt.HasValue)
+                {
+                    cmd.Parameters.AddWithValue("@ExpectedUpdatedAt", expectedUpdatedAt.Value.ToString("O"));
+                }
                 return await cmd.ExecuteNonQueryAsync(ct) > 0;
             }, ct);
         }
