@@ -243,7 +243,7 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                 }
             }
 
-            _ = Task.Run(async () =>
+            var executionTask = Task.Run(async () =>
             {
                 try
                 {
@@ -326,6 +326,8 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     CompleteTask(taskId, agentId, agentContext, false, $"Error: {ex.Message}");
                 }
             });
+            agentContext.ExecutionTask = executionTask;
+            _ = executionTask;
 
             return taskId;
         }
@@ -670,10 +672,12 @@ Your decision:";
             if (_runningAgents.TryRemove(agentId, out var context))
             {
                 CancellationTokenSource? cancellation;
+                Task? executionTask;
                 lock (_agentRegistrationLock)
                 {
                     context.Status = AgentStatus.Terminated;
                     cancellation = context.Cancellation;
+                    executionTask = context.ExecutionTask;
                 }
 
                 try
@@ -686,12 +690,22 @@ Your decision:";
 
                 if (context.Agent != null)
                 {
-                    try
+                    var agentToDispose = context.Agent;
+                    if (executionTask != null && !executionTask.IsCompleted)
                     {
-                        context.Agent.Dispose();
+                        // The handoff's execution loop may still be mid-flight (e.g.
+                        // blocked on a provider response); disposing here could tear
+                        // down state it is still touching, so defer disposal until
+                        // the task actually unwinds — same reasoning as the reviewer
+                        // timeout path above.
+                        _ = executionTask.ContinueWith(_ =>
+                        {
+                            try { agentToDispose.Dispose(); } catch { }
+                        }, TaskScheduler.Default);
                     }
-                    catch
+                    else
                     {
+                        try { agentToDispose.Dispose(); } catch { }
                     }
                 }
 
