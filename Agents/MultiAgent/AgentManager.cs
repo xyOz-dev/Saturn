@@ -126,6 +126,15 @@ namespace Saturn.Agents.MultiAgent
             {
                 model = await ModelCatalog.ResolveModelAsync(_clientSource, model, _parentModel);
 
+                // Clamp to the model's advertised output limit so a generous default
+                // cannot turn into a 400 on models with smaller completion caps.
+                var effectiveMaxTokens = maxTokens ?? SubAgentPreferences.Instance.DefaultMaxTokens;
+                var modelMaxCompletion = await ModelCatalog.GetMaxCompletionTokensAsync(_clientSource, model);
+                if (modelMaxCompletion.HasValue && modelMaxCompletion.Value > 0)
+                {
+                    effectiveMaxTokens = Math.Min(effectiveMaxTokens, modelMaxCompletion.Value);
+                }
+
                 var systemPrompt = systemPromptOverride ?? $@"You are a specialized sub-agent named {name}.
 Your purpose: {purpose}
 
@@ -157,7 +166,7 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     ClientSource = _clientSource,
                     Model = model,
                     Temperature = temperature ?? 0.3,
-                    MaxTokens = maxTokens ?? 4096,
+                    MaxTokens = effectiveMaxTokens,
                     TopP = topP ?? 0.95,
                     EnableTools = enableTools,
                     ToolNames = subAgentTools.ToList(),

@@ -117,6 +117,45 @@ namespace Saturn.Providers
             }
         }
 
+        /// <summary>
+        /// Returns the model's advertised completion-token limit, or null when the
+        /// provider does not report one (callers should not clamp in that case).
+        /// </summary>
+        public static async Task<int?> GetMaxCompletionTokensAsync(ILlmClientSource clientSource, string modelId)
+        {
+            try
+            {
+                if (clientSource == null || !clientSource.IsConnected || string.IsNullOrWhiteSpace(modelId))
+                {
+                    return null;
+                }
+
+                var (providerKey, client) = clientSource.Snapshot();
+                var models = await GetAsync(providerKey, client, CancellationToken.None);
+
+                var match = models.FirstOrDefault(m => string.Equals(m.Id, modelId, StringComparison.OrdinalIgnoreCase));
+                if (match == null)
+                {
+                    var variantSeparator = modelId.LastIndexOf(':');
+                    if (variantSeparator > 0)
+                    {
+                        var baseModel = modelId.Substring(0, variantSeparator);
+                        match = models.FirstOrDefault(m => string.Equals(m.Id, baseModel, StringComparison.OrdinalIgnoreCase));
+                    }
+                }
+
+                return match?.MaxCompletionTokens;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public static void Invalidate()
         {
             lock (_lock)

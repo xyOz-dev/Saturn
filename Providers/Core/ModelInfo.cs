@@ -12,6 +12,8 @@ namespace Saturn.Providers
 
         public int? ContextLength { get; set; }
 
+        public int? MaxCompletionTokens { get; set; }
+
         public string? PromptPrice { get; set; }
 
         public string? CompletionPrice { get; set; }

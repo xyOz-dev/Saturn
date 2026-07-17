@@ -10,7 +10,7 @@ namespace Saturn.Config.Objects
     {
         public string Model { get; set; } = "anthropic/claude-3.5-sonnet";
         public double Temperature { get; set; } = 0.3;
-        public int MaxTokens { get; set; } = 4096;
+        public int MaxTokens { get; set; } = 32768;
         public double TopP { get; set; } = 0.95;
         public bool EnableTools { get; set; } = true;
         public string? SystemPromptOverride { get; set; }

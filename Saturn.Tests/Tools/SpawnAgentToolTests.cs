@@ -25,12 +25,14 @@ namespace Saturn.Tests.Tools
             AgentManager.Instance.SetParentSessionId(null);
             AgentManager.Instance.SetParentModel(null);
             _originalMaxAgents = AgentManager.Instance.GetMaxConcurrentAgents();
+            ModelCatalog.Invalidate();
         }
 
         public void Dispose()
         {
             AgentManager.Instance.TerminateAllAgents();
             AgentManager.Instance.SetMaxConcurrentAgents(_originalMaxAgents);
+            ModelCatalog.Invalidate();
         }
 
         private static Dictionary<string, object> Params(string name, string task, params (string key, object value)[] extra)
@@ -159,6 +161,22 @@ namespace Saturn.Tests.Tools
             var taskId = (string)((Dictionary<string, object>)result.RawData!)["task_id"];
             await AgentManager.Instance.WaitForAllTasks(new List<string> { taskId }, 5000);
             await WaitForAgentCountAsync(0);
+        }
+
+        [Fact]
+        public async Task TryCreateSubAgent_ClampsMaxTokensToModelLimit()
+        {
+            var client = new FakeLlmClient();
+            client.Models.Add(new ModelInfo { Id = "small-model", MaxCompletionTokens = 9000, IsLoaded = true });
+            AgentManager.Instance.Initialize(new StaticClientSource(client, "fake"));
+            ModelCatalog.Invalidate();
+
+            var created = await AgentManager.Instance.TryCreateSubAgent(
+                "clamped", "test clamp", "small-model", maxTokens: 32768);
+
+            created.success.Should().BeTrue();
+            var context = AgentManager.Instance.GetAgentContexts().Single(c => c.Name == "clamped");
+            context.Agent.Configuration.MaxTokens.Should().Be(9000);
         }
 
         [Fact]
