@@ -192,6 +192,10 @@ namespace Saturn.OpenRouter.Http
                     ? null
                     : await response.Content.ReadAsStringAsync(readCts.Token).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch
             {
 
