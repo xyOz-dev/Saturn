@@ -202,9 +202,9 @@ function showView(name) {
 
 async function refreshView(name) {
   try {
-    if (name === "overview") { await loadOverview(); await loadWakes(); }
+    if (name === "overview") await loadOverview();
     else if (name === "agents") await loadAgents();
-    else if (name === "work") await Promise.all([loadTodos(), loadTasks()]);
+    else if (name === "work") await Promise.all([loadTodos(), loadTasks(), loadWakes()]);
     else if (name === "orchestrator") await loadTranscript();
     else if (name === "sessions") await loadSessions();
     else if (name === "approvals") await loadApprovals();
@@ -633,10 +633,11 @@ $("#btn-clear-tasks").addEventListener("click", async () => {
 function showWorkTab(tab) {
   state.workTab = tab;
   $$("#work-tabs .seg-item").forEach((b) => b.classList.toggle("active", b.dataset.worktab === tab));
-  ["queue", "running", "history"].forEach((t) => {
+  ["queue", "running", "history", "schedule"].forEach((t) => {
     $(`#work-pane-${t}`).hidden = t !== tab;
   });
-  (tab === "queue" ? loadTodos() : loadTasks()).catch(() => {});
+  const load = tab === "queue" ? loadTodos : tab === "schedule" ? loadWakes : loadTasks;
+  load().catch(() => {});
 }
 
 $("#work-tabs").addEventListener("click", (e) => {
@@ -1803,14 +1804,14 @@ function connectEvents() {
   es.addEventListener("agents.cleared", () => refreshIf(["agents", "work"], [loadAgents, loadTasks]));
   es.addEventListener("tasks.cleared", () => refreshIf(["work"], [loadTasks]));
   es.addEventListener("todos.changed", () => refreshIf(["work"], [loadTodos]));
-  es.addEventListener("tasks.changed", () => refreshIf(["work", "overview"], [loadTodos, loadWakes]));
+  es.addEventListener("tasks.changed", () => refreshIf(["work"], [loadTodos, loadWakes]));
   es.addEventListener("settings.changed", () => refreshIf(["settings"], [loadSettings]));
   es.addEventListener("wake.enqueued", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`wake queued: <b>${esc(d.kind)}</b>${d.taskId ? ` (${esc(d.taskId)})` : ""}`);
-    refreshIf(["overview"], [loadWakes]);
+    refreshIf(["work"], [loadWakes]);
   });
-  es.addEventListener("wake.delivered", () => refreshIf(["overview"], [loadWakes]));
+  es.addEventListener("wake.delivered", () => refreshIf(["work"], [loadWakes]));
   es.addEventListener("task.due", (e) => {
     const d = JSON.parse(e.data);
     logActivity(`recurring task due: <b>${esc(d.title)}</b>${d.skipped ? " (skipped)" : ""}`);

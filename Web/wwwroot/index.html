@@ -110,10 +110,6 @@
               <button class="btn ghost sm" id="clear-activity">clear</button>
             </div>
             <ul class="activity-feed" id="activity-feed"></ul>
-            <div class="panel-head" style="margin-top:18px">
-              <h2>Scheduler queue</h2>
-            </div>
-            <ul class="wake-list" id="wake-list"></ul>
           </div>
         </div>
       </section>
@@ -161,6 +157,7 @@
             <button class="seg-item active" data-worktab="queue">Queue <span class="seg-count" id="workcount-queue"></span></button>
             <button class="seg-item" data-worktab="running">Running <span class="seg-count" id="workcount-running"></span></button>
             <button class="seg-item" data-worktab="history">History</button>
+            <button class="seg-item" data-worktab="schedule">Schedule</button>
           </div>
         </div>
 
@@ -209,6 +206,13 @@
             <button class="btn" id="btn-clear-tasks">Clear completed</button>
           </div>
           <div class="task-list" id="task-completed"></div>
+        </div>
+
+        <div class="work-pane" id="work-pane-schedule" hidden>
+          <div class="toolbar">
+            <span class="toolbar-title">Scheduler queue — wakes waiting for the orchestrator</span>
+          </div>
+          <ul class="wake-list" id="wake-list"></ul>
         </div>
       </section>
 
