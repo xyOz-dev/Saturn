@@ -577,18 +577,30 @@ namespace Saturn.Core.Tasks
         public async Task ResolveClaimAsync(string taskId, bool approved)
         {
             var applied = false;
-            var task = await UpdateTaskWithRetryAsync(taskId, t =>
+            SaturnTask? task;
+            try
             {
-                if (t.ClaimStatus != ClaimStatuses.PendingApproval)
+                task = await UpdateTaskWithRetryAsync(taskId, t =>
                 {
-                    applied = false;
-                    return false;
-                }
-                t.ClaimStatus = approved ? ClaimStatuses.Approved : ClaimStatuses.Denied;
-                t.ClaimedBy = approved ? "orchestrator" : null;
-                applied = true;
-                return true;
-            });
+                    if (t.ClaimStatus != ClaimStatuses.PendingApproval)
+                    {
+                        applied = false;
+                        return false;
+                    }
+                    t.ClaimStatus = approved ? ClaimStatuses.Approved : ClaimStatuses.Denied;
+                    t.ClaimedBy = approved ? "orchestrator" : null;
+                    applied = true;
+                    return true;
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Called fire-and-forget from the web approval callback, so a
+                // conflict that outlasts the retry budget has nowhere else to
+                // surface; log it instead of losing it as an unobserved fault.
+                Console.Error.WriteLine($"Resolve claim for task {taskId} failed: {ex.Message}");
+                return;
+            }
             if (task == null || !applied)
             {
                 return;
