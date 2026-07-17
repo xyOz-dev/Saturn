@@ -775,7 +775,9 @@ namespace Saturn.Web
                     m.Content,
                     m.AgentName,
                     m.Timestamp,
-                    m.SequenceNumber
+                    m.SequenceNumber,
+                    ToolCalls = ExtractToolCallNames(m.ToolCallsJson),
+                    ToolName = m.Role == "tool" ? m.Name : null
                 }));
             });
 
@@ -982,6 +984,31 @@ namespace Saturn.Web
                 _orchestrator.StartNewSession();
                 return Results.Ok();
             });
+        }
+
+        // ToolCallsJson stores the provider-shaped tool_call array; the UI only
+        // needs the function names to label the row.
+        private static string[]? ExtractToolCallNames(string? toolCallsJson)
+        {
+            if (string.IsNullOrEmpty(toolCallsJson)) return null;
+            try
+            {
+                using var doc = JsonDocument.Parse(toolCallsJson);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array) return null;
+                var names = doc.RootElement.EnumerateArray()
+                    .Select(tc => tc.TryGetProperty("function", out var fn) && fn.ValueKind == JsonValueKind.Object
+                        && fn.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
+                            ? name.GetString()
+                            : null)
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .Select(n => n!)
+                    .ToArray();
+                return names.Length > 0 ? names : null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         private static object ProjectTaskView(TaskView view)
