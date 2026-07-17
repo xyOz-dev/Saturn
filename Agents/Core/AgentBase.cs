@@ -122,7 +122,7 @@ namespace Saturn.Agents.Core
         {
             if (!Configuration.EnableStreaming)
             {
-                var result = await Execute<T>(input);
+                var result = await Execute<T>(input, cancellationToken);
                 if (onChunk != null && result is Message msg)
                 {
                     await onChunk(new StreamChunk

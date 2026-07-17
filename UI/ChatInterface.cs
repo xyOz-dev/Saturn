@@ -712,7 +712,7 @@ namespace Saturn.UI
                         }
                         else
                         {
-                            Message response = await agent.Execute<Message>(message);
+                            Message response = await agent.Execute<Message>(message, cancellationTokenSource.Token);
                             var responseText = response.Content.ToString();
                             var renderedResponse = markdownRenderer.RenderToTerminal(responseText);
 
