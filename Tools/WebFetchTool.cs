@@ -581,7 +581,11 @@ Limits:
             var metaTags = doc.DocumentNode.SelectNodes("//meta[@name or @property]") ?? Enumerable.Empty<HtmlNode>();
             foreach (var meta in metaTags)
             {
-                var name = meta.GetAttributeValue("name", "") ?? meta.GetAttributeValue("property", "");
+                var name = meta.GetAttributeValue("name", "");
+                if (string.IsNullOrEmpty(name))
+                {
+                    name = meta.GetAttributeValue("property", "");
+                }
                 var content = meta.GetAttributeValue("content", "");
                 
                 if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(content))
