@@ -7,6 +7,7 @@ namespace Saturn.OpenRouter.Models.Api.Common
     public sealed class ResponseError
     {
         [JsonPropertyName("code")]
+        [JsonConverter(typeof(Serialization.LenientNullableIntConverter))]
         public int? Code { get; set; }
 
         [JsonPropertyName("message")]
