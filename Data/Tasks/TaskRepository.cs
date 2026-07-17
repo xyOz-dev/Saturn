@@ -106,7 +106,16 @@ namespace Saturn.Data.Tasks
                         Orphaned INTEGER NOT NULL DEFAULT 0
                     );
                     CREATE INDEX IF NOT EXISTS idx_dispatch_mgr ON TaskDispatches(AgentManagerTaskId);
-                    CREATE INDEX IF NOT EXISTS idx_dispatch_open ON TaskDispatches(TaskId) WHERE CompletedAt IS NULL;
+
+                    UPDATE TaskDispatches SET Orphaned = 1
+                    WHERE CompletedAt IS NULL AND Orphaned = 0 AND Id NOT IN (
+                        SELECT d2.Id FROM TaskDispatches d2
+                        WHERE d2.CompletedAt IS NULL AND d2.Orphaned = 0 AND d2.TaskId = TaskDispatches.TaskId
+                        ORDER BY d2.StartedAt DESC LIMIT 1
+                    );
+
+                    DROP INDEX IF EXISTS idx_dispatch_open;
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_dispatch_open_unique ON TaskDispatches(TaskId) WHERE CompletedAt IS NULL AND Orphaned = 0;
 
                     CREATE TABLE IF NOT EXISTS WakeQueue (
                         Id TEXT PRIMARY KEY,
