@@ -438,6 +438,7 @@ function renderAgents() {
         ${a.currentTask ? `<div class="agent-task" title="${esc(a.currentTask.description)}">${esc(a.currentTask.description)}</div>` : ""}
         <div class="agent-actions">
           <button class="btn sm" data-handoff="${esc(a.agentId)}" ${working ? "disabled" : ""}>Hand off</button>
+          <button class="btn sm" data-log="${esc(a.agentId)}" title="open this agent's transcript">Log</button>
           <button class="btn sm danger" data-terminate="${esc(a.agentId)}">Terminate</button>
         </div>
       </div>`;
@@ -446,6 +447,9 @@ function renderAgents() {
 
   $$("#agent-grid [data-handoff]").forEach((b) =>
     b.addEventListener("click", () => openHandoffModal(b.dataset.handoff))
+  );
+  $$("#agent-grid [data-log]").forEach((b) =>
+    b.addEventListener("click", () => openAgentTranscript(b.dataset.log))
   );
   $$("#agent-grid [data-terminate]").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -464,6 +468,24 @@ $("#agent-search").addEventListener("input", (e) => {
   state.agentSearch = e.target.value;
   renderAgents();
 });
+
+// Sessions come back newest-first, so the first match is the agent's
+// latest conversation.
+async function openAgentTranscript(agentId) {
+  const agent = state.agents.find((a) => a.agentId === agentId);
+  if (!agent) return;
+  try {
+    const sessions = await api.get("/sessions?limit=100");
+    const session = sessions.find((s) => s.agentName === agent.name);
+    if (!session) {
+      toast(`No transcript for <b>${esc(agent.name)}</b> yet — it hasn't exchanged any messages`);
+      return;
+    }
+    await openSessionDrawer(session);
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+}
 
 async function terminateAll() {
   const ok = await confirmModal(
