@@ -257,7 +257,8 @@ async function refreshView(name) {
 // so refresh keeps your place and views are linkable.
 function currentRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/");
-  const view = VIEW_TITLES[parts[0]] ? parts[0] : "orchestrator";
+  // hasOwnProperty, not truthiness: "#/constructor" must not pass the check.
+  const view = Object.prototype.hasOwnProperty.call(VIEW_TITLES, parts[0]) ? parts[0] : "orchestrator";
   const sub = view === "work" && WORK_TABS.includes(parts[1]) ? parts[1] : null;
   return { view, sub };
 }
