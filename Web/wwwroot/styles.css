@@ -906,6 +906,32 @@ button.task-badge:hover { background: var(--panel-3); }
   color: var(--muted);
 }
 
+/* ---------- popup menu ---------- */
+
+.popmenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 130px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 30px #000000aa;
+  display: flex;
+  flex-direction: column;
+  animation: fade-in 0.12s;
+}
+.popmenu button {
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text);
+  transition: background 0.12s;
+}
+.popmenu button:hover { background: var(--panel-3); }
+.popmenu button.danger { color: var(--danger); }
+
 /* ---------- drawer ---------- */
 
 .drawer-backdrop {

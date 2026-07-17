@@ -1084,9 +1084,7 @@ function renderTodos() {
         ${state.todoScope === "all" ? `<span class="task-scope">${esc(t.scope)}${t.board !== "default" ? `/${esc(t.board)}` : ""}</span>` : ""}
         <button class="todo-pri ${esc(t.priority)}" data-id="${esc(t.id)}" data-pri="${esc(t.priority)}" title="cycle priority">${esc(t.priority)}</button>
         ${!isTerminal(t.status) && !t.dispatchedTo && !t.blocked ? `<button class="btn ghost sm" data-dispatch="${esc(t.id)}" title="hand off to an agent">▶</button>` : ""}
-        <button class="btn ghost sm" data-detail="${esc(t.id)}" title="details">ⓘ</button>
-        <button class="btn ghost sm" data-edit="${esc(t.id)}" title="edit">✎</button>
-        <button class="todo-del" data-del="${esc(t.id)}" title="delete">✕</button>
+        <button class="btn ghost sm" data-more="${esc(t.id)}" title="more actions">⋯</button>
       </li>`
     )
     .join("");
@@ -1147,17 +1145,53 @@ function renderTodos() {
     })
   );
 
-  $$("[data-edit]").forEach((b) => b.addEventListener("click", () => openTaskModal(b.dataset.edit)));
-  $$("[data-detail]").forEach((b) => b.addEventListener("click", () => openTaskDetail(b.dataset.detail)));
   $$("[data-dispatch]").forEach((b) => b.addEventListener("click", () => openDispatchModal(b.dataset.dispatch)));
-
-  $$("[data-del]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      await api.del(`/todos/${b.dataset.del}`);
-      await Promise.all([loadTodos(), loadOverview()]);
-    })
-  );
+  $$("[data-more]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openTodoMenu(b, b.dataset.more);
+  }));
 }
+
+/* ---------- todo overflow menu ---------- */
+
+function closeTodoMenu() {
+  $("#todo-menu")?.remove();
+}
+
+function openTodoMenu(anchor, taskId) {
+  if ($("#todo-menu")?.dataset.taskId === taskId) {
+    closeTodoMenu();
+    return;
+  }
+  closeTodoMenu();
+  const menu = document.createElement("div");
+  menu.className = "popmenu";
+  menu.id = "todo-menu";
+  menu.dataset.taskId = taskId;
+  menu.innerHTML = `
+    <button data-menu="detail">Details</button>
+    <button data-menu="edit">Edit</button>
+    <button data-menu="delete" class="danger">Delete</button>`;
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = `${Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8)}px`;
+  menu.style.left = `${Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)}px`;
+  menu.querySelector('[data-menu="detail"]').addEventListener("click", () => { closeTodoMenu(); openTaskDetail(taskId); });
+  menu.querySelector('[data-menu="edit"]').addEventListener("click", () => { closeTodoMenu(); openTaskModal(taskId); });
+  menu.querySelector('[data-menu="delete"]').addEventListener("click", async () => {
+    closeTodoMenu();
+    try {
+      await api.del(`/todos/${taskId}`);
+      await Promise.all([loadTodos(), loadOverview()]);
+    } catch (err) {
+      toast(`<b>Error:</b> ${esc(err.message)}`);
+    }
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#todo-menu")) closeTodoMenu();
+});
 
 async function updateTodo(id, patch) {
   try {
