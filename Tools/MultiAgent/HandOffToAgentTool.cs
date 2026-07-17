@@ -10,7 +10,7 @@ namespace Saturn.Tools.MultiAgent
     {
         public override string Name => "hand_off_to_agent";
         
-        public override string Description => "Hand off a task to a sub-agent for parallel execution. Returns a task ID to track progress.";
+        public override string Description => "Hand off a task to an existing sub-agent created with create_agent. Returns a task ID to track with wait_for_agent. Prefer spawn_agent, the one-call alternative, unless you are reusing an agent across several tasks.";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {

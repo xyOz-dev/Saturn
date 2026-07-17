@@ -11,7 +11,7 @@ namespace Saturn.Tools.MultiAgent
     {
         public override string Name => "wait_for_agent";
         
-        public override string Description => "Wait for one or more agent tasks to complete and retrieve their results";
+        public override string Description => "Wait for one or more agent tasks to complete and retrieve their results. Coding tasks routinely take minutes; prefer one long wait over repeated short ones. Pass all outstanding task IDs in a single call rather than waiting for them one at a time.";
         
         protected override Dictionary<string, object> GetParameterProperties()
         {
@@ -26,8 +26,8 @@ namespace Saturn.Tools.MultiAgent
                 ["timeout_seconds"] = new Dictionary<string, object>
                 {
                     ["type"] = "number",
-                    ["default"] = 30,
-                    ["description"] = "Maximum time to wait in seconds (default: 30)"
+                    ["default"] = 600,
+                    ["description"] = "Maximum time to wait in seconds (default: 600). A timeout is not a failure: tasks keep running and can be waited on again."
                 }
             };
         }
@@ -40,7 +40,7 @@ namespace Saturn.Tools.MultiAgent
         public override string GetDisplaySummary(Dictionary<string, object> parameters)
         {
             var taskIdsObj = GetParameter<object?>(parameters, "task_ids", null);
-            var timeout = GetParameter<int>(parameters, "timeout_seconds", 30);
+            var timeout = GetParameter<int>(parameters, "timeout_seconds", 600);
             
             string agentInfo = "agents";
             if (taskIdsObj is List<object> objList && objList.Count > 0)
@@ -71,8 +71,8 @@ namespace Saturn.Tools.MultiAgent
                     taskIds = new List<string>();
                 }
                 
-                var timeoutSeconds = parameters.ContainsKey("timeout_seconds") ? 
-                    Convert.ToInt32(parameters["timeout_seconds"]) : 30;
+                var timeoutSeconds = parameters.ContainsKey("timeout_seconds") ?
+                    Convert.ToInt32(parameters["timeout_seconds"]) : 600;
                 var timeoutMs = timeoutSeconds * 1000;
                 
                 var startTime = DateTime.Now;
