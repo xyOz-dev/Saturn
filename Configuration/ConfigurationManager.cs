@@ -445,7 +445,8 @@ namespace Saturn.Configuration
                 EnableTools = agentConfig.EnableTools,
                 ToolNames = agentConfig.ToolNames,
                 RequireCommandApproval = agentConfig.RequireCommandApproval,
-                EnableUserRules = agentConfig.EnableUserRules
+                EnableUserRules = agentConfig.EnableUserRules,
+                EnableSkills = agentConfig.EnableSkills
             };
         }
 
@@ -463,6 +464,7 @@ namespace Saturn.Configuration
             target.ToolNames = source.ToolNames ?? target.ToolNames;
             target.RequireCommandApproval = source.RequireCommandApproval ?? true;
             target.EnableUserRules = source.EnableUserRules ?? true;
+            target.EnableSkills = source.EnableSkills ?? true;
         }
     }
 }

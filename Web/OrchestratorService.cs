@@ -41,6 +41,7 @@ namespace Saturn.Web
             _hub = hub;
             _agent.OnToolCall += (toolName, arguments) =>
                 _hub.Publish("orchestrator.toolcall", new { toolName, arguments });
+            _agent.OnSkillInjected += AddSkillEntry;
         }
 
         public bool IsBusy => Volatile.Read(ref _busy) == 1;
@@ -201,6 +202,7 @@ namespace Saturn.Web
                 AgentManager.Instance.SetParentSessionId(_agent.CurrentSessionId);
                 AgentManager.Instance.SetParentModel(_agent.Configuration.Model);
                 AgentManager.Instance.SetParentEnableUserRules(_agent.Configuration.EnableUserRules);
+                AgentManager.Instance.SetParentEnableSkills(_agent.Configuration.EnableSkills);
                 _parentWired = true;
             }
         }
@@ -223,6 +225,27 @@ namespace Saturn.Web
             _hub.Publish("orchestrator.message", entry);
         }
 
+        /// <summary>
+        /// A skill injection lands in the transcript as a user-role entry so session
+        /// restore feeds it back into the model's context verbatim; the "skill"
+        /// source tells the UI to render it as a compact chip instead of a bubble.
+        /// </summary>
+        private void AddSkillEntry(string skillName, string envelope)
+        {
+            var entry = new TranscriptEntry
+            {
+                Role = "user",
+                Content = envelope,
+                Source = "skill",
+                AgentName = skillName
+            };
+            lock (_transcriptLock)
+            {
+                _transcript.Add(entry);
+            }
+            _hub.Publish("orchestrator.message", entry);
+        }
+
         // Tool-call turns are stored with a literal "null" content; they are not part of the visible conversation.
         private static List<TranscriptEntry> ToTranscriptEntries(IEnumerable<Saturn.Data.Models.ChatMessage> messages)
         {
@@ -230,14 +253,21 @@ namespace Saturn.Web
                 .Where(m => (m.Role == "user" || m.Role == "assistant")
                     && !string.IsNullOrWhiteSpace(m.Content)
                     && m.Content != "null")
-                .Select(m => new TranscriptEntry
+                .Select(m =>
                 {
-                    Role = m.Role,
-                    Content = m.Content,
-                    Timestamp = m.Timestamp,
-                    // Persisted messages carry no source; recover the scheduler tag
-                    // from the prompt prefix so they keep their styling after restart.
-                    Source = m.Role == "user" && m.Content.StartsWith("[Saturn Scheduler]") ? "scheduler" : "user"
+                    var skillName = m.Role == "user" ? Saturn.Skills.SkillEnvelope.TryExtractName(m.Content) : null;
+                    return new TranscriptEntry
+                    {
+                        Role = m.Role,
+                        Content = m.Content,
+                        Timestamp = m.Timestamp,
+                        AgentName = skillName,
+                        // Persisted messages carry no source; recover the scheduler and
+                        // skill tags from the content so they keep their styling after restart.
+                        Source = skillName != null
+                            ? "skill"
+                            : m.Role == "user" && m.Content.StartsWith("[Saturn Scheduler]") ? "scheduler" : "user"
+                    };
                 })
                 .ToList();
         }

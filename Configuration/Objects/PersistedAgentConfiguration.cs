@@ -20,6 +20,7 @@ namespace Saturn.Configuration.Objects
         public List<string>? ToolNames { get; set; }
         public bool? RequireCommandApproval { get; set; }
         public bool? EnableUserRules { get; set; }
+        public bool? EnableSkills { get; set; }
 
         public string? ActiveProvider { get; set; }
 

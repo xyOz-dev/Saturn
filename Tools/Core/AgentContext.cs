@@ -11,6 +11,9 @@ namespace Saturn.Tools.Core
         public string? ManagerAgentId { get; init; }
         public string AgentName { get; init; } = "";
         public bool IsOrchestrator { get; init; }
+
+        /// <summary>The executing agent, for tools that need to inspect its chat history.</summary>
+        public AgentBase? Agent { get; init; }
     }
 
     public static class AgentContext

@@ -835,6 +835,7 @@ namespace Saturn.Web
                 maintainHistory = _rootAgent.Configuration.MaintainHistory,
                 maxHistoryMessages = _rootAgent.Configuration.MaxHistoryMessages,
                 enableUserRules = _rootAgent.Configuration.EnableUserRules,
+                enableSkills = _rootAgent.Configuration.EnableSkills,
                 toolNames = _rootAgent.Configuration.ToolNames
             };
 
@@ -859,6 +860,11 @@ namespace Saturn.Web
                 {
                     cfg.EnableUserRules = request.EnableUserRules.Value;
                     manager.SetParentEnableUserRules(cfg.EnableUserRules);
+                }
+                if (request.EnableSkills.HasValue)
+                {
+                    cfg.EnableSkills = request.EnableSkills.Value;
+                    manager.SetParentEnableSkills(cfg.EnableSkills);
                 }
                 if (request.ToolNames != null && request.ToolNames.Count > 0)
                 {
@@ -975,9 +981,120 @@ namespace Saturn.Web
                 _rootAgent.Configuration.Model = model;
                 manager.SetParentModel(model);
                 manager.SetParentEnableUserRules(_rootAgent.Configuration.EnableUserRules);
+                manager.SetParentEnableSkills(_rootAgent.Configuration.EnableSkills);
                 await PersistAgentConfigAsync();
                 _hub.Publish("settings.changed", CurrentAgentConfig());
                 return Results.Ok(new { applied = mode.Name, model });
+            });
+
+            // ---------- skills ----------
+
+            object SkillToDto(Saturn.Skills.Skill skill) => new
+            {
+                id = skill.Id,
+                name = skill.Name,
+                description = skill.Description,
+                triggers = skill.Triggers,
+                content = skill.Content,
+                enabled = skill.Enabled,
+                applyToOrchestrator = skill.ApplyToOrchestrator,
+                applyToSubAgents = skill.ApplyToSubAgents,
+                subAgentTypes = skill.SubAgentTypes,
+                scope = skill.Scope == Saturn.Skills.SkillScope.Workspace ? "workspace" : "global",
+                updatedAt = skill.UpdatedAt
+            };
+
+            void ApplySkillRequest(Saturn.Skills.Skill skill, SkillUpsertRequest request)
+            {
+                if (request.Name != null) skill.Name = request.Name;
+                if (request.Description != null) skill.Description = request.Description;
+                if (request.Triggers != null) skill.Triggers = request.Triggers;
+                if (request.Content != null) skill.Content = request.Content;
+                if (request.Enabled.HasValue) skill.Enabled = request.Enabled.Value;
+                if (request.ApplyToOrchestrator.HasValue) skill.ApplyToOrchestrator = request.ApplyToOrchestrator.Value;
+                if (request.ApplyToSubAgents.HasValue) skill.ApplyToSubAgents = request.ApplyToSubAgents.Value;
+                if (request.SubAgentTypes != null)
+                {
+                    skill.SubAgentTypes = request.SubAgentTypes.Count == 0 ? null : request.SubAgentTypes;
+                }
+                if (request.Scope != null)
+                {
+                    skill.Scope = string.Equals(request.Scope, "workspace", StringComparison.OrdinalIgnoreCase)
+                        ? Saturn.Skills.SkillScope.Workspace
+                        : Saturn.Skills.SkillScope.Global;
+                }
+            }
+
+            api.MapGet("/skills", () => Results.Ok(new
+            {
+                skills = Saturn.Skills.SkillManager.GetAllSkills().Select(SkillToDto),
+                agentTypes = AgentTypeRegistry.Names,
+                enabled = _rootAgent.Configuration.EnableSkills
+            }));
+
+            api.MapPost("/skills", async (SkillUpsertRequest request) =>
+            {
+                try
+                {
+                    var skill = new Saturn.Skills.Skill();
+                    ApplySkillRequest(skill, request);
+                    var created = await Saturn.Skills.SkillManager.CreateSkillAsync(skill);
+                    _hub.Publish("skills.changed", new { action = "created", id = created.Id });
+                    return Results.Ok(SkillToDto(created));
+                }
+                catch (ArgumentException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
+            });
+
+            api.MapPut("/skills/{id}", async (string id, SkillUpsertRequest request) =>
+            {
+                var existing = Saturn.Skills.SkillManager.GetSkillById(id);
+                if (existing == null)
+                {
+                    return Results.NotFound(new { error = $"Skill {id} not found" });
+                }
+
+                try
+                {
+                    ApplySkillRequest(existing, request);
+                    var updated = await Saturn.Skills.SkillManager.UpdateSkillAsync(existing);
+                    _hub.Publish("skills.changed", new { action = "updated", id = updated.Id });
+                    return Results.Ok(SkillToDto(updated));
+                }
+                catch (ArgumentException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
+            });
+
+            api.MapPost("/skills/{id}/duplicate", async (string id) =>
+            {
+                try
+                {
+                    var duplicated = await Saturn.Skills.SkillManager.DuplicateSkillAsync(id);
+                    _hub.Publish("skills.changed", new { action = "created", id = duplicated.Id });
+                    return Results.Ok(SkillToDto(duplicated));
+                }
+                catch (ArgumentException ex)
+                {
+                    return Results.NotFound(new { error = ex.Message });
+                }
+            });
+
+            api.MapDelete("/skills/{id}", async (string id) =>
+            {
+                try
+                {
+                    await Saturn.Skills.SkillManager.DeleteSkillAsync(id);
+                    _hub.Publish("skills.changed", new { action = "deleted", id });
+                    return Results.Ok(new { deleted = true });
+                }
+                catch (ArgumentException ex)
+                {
+                    return Results.NotFound(new { error = ex.Message });
+                }
             });
 
             api.MapPost("/orchestrator/new-session", () =>

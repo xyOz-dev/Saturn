@@ -17,7 +17,7 @@ namespace Saturn.Agents
         private const string UserRulesSectionStart = "\n<user_rules>";
         private const string UserRulesSectionEnd = "</user_rules>\n";
 
-        public static async Task<string> Create(string prompt, bool includeDirectories = true, bool includeUserRules = true)
+        public static async Task<string> Create(string prompt, bool includeDirectories = true, bool includeUserRules = true, string? skillsSection = null)
         {
             if (string.IsNullOrEmpty(prompt))
                 throw new ArgumentException("Prompt cannot be null or empty", nameof(prompt));
@@ -37,6 +37,11 @@ namespace Saturn.Agents
                 {
                     output.AppendLine().Append(userRules);
                 }
+            }
+
+            if (!string.IsNullOrEmpty(skillsSection))
+            {
+                output.AppendLine().AppendLine().Append(skillsSection).AppendLine();
             }
 
             var result = output.ToString();

@@ -68,7 +68,19 @@ namespace Saturn.Web
         bool? MaintainHistory,
         int? MaxHistoryMessages,
         bool? EnableUserRules,
+        bool? EnableSkills,
         List<string>? ToolNames);
+
+    public record SkillUpsertRequest(
+        string? Name,
+        string? Description,
+        List<string>? Triggers,
+        string? Content,
+        bool? Enabled,
+        bool? ApplyToOrchestrator,
+        bool? ApplyToSubAgents,
+        List<string>? SubAgentTypes,
+        string? Scope);
 
     public record UserRulesUpdateRequest(string Content);
 

@@ -47,6 +47,7 @@ namespace Saturn.UI
             isProcessing = false;
             
             agent.OnToolCall += (toolName, args) => UpdateToolCall(toolName, args);
+            agent.OnSkillInjected += (skillName, _) => NotifySkillInjected(skillName);
             currentConfig = new AgentConfiguration
             {
                 Model = agent.Configuration.Model,
@@ -217,6 +218,7 @@ namespace Saturn.UI
                     new MenuItem("Max _History Messages...", "", () => ShowMaxHistoryDialog()),
                     null,
                     new MenuItem("Edit _User Rules...", "", async () => await ShowUserRulesEditorAsync()),
+                    new MenuItem("S_kills...", "", async () => await ShowSkillsDialogAsync()),
                     new MenuItem("_Edit System Prompt...", "", () => ShowSystemPromptDialog()),
                     new MenuItem("_View Configuration...", "", () => ShowConfigurationDialog())
                 }),
@@ -616,6 +618,7 @@ namespace Saturn.UI
                     {
                         AgentManager.Instance.SetParentSessionId(agent.CurrentSessionId);
                         AgentManager.Instance.SetParentEnableUserRules(agent.Configuration.EnableUserRules);
+                        AgentManager.Instance.SetParentEnableSkills(agent.Configuration.EnableSkills);
                     }
                 }
 
@@ -1374,6 +1377,56 @@ namespace Saturn.UI
             Application.Run(dialog);
         }
 
+        private void NotifySkillInjected(string skillName)
+        {
+            Application.MainLoop.Invoke(() =>
+            {
+                chatView.Text += $"\n[Injected Skill: {skillName}]\n";
+                ScrollChatToBottom();
+            });
+        }
+
+        private async Task ShowSkillsDialogAsync()
+        {
+            var dialog = new SkillSelectionDialog(agent.Configuration.EnableSkills);
+            Application.Run(dialog);
+
+            if (dialog.SkillsEnabledChanged)
+            {
+                agent.Configuration.EnableSkills = dialog.SkillsEnabled;
+                AgentManager.Instance.SetParentEnableSkills(dialog.SkillsEnabled);
+                await ConfigurationManager.SaveConfigurationAsync(
+                    ConfigurationManager.FromAgentConfiguration(agent.Configuration));
+            }
+
+            if (dialog.ShouldCreateNew)
+            {
+                await ShowSkillEditorDialogAsync(null);
+            }
+            else if (dialog.SkillToEdit != null)
+            {
+                await ShowSkillEditorDialogAsync(dialog.SkillToEdit);
+            }
+        }
+
+        private async Task ShowSkillEditorDialogAsync(Skills.Skill? skillToEdit)
+        {
+            var editorDialog = new SkillEditorDialog(skillToEdit);
+            Application.Run(editorDialog);
+
+            if (editorDialog.ResultSkill != null)
+            {
+                var message = skillToEdit != null
+                    ? $"Skill '{editorDialog.ResultSkill.Name}' updated successfully"
+                    : $"Skill '{editorDialog.ResultSkill.Name}' created successfully";
+
+                MessageBox.Query("Success", message, "OK");
+            }
+
+            // Return to the skills list so several skills can be managed in one sitting.
+            await ShowSkillsDialogAsync();
+        }
+
         private async Task ShowModeSelectionDialogAsync()
         {
             var dialog = new ModeSelectionDialog();
@@ -1751,7 +1804,15 @@ namespace Saturn.UI
                     }
                     else if (message.Role == "user")
                     {
-                        chatContent.AppendLine($"[{timestamp}] You:\n{message.Content}\n");
+                        var injectedSkillName = Skills.SkillEnvelope.TryExtractName(message.Content);
+                        if (injectedSkillName != null)
+                        {
+                            chatContent.AppendLine($"[{timestamp}] [Injected Skill: {injectedSkillName}]\n");
+                        }
+                        else
+                        {
+                            chatContent.AppendLine($"[{timestamp}] You:\n{message.Content}\n");
+                        }
                     }
                     else if (message.Role == "assistant")
                     {
