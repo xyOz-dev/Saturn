@@ -61,6 +61,38 @@ namespace Saturn.Agents.Core
             }
         }
 
+        /// <summary>
+        /// Reopens chat persistence after a workspace switch: the repository path is
+        /// resolved from the current workspace at construction, so the old instance
+        /// must be replaced and the session restarted in the new workspace's DB.
+        /// </summary>
+        public void ReinitializeRepository()
+        {
+            var old = Repository;
+            Repository = null;
+            CurrentSessionId = null;
+            WaitForPendingFlushes();
+            old?.Dispose();
+            InitializeRepository();
+        }
+
+        private void WaitForPendingFlushes()
+        {
+            Task[] pendingFlushes;
+            lock (_pendingMessagesLock)
+            {
+                pendingFlushes = _pendingFlushTasks.Where(t => !t.IsCompleted).ToArray();
+                _pendingFlushTasks.Clear();
+            }
+
+            if (pendingFlushes.Length > 0)
+            {
+                // Give queued persistence work a chance to finish before the
+                // repository goes away; flush failures log rather than throw.
+                try { Task.WaitAll(pendingFlushes, TimeSpan.FromSeconds(5)); } catch { }
+            }
+        }
+
         public async Task InitializeSessionAsync(string? chatType = "main", string? parentSessionId = null)
         {
             if (Repository != null)
@@ -1624,19 +1656,7 @@ namespace Saturn.Agents.Core
         {
             if (disposing)
             {
-                Task[] pendingFlushes;
-                lock (_pendingMessagesLock)
-                {
-                    pendingFlushes = _pendingFlushTasks.Where(t => !t.IsCompleted).ToArray();
-                    _pendingFlushTasks.Clear();
-                }
-
-                if (pendingFlushes.Length > 0)
-                {
-                    // Give queued persistence work a chance to finish before the
-                    // repository goes away; flush failures log rather than throw.
-                    try { Task.WaitAll(pendingFlushes, TimeSpan.FromSeconds(5)); } catch { }
-                }
+                WaitForPendingFlushes();
 
                 Repository?.Dispose();
                 Repository = null;

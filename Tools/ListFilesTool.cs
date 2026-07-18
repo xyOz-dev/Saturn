@@ -6,6 +6,7 @@ using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 using Saturn.Tools.Objects;
 
@@ -127,7 +128,7 @@ Examples
         
         public override string GetDisplaySummary(Dictionary<string, object> parameters)
         {
-            var path = GetParameter<string>(parameters, "path", Directory.GetCurrentDirectory());
+            var path = GetParameter<string>(parameters, "path", WorkspaceManager.CurrentWorkspace);
             var recursive = GetParameter<bool>(parameters, "recursive", false);
             var displayPath = FormatPath(path);
             return $"Listing {displayPath} (recursive: {recursive})";
@@ -137,7 +138,7 @@ Examples
         {
             try
             {
-                var path = GetParameter<string>(parameters, "path", Directory.GetCurrentDirectory());
+                var path = GetParameter<string>(parameters, "path", WorkspaceManager.CurrentWorkspace);
                 var recursive = GetParameter<bool>(parameters, "recursive", false);
                 var includeHidden = GetParameter<bool>(parameters, "includeHidden", false);
                 var pattern = GetParameter<string?>(parameters, "pattern", null);
@@ -155,7 +156,7 @@ Examples
                 }
                 
                 ValidatePathSecurity(path);
-                var fullPath = Path.GetFullPath(path);
+                var fullPath = Path.GetFullPath(path, WorkspaceManager.CurrentWorkspace);
                 var root = Path.GetPathRoot(fullPath) ?? string.Empty;
                 if (fullPath.Length > root.Length)
                 {
@@ -273,7 +274,7 @@ Examples
                             {
                                 Name = dir.Name,
                                 FullPath = dir.FullName,
-                                RelativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), dir.FullName),
+                                RelativePath = Path.GetRelativePath(WorkspaceManager.CurrentWorkspace, dir.FullName),
                                 IsDirectory = true,
                                 Size = 0,
                                 CreatedDate = dir.CreationTimeUtc,
@@ -327,7 +328,7 @@ Examples
                             {
                                 Name = file.Name,
                                 FullPath = file.FullName,
-                                RelativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), file.FullName),
+                                RelativePath = Path.GetRelativePath(WorkspaceManager.CurrentWorkspace, file.FullName),
                                 IsDirectory = false,
                                 Size = file.Length,
                                 CreatedDate = file.CreationTimeUtc,
@@ -556,7 +557,7 @@ Examples
             {
                 Name = name,
                 FullPath = fullPath,
-                RelativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), fullPath),
+                RelativePath = Path.GetRelativePath(WorkspaceManager.CurrentWorkspace, fullPath),
                 IsDirectory = true,
                 HasError = true,
                 ErrorMessage = error,

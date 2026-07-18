@@ -19,10 +19,27 @@ namespace Saturn
         {
             try
             {
-                if (!GitManager.IsRepository())
+                if (!TryParseOptions(args, out var options))
+                {
+                    Environment.Exit(1);
+                }
+
+                try
+                {
+                    Saturn.Core.Workspace.WorkspaceManager.Initialize(options.Workspace);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Invalid workspace: {ex.Message}");
+                    Environment.Exit(1);
+                }
+
+                var workspacePath = Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace;
+
+                if (!GitManager.IsRepository(workspacePath))
                 {
                     Console.Clear();
-                    var shouldContinue = await GitRepositoryPrompt.ShowPrompt();
+                    var shouldContinue = await GitRepositoryPrompt.ShowPrompt(workspacePath);
                     
                     if (!shouldContinue)
                     {
@@ -35,13 +52,14 @@ namespace Saturn
                     await Task.Delay(1000);
                 }
 
-                var isWebMode = TryParseWebOptions(args, out var port);
-                var (agent, client) = await CreateAgent(isWebMode);
+                var (agent, client) = await CreateAgent(options.IsWebMode);
 
-                if (isWebMode)
+                await ConfigurationManager.AddRecentWorkspaceAsync(workspacePath);
+
+                if (options.IsWebMode)
                 {
                     agent.IsOrchestrator = true;
-                    var server = new Saturn.Web.WebServer(agent, client, port);
+                    var server = new Saturn.Web.WebServer(agent, client, options.Port);
                     Console.WriteLine($"Saturn web UI running at {server.Url}");
                     Console.WriteLine("Press Ctrl+C to stop.");
                     await server.RunAsync(onReady: () => TryOpenBrowser(server.Url));
@@ -66,10 +84,13 @@ namespace Saturn
         }
         
 
-        static bool TryParseWebOptions(string[] args, out int port)
+        internal sealed record StartupOptions(bool IsWebMode, int Port, string? Workspace);
+
+        static bool TryParseOptions(string[] args, out StartupOptions options)
         {
-            port = 5225;
+            var port = 5225;
             var webRequested = false;
+            string? workspace = null;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -82,9 +103,22 @@ namespace Saturn
                     port = parsed;
                     i++;
                 }
+                else if (args[i] == "--workspace")
+                {
+                    if (i + 1 >= args.Length || string.IsNullOrWhiteSpace(args[i + 1]))
+                    {
+                        Console.WriteLine("--workspace requires a directory path.");
+                        options = new StartupOptions(webRequested, port, null);
+                        return false;
+                    }
+
+                    workspace = args[i + 1];
+                    i++;
+                }
             }
 
-            return webRequested;
+            options = new StartupOptions(webRequested, port, workspace);
+            return true;
         }
 
         static void TryOpenBrowser(string url)

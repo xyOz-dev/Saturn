@@ -29,6 +29,8 @@ namespace Saturn.Configuration.Objects
         public string? SearchProvider { get; set; }
 
         public Dictionary<string, PersistedProviderConfiguration>? SearchProviders { get; set; }
+
+        public List<string>? RecentWorkspaces { get; set; }
     }
 
     public class PersistedProviderConfiguration

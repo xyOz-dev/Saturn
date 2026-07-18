@@ -56,7 +56,7 @@ namespace Saturn.Tools.Git
             var filePath = GetParameter<string>(parameters, "filePath", string.Empty);
             var staged = GetParameter<bool>(parameters, "staged", false);
             var statOnly = GetParameter<bool>(parameters, "statOnly", false);
-            var workingDirectory = GetParameter<string>(parameters, "workingDirectory", Environment.CurrentDirectory);
+            var workingDirectory = GetParameter<string>(parameters, "workingDirectory", Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace);
 
             if (!Directory.Exists(workingDirectory))
             {

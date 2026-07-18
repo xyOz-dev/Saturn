@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security;
 using System.Text;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 using Saturn.Tools.Objects;
 
@@ -145,7 +146,7 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                 {
                     foreach (var file in allFiles)
                     {
-                        var absPath = Path.GetFullPath(file);
+                        var absPath = Path.GetFullPath(file, WorkspaceManager.CurrentWorkspace);
                         lock (FileLocks)
                         {
                             if (FileLocks.Contains(absPath))
@@ -266,7 +267,7 @@ The format also supports '*** Add File: path' (every content line prefixed with 
             foreach (var filePath in files)
             {
                 ValidatePathSecurity(filePath);
-                var absPath = Path.GetFullPath(filePath);
+                var absPath = Path.GetFullPath(filePath, WorkspaceManager.CurrentWorkspace);
                 
                 if (!File.Exists(absPath))
                 {
@@ -293,7 +294,7 @@ The format also supports '*** Add File: path' (every content line prefixed with 
             foreach (var filePath in files)
             {
                 ValidatePathSecurity(filePath);
-                var absPath = Path.GetFullPath(filePath);
+                var absPath = Path.GetFullPath(filePath, WorkspaceManager.CurrentWorkspace);
                 
                 if (File.Exists(absPath))
                 {
@@ -311,7 +312,7 @@ The format also supports '*** Add File: path' (every content line prefixed with 
             foreach (var filePath in files)
             {
                 ValidatePathSecurity(filePath);
-                var absPath = Path.GetFullPath(filePath);
+                var absPath = Path.GetFullPath(filePath, WorkspaceManager.CurrentWorkspace);
                 var content = await File.ReadAllTextAsync(absPath);
                 currentFiles[filePath] = content;
             }
@@ -614,7 +615,7 @@ The format also supports '*** Add File: path' (every content line prefixed with 
                 var filePath = kvp.Key;
                 var change = kvp.Value;
                 ValidatePathSecurity(filePath);
-                var absPath = Path.GetFullPath(filePath);
+                var absPath = Path.GetFullPath(filePath, WorkspaceManager.CurrentWorkspace);
                 
                 if (change.Type == ChangeType.Delete)
                 {
@@ -644,7 +645,7 @@ The format also supports '*** Add File: path' (every content line prefixed with 
             
             foreach (var kvp in commit.Changes)
             {
-                var filePath = Path.GetFullPath(kvp.Key);
+                var filePath = Path.GetFullPath(kvp.Key, WorkspaceManager.CurrentWorkspace);
                 stats.ChangedFiles.Add(filePath);
                 
                 if (kvp.Value.Type == ChangeType.Add)

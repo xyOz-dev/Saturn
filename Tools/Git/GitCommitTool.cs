@@ -58,7 +58,7 @@ namespace Saturn.Tools.Git
         {
             var message = GetParameter<string>(parameters, "message");
             var files = GetParameter<string[]>(parameters, "files", Array.Empty<string>());
-            var workingDirectory = GetParameter<string>(parameters, "workingDirectory", Environment.CurrentDirectory);
+            var workingDirectory = GetParameter<string>(parameters, "workingDirectory", Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace);
 
             if (string.IsNullOrEmpty(message))
             {

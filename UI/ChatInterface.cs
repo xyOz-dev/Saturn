@@ -161,6 +161,7 @@ namespace Saturn.UI
                 new MenuBarItem("_Options", new MenuItem[]
                 {
                     new MenuItem("_Load Chat...", "", async () => await ShowLoadChatDialog()),
+                    new MenuItem("Switch _Workspace...", "", async () => await ShowWorkspaceSwitchDialogAsync()),
                     new MenuItem("_Clear Chat", "", () =>
                     {
                         if (chatView != null)
@@ -1619,31 +1620,7 @@ namespace Saturn.UI
 
         private string ExtractBaseSystemPrompt(string fullPrompt)
         {
-            if (string.IsNullOrWhiteSpace(fullPrompt))
-                return fullPrompt;
-            
-            var dirStartIndex = fullPrompt.IndexOf("\n<current_directory>");
-            var dirEndIndex = fullPrompt.IndexOf("</current_directory>\n");
-            if (dirStartIndex >= 0 && dirEndIndex > dirStartIndex)
-            {
-                fullPrompt = fullPrompt.Remove(dirStartIndex, dirEndIndex - dirStartIndex + "</current_directory>\n".Length);
-            }
-            
-            var rulesStartIndex = fullPrompt.IndexOf("\n<user_rules>");
-            var rulesEndIndex = fullPrompt.IndexOf("</user_rules>\n");
-            if (rulesStartIndex >= 0 && rulesEndIndex > rulesStartIndex)
-            {
-                fullPrompt = fullPrompt.Remove(rulesStartIndex, rulesEndIndex - rulesStartIndex + "</user_rules>\n".Length);
-            }
-
-            var skillsStartIndex = fullPrompt.IndexOf("\n<skills>");
-            var skillsEndIndex = fullPrompt.IndexOf("</skills>");
-            if (skillsStartIndex >= 0 && skillsEndIndex > skillsStartIndex)
-            {
-                fullPrompt = fullPrompt.Remove(skillsStartIndex, skillsEndIndex - skillsStartIndex + "</skills>".Length);
-            }
-
-            return fullPrompt.TrimEnd();
+            return SystemPrompt.ExtractBase(fullPrompt);
         }
 
         private string? BuildSkillsSection()
@@ -1696,7 +1673,7 @@ namespace Saturn.UI
             
             lastRulesCheckTime = now;
             
-            var rulesPath = Path.Combine(Environment.CurrentDirectory, ".saturn", "rules.md");
+            var rulesPath = Path.Combine(Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace, ".saturn", "rules.md");
             DateTime? currentModifiedTime = null;
             
             if (File.Exists(rulesPath))
@@ -1793,6 +1770,110 @@ namespace Saturn.UI
             chatView.Text = string.Join("\n", updatedLines);
             chatView.CursorPosition = currentPosition;
             chatView.TopRow = currentTopRow;
+        }
+
+        private async Task ShowWorkspaceSwitchDialogAsync()
+        {
+            if (isProcessing)
+            {
+                MessageBox.ErrorQuery("Switch Workspace", "A response is in progress. Cancel it or wait before switching workspace.", "OK");
+                return;
+            }
+
+            var agentStatuses = AgentManager.Instance.GetAllAgentStatuses();
+            if (agentStatuses.Any(a => !a.IsIdle))
+            {
+                var terminate = MessageBox.Query("Switch Workspace",
+                    "Sub-agents are still working. Terminate them and continue?", "Terminate & Continue", "Cancel");
+                if (terminate != 0)
+                {
+                    return;
+                }
+                AgentManager.Instance.TerminateAllAgents();
+            }
+
+            var config = await ConfigurationManager.LoadConfigurationAsync();
+            var currentWorkspace = Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace;
+            var dialog = new WorkspaceSwitchDialog(config?.RecentWorkspaces ?? new List<string>(), currentWorkspace);
+            Application.Run(dialog);
+
+            var selectedPath = dialog.SelectedPath;
+            if (string.IsNullOrWhiteSpace(selectedPath))
+            {
+                return;
+            }
+
+            string candidate;
+            try
+            {
+                candidate = Path.GetFullPath(selectedPath, currentWorkspace);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.ErrorQuery("Switch Workspace", $"Invalid path: {ex.Message}", "OK");
+                return;
+            }
+
+            if (!Directory.Exists(candidate))
+            {
+                MessageBox.ErrorQuery("Switch Workspace", $"Directory does not exist:\n{candidate}", "OK");
+                return;
+            }
+
+            if (string.Equals(candidate, currentWorkspace, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var confirm = MessageBox.Query("Switch Workspace",
+                $"Switch to {candidate}?\nThis starts a fresh session. Running background commands keep their old directory.",
+                "Switch", "Cancel");
+            if (confirm != 0)
+            {
+                return;
+            }
+
+            if (!Saturn.Core.GitManager.IsRepository(candidate))
+            {
+                var init = MessageBox.Query("Switch Workspace",
+                    $"{candidate} is not a git repository. Initialize one?", "Initialize", "Cancel");
+                if (init != 0)
+                {
+                    return;
+                }
+                var (initOk, initMessage) = await Saturn.Core.GitManager.InitializeRepository(candidate);
+                if (!initOk)
+                {
+                    MessageBox.ErrorQuery("Switch Workspace", initMessage, "OK");
+                    return;
+                }
+            }
+
+            var switched = Saturn.Core.Workspace.WorkspaceManager.TrySwitch(candidate);
+            if (!switched.Success)
+            {
+                MessageBox.ErrorQuery("Switch Workspace", switched.Error ?? "Unknown error", "OK");
+                return;
+            }
+
+            agent.ClearHistory();
+            agent.ReinitializeRepository();
+            Saturn.Tools.Todo.TodoStore.Reset();
+
+            cachedSystemPromptWithRules = null;
+            lastRulesCheckTime = null;
+            lastRulesModifiedTime = null;
+            await RecomposeSystemPromptAsync();
+
+            chatView.Text = GetWelcomeMessage();
+            chatView.CursorPosition = new Point(0, 0);
+            toolCallsView.Text = "No tool calls yet...\n";
+            UpdateAgentStatus("Ready");
+            UpdateConfigurationDisplay();
+            inputField.SetFocus();
+            Application.Refresh();
+
+            await ConfigurationManager.AddRecentWorkspaceAsync(switched.NormalizedPath!);
         }
 
         private async Task ShowLoadChatDialog()

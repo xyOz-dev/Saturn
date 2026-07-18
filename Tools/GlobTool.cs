@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Security;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 using Saturn.Tools.Objects;
 
@@ -127,7 +128,7 @@ Note: Use this before grep when you need to find files first, then search within
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
             var pattern = GetParameter<string>(parameters, "pattern");
-            var basePath = GetParameter<string>(parameters, "path", Directory.GetCurrentDirectory());
+            var basePath = GetParameter<string>(parameters, "path", WorkspaceManager.CurrentWorkspace);
             var includeDirectories = GetParameter<bool>(parameters, "includeDirectories", false);
             var caseSensitive = GetParameter<bool>(parameters, "caseSensitive", false);
             var maxResults = GetParameter<int>(parameters, "maxResults", 1000);

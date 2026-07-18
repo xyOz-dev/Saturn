@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 
 namespace Saturn.Core
 {
@@ -38,13 +39,13 @@ namespace Saturn.Core
 
         public static bool IsRepository(string? path = null)
         {
-            path ??= Environment.CurrentDirectory;
+            path ??= WorkspaceManager.CurrentWorkspace;
             return Directory.Exists(Path.Combine(path, ".git"));
         }
 
         public static async Task<(bool success, string message)> InitializeRepository(string? path = null)
         {
-            path ??= Environment.CurrentDirectory;
+            path ??= WorkspaceManager.CurrentWorkspace;
 
             if (!IsGitInstalled())
             {
@@ -170,7 +171,7 @@ namespace Saturn.Core
                     {
                         FileName = "git",
                         Arguments = arguments,
-                        WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
+                        WorkingDirectory = workingDirectory ?? WorkspaceManager.CurrentWorkspace,
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         UseShellExecute = false,

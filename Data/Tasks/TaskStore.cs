@@ -47,20 +47,38 @@ namespace Saturn.Data.Tasks
 
     public class TaskStore : IDisposable
     {
-        public TaskRepository Project { get; }
+        public TaskRepository Project { get; private set; }
         public TaskRepository Global { get; }
+
+        private readonly object _projectSwapLock = new();
 
         public event Action<string, SaturnTask>? OnTaskChanged;
 
         public TaskStore(string? workspacePath = null, string? globalDirectory = null)
         {
-            var projectDir = Path.Combine(workspacePath ?? Directory.GetCurrentDirectory(), ".saturn");
+            var projectDir = Path.Combine(workspacePath ?? Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace, ".saturn");
             var globalDir = globalDirectory
                 ?? Environment.GetEnvironmentVariable("SATURN_CONFIG_DIR")
                 ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Saturn");
 
             Project = new TaskRepository(Path.Combine(projectDir, "tasks.db"), includeRuntimeTables: true);
             Global = new TaskRepository(Path.Combine(globalDir, "tasks.db"), includeRuntimeTables: false);
+        }
+
+        /// <summary>
+        /// Repoints the project-scope repository at a new workspace's tasks.db. The
+        /// TaskStore instance (and its OnTaskChanged subscribers) stays the same;
+        /// callers must ensure no task work is in flight before switching.
+        /// </summary>
+        public void SwitchWorkspace(string workspacePath)
+        {
+            lock (_projectSwapLock)
+            {
+                var old = Project;
+                var projectDir = Path.Combine(workspacePath, ".saturn");
+                Project = new TaskRepository(Path.Combine(projectDir, "tasks.db"), includeRuntimeTables: true);
+                old.Dispose();
+            }
         }
 
         public TaskRepository RepoFor(string scope) => scope == TaskScopes.Global ? Global : Project;
@@ -426,7 +444,7 @@ namespace Saturn.Data.Tasks
 
         public async Task<int> ImportLegacyTodosAsync(string? workspacePath = null)
         {
-            var todosPath = Path.Combine(workspacePath ?? Directory.GetCurrentDirectory(), ".saturn", "todos.json");
+            var todosPath = Path.Combine(workspacePath ?? Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace, ".saturn", "todos.json");
             if (!File.Exists(todosPath))
             {
                 return 0;

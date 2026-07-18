@@ -369,6 +369,10 @@ async function loadOverview() {
 
   $("#provider-chip").textContent = `${o.provider} · ${o.model}`;
   $("#model-chip").textContent = o.model || "no model";
+  if (o.workspaceName) {
+    $("#workspace-chip").textContent = `⌂ ${o.workspaceName}`;
+    $("#workspace-chip").title = `${o.workspace} — click to switch workspace`;
+  }
   state.uptimeBase = o.uptimeSeconds;
   state.uptimeAt = Date.now();
 
@@ -1283,6 +1287,79 @@ $("#chat-new").addEventListener("click", async () => {
     await loadChatSessions();
   } catch (err) {
     toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---------- workspace switching ---------- */
+
+async function openWorkspaceModal() {
+  let info;
+  try {
+    info = await api.get("/workspace");
+  } catch (err) {
+    toast(`<b>Workspace:</b> ${esc(err.message)}`);
+    return;
+  }
+  const recentHtml = info.recent.length
+    ? `<label class="field" style="margin-top:10px"><span>Recent workspaces</span></label>
+       <div class="ws-recent">${info.recent
+         .map((r) => `<button type="button" class="btn sm ws-recent-item" data-path="${esc(r.path)}" title="${esc(r.path)}">${esc(r.name)}</button>`)
+         .join("")}</div>`
+    : "";
+  openModal("Switch workspace", `
+    <p class="hint">Current: <b>${esc(info.current)}</b>${info.isGitRepo ? "" : " · not a git repo"}</p>
+    <label class="field"><span>Directory</span>
+      <input class="input" id="ws-path" style="width:100%" placeholder="C:\\path\\to\\project"></label>
+    ${recentHtml}
+    <p class="hint" style="margin-top:10px">Switching starts a fresh session against the new workspace.
+      Running background commands keep their old directory.</p>
+    <div class="field-row" style="margin-top:12px">
+      <button class="btn primary" id="ws-switch">Switch &amp; start fresh session</button>
+    </div>
+    <p class="hint" id="ws-status"></p>
+  `);
+  let initGit = false;
+  $("#modal-body").querySelectorAll(".ws-recent-item").forEach((b) =>
+    b.addEventListener("click", () => {
+      $("#ws-path").value = b.dataset.path;
+      initGit = false;
+      $("#ws-switch").textContent = "Switch & start fresh session";
+      $("#ws-status").textContent = "";
+    }));
+  $("#ws-path").addEventListener("input", () => {
+    initGit = false;
+    $("#ws-switch").textContent = "Switch & start fresh session";
+  });
+  $("#ws-switch").addEventListener("click", async () => {
+    const path = $("#ws-path").value.trim();
+    if (!path) {
+      $("#ws-status").textContent = "Enter a directory path.";
+      return;
+    }
+    $("#ws-switch").disabled = true;
+    try {
+      const r = await api.post("/workspace/switch", { path, initGit });
+      if (r && r.needsGitInit) {
+        initGit = true;
+        $("#ws-status").innerHTML = `<b>${esc(r.path)}</b> is not a git repository. Click again to initialize one and switch.`;
+        $("#ws-switch").textContent = "Initialize git & switch";
+        $("#ws-switch").disabled = false;
+        return;
+      }
+      closeModal();
+    } catch (err) {
+      $("#ws-status").textContent = err.message;
+      $("#ws-switch").disabled = false;
+    }
+  });
+  $("#ws-path").focus();
+}
+
+$("#workspace-chip").addEventListener("click", openWorkspaceModal);
+$("#workspace-chip").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    openWorkspaceModal();
   }
 });
 
@@ -2601,6 +2678,25 @@ function connectEvents() {
 
   es.addEventListener("skills.changed", () => {
     if (state.view === "settings") loadSkillsPanel().catch(() => {});
+  });
+
+  es.addEventListener("workspace.changed", (e) => {
+    const d = JSON.parse(e.data);
+    $("#workspace-chip").textContent = `⌂ ${d.name}`;
+    $("#workspace-chip").title = `${d.path} — click to switch workspace`;
+    toast(`Workspace: <b>${esc(d.name)}</b>`);
+    logActivity(`workspace switched to <b>${esc(d.name)}</b>`);
+    loadOverview().catch(() => {});
+    if (state.view === "orchestrator") loadChatSessions().catch(() => {});
+    if (state.view === "sessions") loadSessions().catch(() => {});
+    if (state.view === "work") {
+      loadTodos().catch(() => {});
+      loadWakes().catch(() => {});
+    }
+    if (state.view === "settings") {
+      loadSettings().catch(() => {});
+      loadSkillsPanel().catch(() => {});
+    }
   });
 
   es.addEventListener("provider.changed", (e) => {
