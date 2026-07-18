@@ -79,7 +79,9 @@ namespace Saturn.Tests.Tools
 
             var collected = "";
             var status = "running";
-            for (var i = 0; i < 50 && status == "running"; i++)
+            // Keep polling after the status flips to exited: the exit notification can
+            // arrive before the async output readers deliver the final buffered lines.
+            for (var i = 0; i < 50 && (status == "running" || !collected.Contains("bg_marker")); i++)
             {
                 await Task.Delay(100);
                 var poll = await getOutput.ExecuteAsync(new Dictionary<string, object> { ["command_id"] = commandId });
