@@ -104,6 +104,32 @@ namespace Saturn.Tests.Core
             WorkspaceManager.WorkspaceChanged += handler;
             try
             {
+                var result = WorkspaceManager.TrySwitch(target);
+                result.Success.Should().BeTrue();
+                raised.Should().BeFalse();
+            }
+            finally
+            {
+                WorkspaceManager.WorkspaceChanged -= handler;
+            }
+        }
+
+        [Fact]
+        public void TrySwitch_SamePathDifferentCase_IsNoOpOnCaseInsensitiveFilesystems()
+        {
+            if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
+            {
+                return; // case-variant paths name distinct directories elsewhere
+            }
+
+            var target = _files.CreateDirectory("workspace-case");
+            WorkspaceManager.TrySwitch(target).Success.Should().BeTrue();
+
+            var raised = false;
+            Action<string, string> handler = (_, _) => raised = true;
+            WorkspaceManager.WorkspaceChanged += handler;
+            try
+            {
                 var result = WorkspaceManager.TrySwitch(target.ToUpperInvariant());
                 result.Success.Should().BeTrue();
                 raised.Should().BeFalse();

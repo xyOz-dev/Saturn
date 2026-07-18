@@ -68,10 +68,13 @@ namespace Saturn.Agents.Core
         /// </summary>
         public void ReinitializeRepository()
         {
+            // Queued flush tasks read the live Repository property, so it must stay
+            // set (and undisposed) until they drain or they would silently drop the
+            // old session's tail messages.
+            WaitForPendingFlushes();
             var old = Repository;
             Repository = null;
             CurrentSessionId = null;
-            WaitForPendingFlushes();
             old?.Dispose();
             InitializeRepository();
         }

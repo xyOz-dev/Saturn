@@ -18,7 +18,7 @@ namespace Saturn.UI.Dialogs
             : base("Switch Workspace", 70, 20)
         {
             _recentWorkspaces = recentWorkspaces
-                .Where(p => !string.Equals(p, currentWorkspace, StringComparison.OrdinalIgnoreCase))
+                .Where(p => !string.Equals(p, currentWorkspace, Saturn.Core.Workspace.WorkspaceManager.PathComparison))
                 .Where(Directory.Exists)
                 .ToList();
 

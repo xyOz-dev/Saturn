@@ -38,6 +38,9 @@ namespace Saturn.Web
         // drive the agent API even if they can reach the port.
         private readonly string _apiToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
 
+        // Guards the workspace-switch transition; see /workspace/switch.
+        private readonly SemaphoreSlim _workspaceSwitchGate = new(1, 1);
+
         private readonly EventHub _hub = new();
         private readonly TaskStore _tasks = new();
         private readonly OrchestratorService _orchestrator;
@@ -1159,70 +1162,84 @@ namespace Saturn.Web
                 {
                     return Results.BadRequest(new { error = "path is required" });
                 }
-                if (_orchestrator.IsBusy)
+                // Serialize switches: two interleaved transitions could dispose each
+                // other's repositories mid-rebuild. Busy checks run under the gate so
+                // a second request re-evaluates against the post-switch state.
+                if (!await _workspaceSwitchGate.WaitAsync(TimeSpan.Zero))
                 {
-                    return Results.Conflict(new { error = "Orchestrator is busy; cancel the current run first" });
+                    return Results.Conflict(new { error = "A workspace switch is already in progress" });
                 }
-                if (manager.GetAgentContexts().Any(c => c.CurrentTask != null))
-                {
-                    return Results.Conflict(new { error = "Sub-agents are still working; wait for or terminate them first" });
-                }
-                if (_approvals.GetPending().Count > 0)
-                {
-                    return Results.Conflict(new { error = "There are pending command approvals; resolve them first" });
-                }
-
-                string candidate;
                 try
                 {
-                    candidate = Path.GetFullPath(request.Path, Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace);
-                }
-                catch (Exception ex)
-                {
-                    return Results.BadRequest(new { error = $"Invalid path: {ex.Message}" });
-                }
-
-                if (!Directory.Exists(candidate))
-                {
-                    return Results.BadRequest(new { error = $"Directory does not exist: {candidate}" });
-                }
-
-                if (!Saturn.Core.GitManager.IsRepository(candidate))
-                {
-                    if (request.InitGit != true)
+                    if (_orchestrator.IsBusy)
                     {
-                        return Results.Ok(new { needsGitInit = true, path = candidate });
+                        return Results.Conflict(new { error = "Orchestrator is busy; cancel the current run first" });
                     }
-                    var (initOk, initMessage) = await Saturn.Core.GitManager.InitializeRepository(candidate);
-                    if (!initOk)
+                    if (manager.GetAgentContexts().Any(c => c.CurrentTask != null))
                     {
-                        return Results.BadRequest(new { error = initMessage });
+                        return Results.Conflict(new { error = "Sub-agents are still working; wait for or terminate them first" });
                     }
-                }
+                    if (_approvals.GetPending().Count > 0)
+                    {
+                        return Results.Conflict(new { error = "There are pending command approvals; resolve them first" });
+                    }
 
-                var switched = Saturn.Core.Workspace.WorkspaceManager.TrySwitch(candidate);
-                if (!switched.Success)
+                    string candidate;
+                    try
+                    {
+                        candidate = Path.GetFullPath(request.Path, Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace);
+                    }
+                    catch (Exception ex)
+                    {
+                        return Results.BadRequest(new { error = $"Invalid path: {ex.Message}" });
+                    }
+
+                    if (!Directory.Exists(candidate))
+                    {
+                        return Results.BadRequest(new { error = $"Directory does not exist: {candidate}" });
+                    }
+
+                    if (!Saturn.Core.GitManager.IsRepository(candidate))
+                    {
+                        if (request.InitGit != true)
+                        {
+                            return Results.Ok(new { needsGitInit = true, path = candidate });
+                        }
+                        var (initOk, initMessage) = await Saturn.Core.GitManager.InitializeRepository(candidate);
+                        if (!initOk)
+                        {
+                            return Results.BadRequest(new { error = initMessage });
+                        }
+                    }
+
+                    var switched = Saturn.Core.Workspace.WorkspaceManager.TrySwitch(candidate);
+                    if (!switched.Success)
+                    {
+                        return Results.BadRequest(new { error = switched.Error });
+                    }
+                    var newPath = switched.NormalizedPath!;
+
+                    // Close the old session against the old workspace's DB before any
+                    // repositories are repointed, then rebuild everything path-bound.
+                    _orchestrator.StartNewSession();
+                    _rootAgent.ReinitializeRepository();
+                    Saturn.Tools.Todo.TodoStore.Reset();
+                    _tasks.SwitchWorkspace(newPath);
+                    var oldHistory = _history;
+                    _history = new ChatHistoryRepository();
+                    oldHistory.Dispose();
+                    await SystemPrompt.RecomposeAsync(_rootAgent);
+
+                    var name = Saturn.Core.Workspace.WorkspaceManager.WorkspaceName;
+                    _hub.Publish("workspace.changed", new { path = newPath, name });
+                    await Configuration.ConfigurationManager.AddRecentWorkspaceAsync(newPath);
+
+                    return Results.Ok(new { path = newPath, name });
+                }
+                finally
                 {
-                    return Results.BadRequest(new { error = switched.Error });
+                    _workspaceSwitchGate.Release();
                 }
-                var newPath = switched.NormalizedPath!;
-
-                // Close the old session against the old workspace's DB before any
-                // repositories are repointed, then rebuild everything path-bound.
-                _orchestrator.StartNewSession();
-                _rootAgent.ReinitializeRepository();
-                Saturn.Tools.Todo.TodoStore.Reset();
-                _tasks.SwitchWorkspace(newPath);
-                var oldHistory = _history;
-                _history = new ChatHistoryRepository();
-                oldHistory.Dispose();
-                await SystemPrompt.RecomposeAsync(_rootAgent);
-
-                var name = Saturn.Core.Workspace.WorkspaceManager.WorkspaceName;
-                _hub.Publish("workspace.changed", new { path = newPath, name });
-                await Configuration.ConfigurationManager.AddRecentWorkspaceAsync(newPath);
-
-                return Results.Ok(new { path = newPath, name });
             });
 
             api.MapPut("/sessions/{id}", async (string id, SessionRenameRequest request) =>

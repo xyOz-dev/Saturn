@@ -182,7 +182,8 @@ input, textarea, select { font: inherit; color: inherit; }
 .conn-dot.on { background: var(--ok); box-shadow: 0 0 8px #7dd69266; animation: breathe 3s ease-in-out infinite; }
 .provider-chip { font-family: var(--font-mono); font-size: 11px; color: var(--dim); padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-chip { cursor: pointer; }
-.workspace-chip:hover { color: var(--fg); }
+.workspace-chip:hover { color: var(--text); }
+.workspace-chip:focus-visible { color: var(--text); outline: 1px solid var(--border-strong); outline-offset: 2px; }
 .ws-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }

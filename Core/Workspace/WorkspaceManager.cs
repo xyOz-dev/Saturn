@@ -38,6 +38,15 @@ namespace Saturn.Core.Workspace
 
         public static event Action<string, string>? WorkspaceChanged;
 
+        /// <summary>
+        /// Path equality semantics for the local filesystem: case-insensitive on
+        /// Windows and macOS, case-sensitive elsewhere.
+        /// </summary>
+        public static StringComparison PathComparison =>
+            OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
         public static void Initialize(string? path)
         {
             lock (Sync)
@@ -89,7 +98,7 @@ namespace Saturn.Core.Workspace
                 }
 
                 oldPath = _current ?? Environment.CurrentDirectory;
-                if (string.Equals(oldPath, normalized, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(oldPath, normalized, PathComparison))
                 {
                     return new WorkspaceSwitchResult(true, normalized, null);
                 }

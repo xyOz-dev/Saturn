@@ -1820,7 +1820,7 @@ namespace Saturn.UI
                 return;
             }
 
-            if (string.Equals(candidate, currentWorkspace, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(candidate, currentWorkspace, Saturn.Core.Workspace.WorkspaceManager.PathComparison))
             {
                 return;
             }

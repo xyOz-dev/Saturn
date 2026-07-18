@@ -122,6 +122,16 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                 }
                 
                 var workingDirectory = GetParameter<string>(arguments, "workingDirectory", WorkspaceManager.CurrentWorkspace);
+                try
+                {
+                    // Relative paths must resolve against the active workspace, not the
+                    // process CWD, or they escape workspace isolation after a switch.
+                    workingDirectory = Path.GetFullPath(workingDirectory, WorkspaceManager.CurrentWorkspace);
+                }
+                catch (Exception ex)
+                {
+                    return CreateErrorResult($"Invalid working directory: {ex.Message}");
+                }
                 var timeoutSeconds = GetParameter<int>(arguments, "timeout", _config.DefaultTimeout);
                 if (timeoutSeconds <= 0)
                 {

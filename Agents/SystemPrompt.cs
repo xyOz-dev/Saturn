@@ -59,28 +59,32 @@ namespace Saturn.Agents
             if (string.IsNullOrWhiteSpace(fullPrompt))
                 return fullPrompt;
 
-            var dirStartIndex = fullPrompt.IndexOf(DirectorySectionStart);
-            var dirEndIndex = fullPrompt.IndexOf(DirectorySectionEnd);
-            if (dirStartIndex >= 0 && dirEndIndex > dirStartIndex)
-            {
-                fullPrompt = fullPrompt.Remove(dirStartIndex, dirEndIndex - dirStartIndex + DirectorySectionEnd.Length);
-            }
-
-            var rulesStartIndex = fullPrompt.IndexOf(UserRulesSectionStart);
-            var rulesEndIndex = fullPrompt.IndexOf(UserRulesSectionEnd);
-            if (rulesStartIndex >= 0 && rulesEndIndex > rulesStartIndex)
-            {
-                fullPrompt = fullPrompt.Remove(rulesStartIndex, rulesEndIndex - rulesStartIndex + UserRulesSectionEnd.Length);
-            }
-
-            var skillsStartIndex = fullPrompt.IndexOf("\n<skills>");
-            var skillsEndIndex = fullPrompt.IndexOf("</skills>");
-            if (skillsStartIndex >= 0 && skillsEndIndex > skillsStartIndex)
-            {
-                fullPrompt = fullPrompt.Remove(skillsStartIndex, skillsEndIndex - skillsStartIndex + "</skills>".Length);
-            }
+            // Generated sections are appended after the base prompt in the order
+            // directory, rules, skills, so strip from the tail in reverse order.
+            // Anchoring on the last occurrence (and requiring it to sit at the end)
+            // keeps base prompts that merely mention the markers intact.
+            fullPrompt = StripTrailingSection(fullPrompt, "\n<skills>", "</skills>");
+            fullPrompt = StripTrailingSection(fullPrompt, UserRulesSectionStart, UserRulesSectionEnd);
+            fullPrompt = StripTrailingSection(fullPrompt, DirectorySectionStart, DirectorySectionEnd);
 
             return fullPrompt.TrimEnd();
+        }
+
+        private static string StripTrailingSection(string prompt, string sectionStart, string sectionEnd)
+        {
+            var startIndex = prompt.LastIndexOf(sectionStart, StringComparison.Ordinal);
+            if (startIndex < 0)
+                return prompt;
+
+            var endIndex = prompt.IndexOf(sectionEnd, startIndex, StringComparison.Ordinal);
+            if (endIndex < 0)
+                return prompt;
+
+            var afterEnd = endIndex + sectionEnd.Length;
+            if (prompt.AsSpan(afterEnd).Trim().Length > 0)
+                return prompt;
+
+            return prompt.Remove(startIndex);
         }
 
         /// <summary>
