@@ -4,6 +4,7 @@ using System.IO;
 using System.Security;
 using System.Text;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 
 namespace Saturn.Tools
@@ -111,7 +112,7 @@ Safety features:
             try
             {
                 ValidatePathSecurity(path);
-                var fullPath = Path.GetFullPath(path);
+                var fullPath = Path.GetFullPath(path, WorkspaceManager.CurrentWorkspace);
                 
                 var encoding = GetEncoding(encodingName);
                 var bytes = encoding.GetBytes(content);
@@ -184,7 +185,7 @@ Safety features:
         {
             PathSecurity.ValidateInsideWorkingDirectory(path);
 
-            var fullPath = Path.GetFullPath(path);
+            var fullPath = Path.GetFullPath(path, WorkspaceManager.CurrentWorkspace);
             var invalidChars = Path.GetInvalidFileNameChars();
             var fileName = Path.GetFileName(fullPath);
             if (fileName.IndexOfAny(invalidChars) >= 0)

@@ -149,13 +149,15 @@ namespace Saturn.Configuration
             try
             {
                 if (config.ActiveProvider == null || config.Providers == null ||
-                    config.SearchProvider == null || config.SearchProviders == null)
+                    config.SearchProvider == null || config.SearchProviders == null ||
+                    config.RecentWorkspaces == null)
                 {
                     var existing = await LoadForRewriteAsync();
                     config.ActiveProvider ??= existing?.ActiveProvider;
                     config.Providers ??= existing?.Providers;
                     config.SearchProvider ??= existing?.SearchProvider;
                     config.SearchProviders ??= existing?.SearchProviders;
+                    config.RecentWorkspaces ??= existing?.RecentWorkspaces;
                 }
 
                 if (!string.IsNullOrWhiteSpace(config.ActiveProvider) && !string.IsNullOrWhiteSpace(config.Model))
@@ -239,6 +241,34 @@ namespace Saturn.Configuration
             }
 
             await SaveConfigurationLockedAsync(config);
+        }
+
+        public static async Task AddRecentWorkspaceAsync(string path)
+        {
+            await SaveLock.WaitAsync();
+            try
+            {
+                var config = await LoadForRewriteAsync() ?? new PersistedAgentConfiguration();
+
+                var recent = config.RecentWorkspaces ?? new List<string>();
+                recent.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+                recent.Insert(0, path);
+                if (recent.Count > 10)
+                {
+                    recent.RemoveRange(10, recent.Count - 10);
+                }
+                config.RecentWorkspaces = recent;
+
+                await SaveConfigurationLockedAsync(config);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Failed to save recent workspace: {ex.Message}");
+            }
+            finally
+            {
+                SaveLock.Release();
+            }
         }
 
         public static ProviderSettings GetProviderSettings(PersistedAgentConfiguration? config, string providerName)
@@ -351,10 +381,12 @@ namespace Saturn.Configuration
                 ToolNames = config.ToolNames,
                 RequireCommandApproval = config.RequireCommandApproval,
                 EnableUserRules = config.EnableUserRules,
+                EnableSkills = config.EnableSkills,
                 ActiveProvider = config.ActiveProvider,
                 Providers = protectedProviders ?? config.Providers,
                 SearchProvider = config.SearchProvider,
-                SearchProviders = protectedSearchProviders ?? config.SearchProviders
+                SearchProviders = protectedSearchProviders ?? config.SearchProviders,
+                RecentWorkspaces = config.RecentWorkspaces
             };
         }
 

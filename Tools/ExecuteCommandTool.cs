@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 using Saturn.Tools.Objects;
 
@@ -120,7 +121,17 @@ Prefer the dedicated file tools (read_file, write_file, grep, glob, list_files) 
                     return CreateErrorResult("Command parameter is required");
                 }
                 
-                var workingDirectory = GetParameter<string>(arguments, "workingDirectory", Directory.GetCurrentDirectory());
+                var workingDirectory = GetParameter<string>(arguments, "workingDirectory", WorkspaceManager.CurrentWorkspace);
+                try
+                {
+                    // Relative paths must resolve against the active workspace, not the
+                    // process CWD, or they escape workspace isolation after a switch.
+                    workingDirectory = Path.GetFullPath(workingDirectory, WorkspaceManager.CurrentWorkspace);
+                }
+                catch (Exception ex)
+                {
+                    return CreateErrorResult($"Invalid working directory: {ex.Message}");
+                }
                 var timeoutSeconds = GetParameter<int>(arguments, "timeout", _config.DefaultTimeout);
                 if (timeoutSeconds <= 0)
                 {

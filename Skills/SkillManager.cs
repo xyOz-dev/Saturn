@@ -43,7 +43,7 @@ namespace Saturn.Skills
         internal static string? WorkspaceRootOverride { get; set; }
 
         public static string WorkspaceSkillsDirectory =>
-            Path.Combine(WorkspaceRootOverride ?? Environment.CurrentDirectory, ".saturn", "skills");
+            Path.Combine(WorkspaceRootOverride ?? Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace, ".saturn", "skills");
 
         /// <summary>All skills, workspace skills shadowing global ones on a name collision.</summary>
         public static IReadOnlyList<Skill> GetAllSkills()

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 using Saturn.Tools.Objects;
 
@@ -132,7 +133,7 @@ Examples:
             try
             {
                 ValidatePathSecurity(path);
-                var fullPath = Path.GetFullPath(path);
+                var fullPath = Path.GetFullPath(path, WorkspaceManager.CurrentWorkspace);
 
                 if (!File.Exists(fullPath))
                 {

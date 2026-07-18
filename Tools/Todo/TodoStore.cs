@@ -59,6 +59,22 @@ namespace Saturn.Tools.Todo
             }
         }
 
+        /// <summary>
+        /// Drops the cached repository and lists after a workspace switch so the
+        /// next access reopens chats.db under the new workspace.
+        /// </summary>
+        internal static void Reset()
+        {
+            var previous = _repository;
+            _repository = new Lazy<ChatHistoryRepository?>(CreateDefaultRepository);
+            if (previous.IsValueCreated)
+            {
+                previous.Value?.Dispose();
+            }
+            _lists.Clear();
+            _lastAccess.Clear();
+        }
+
         public static string CurrentKey()
         {
             var context = AgentContext.Current;

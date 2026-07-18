@@ -7,8 +7,9 @@ namespace Saturn.UI
 {
     public static class GitRepositoryPrompt
     {
-        public static Task<bool> ShowPrompt()
+        public static Task<bool> ShowPrompt(string? workspacePath = null)
         {
+            workspacePath ??= Environment.CurrentDirectory;
             var userChoice = false;
             var initializationComplete = false;
 
@@ -63,7 +64,7 @@ namespace Saturn.UI
                     }
                 };
 
-                var pathLabel = new Label($"Directory: {Environment.CurrentDirectory}")
+                var pathLabel = new Label($"Directory: {workspacePath}")
                 {
                     X = 2,
                     Y = 6,
@@ -134,7 +135,7 @@ namespace Saturn.UI
                     progressLabel.Text = "🔄 Initializing Git repository...";
                     Application.Refresh();
 
-                    var result = await Task.Run(() => GitManager.InitializeRepository());
+                    var result = await Task.Run(() => GitManager.InitializeRepository(workspacePath));
                     
                     if (result.success)
                     {

@@ -20,9 +20,9 @@ public class ChatHistoryRepository : IDisposable
 
     public ChatHistoryRepository(string? workspacePath = null)
     {
-        var saturnDir = workspacePath != null 
+        var saturnDir = workspacePath != null
             ? Path.Combine(workspacePath, ".saturn")
-            : Path.Combine(Environment.CurrentDirectory, ".saturn");
+            : Path.Combine(Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace, ".saturn");
         
         if (!Directory.Exists(saturnDir))
         {

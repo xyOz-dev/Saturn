@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 using Saturn.Tools.Objects;
 
@@ -138,7 +139,7 @@ Safety features:
             var searchPattern = GetParameter<string>(parameters, "searchPattern");
             var replacement = GetParameter<string>(parameters, "replacement");
             var filePattern = GetParameter<string>(parameters, "filePattern");
-            var basePath = GetParameter<string>(parameters, "path", Directory.GetCurrentDirectory());
+            var basePath = GetParameter<string>(parameters, "path", WorkspaceManager.CurrentWorkspace);
             var useRegex = GetParameter<bool>(parameters, "regex", false);
             var caseSensitive = GetParameter<bool>(parameters, "caseSensitive", true);
             var wholeWord = GetParameter<bool>(parameters, "wholeWord", false);
@@ -377,7 +378,7 @@ Safety features:
             output.AppendLine("\nModified files:");
             foreach (var file in results.ProcessedFiles.Where(f => f.Modified))
             {
-                var relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), file.Path);
+                var relativePath = Path.GetRelativePath(WorkspaceManager.CurrentWorkspace, file.Path);
                 output.AppendLine($"  {relativePath} ({file.ReplacementCount} replacements)");
             }
             
@@ -388,7 +389,7 @@ Safety features:
                 TotalReplacements = results.TotalReplacements,
                 Files = results.ProcessedFiles.Select(f => new
                 {
-                    Path = Path.GetRelativePath(Directory.GetCurrentDirectory(), f.Path),
+                    Path = Path.GetRelativePath(WorkspaceManager.CurrentWorkspace, f.Path),
                     Matches = f.MatchCount,
                     Replacements = f.ReplacementCount
                 }).ToList()
@@ -405,7 +406,7 @@ Safety features:
             
             foreach (var file in results.ProcessedFiles)
             {
-                var relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), file.Path);
+                var relativePath = Path.GetRelativePath(WorkspaceManager.CurrentWorkspace, file.Path);
                 output.AppendLine($"\n{relativePath} ({file.MatchCount} matches):");
                 
                 if (!string.IsNullOrEmpty(file.Preview))
@@ -421,7 +422,7 @@ Safety features:
                 TotalMatches = results.TotalMatches,
                 Files = results.ProcessedFiles.Select(f => new
                 {
-                    Path = Path.GetRelativePath(Directory.GetCurrentDirectory(), f.Path),
+                    Path = Path.GetRelativePath(WorkspaceManager.CurrentWorkspace, f.Path),
                     Matches = f.MatchCount
                 }).ToList()
             };

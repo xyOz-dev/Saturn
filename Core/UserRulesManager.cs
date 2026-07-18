@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 
 namespace Saturn.Core
 {
@@ -13,7 +14,7 @@ namespace Saturn.Core
         
         public static string GetRulesFilePath()
         {
-            var saturnDir = Path.Combine(Environment.CurrentDirectory, ".saturn");
+            var saturnDir = Path.Combine(WorkspaceManager.CurrentWorkspace, ".saturn");
             if (!Directory.Exists(saturnDir))
             {
                 Directory.CreateDirectory(saturnDir);

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security;
 using System.Threading.Tasks;
+using Saturn.Core.Workspace;
 using Saturn.Tools.Core;
 using Saturn.Tools.Objects;
 
@@ -99,7 +100,7 @@ Safety features:
             
             try
             {
-                var fullPath = Path.GetFullPath(path);
+                var fullPath = Path.GetFullPath(path, WorkspaceManager.CurrentWorkspace);
 
                 try
                 {
@@ -110,7 +111,7 @@ Safety features:
                     return CreateErrorResult(ex.Message);
                 }
 
-                var workingDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
+                var workingDirectory = Path.GetFullPath(WorkspaceManager.CurrentWorkspace);
                 var relativeToWorkingDir = Path.GetRelativePath(workingDirectory, fullPath);
                 if (relativeToWorkingDir == ".")
                 {

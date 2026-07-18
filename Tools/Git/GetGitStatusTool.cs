@@ -33,7 +33,7 @@ namespace Saturn.Tools.Git
 
         public override async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
         {
-            var workingDirectory = GetParameter<string>(parameters, "workingDirectory", Environment.CurrentDirectory);
+            var workingDirectory = GetParameter<string>(parameters, "workingDirectory", Saturn.Core.Workspace.WorkspaceManager.CurrentWorkspace);
 
             if (!Directory.Exists(workingDirectory))
             {

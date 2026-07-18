@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Security;
+using Saturn.Core.Workspace;
 
 namespace Saturn.Tools.Core
 {
@@ -13,8 +14,8 @@ namespace Saturn.Tools.Core
                 throw new ArgumentException("Path cannot be null or empty");
             }
 
-            var fullPath = Path.GetFullPath(path);
-            var workingDirectory = Path.GetFullPath(Directory.GetCurrentDirectory());
+            var workingDirectory = Path.GetFullPath(WorkspaceManager.CurrentWorkspace);
+            var fullPath = Path.GetFullPath(path, workingDirectory);
 
             // Lexical check first: cheap, and catches plain traversal even when
             // the filesystem cannot be probed.

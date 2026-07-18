@@ -1,10 +1,12 @@
-﻿using Saturn.Core;
+﻿using Saturn.Agents.Core;
+using Saturn.Core;
 using Saturn.Tools;
 using Saturn.Tools.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Saturn.Agents
@@ -46,6 +48,75 @@ namespace Saturn.Agents
 
             var result = output.ToString();
             return result;
+        }
+
+        /// <summary>
+        /// Strips the generated sections (directory view, user rules, skills catalog)
+        /// from a composed prompt, returning the base prompt they were appended to.
+        /// </summary>
+        public static string ExtractBase(string fullPrompt)
+        {
+            if (string.IsNullOrWhiteSpace(fullPrompt))
+                return fullPrompt;
+
+            // Generated sections are appended after the base prompt in the order
+            // directory, rules, skills, so strip from the tail in reverse order.
+            // Anchoring on the last occurrence (and requiring it to sit at the end)
+            // keeps base prompts that merely mention the markers intact.
+            fullPrompt = StripTrailingSection(fullPrompt, "\n<skills>", "</skills>");
+            fullPrompt = StripTrailingSection(fullPrompt, UserRulesSectionStart, UserRulesSectionEnd);
+            fullPrompt = StripTrailingSection(fullPrompt, DirectorySectionStart, DirectorySectionEnd);
+
+            return fullPrompt.TrimEnd();
+        }
+
+        private static string StripTrailingSection(string prompt, string sectionStart, string sectionEnd)
+        {
+            var startIndex = prompt.LastIndexOf(sectionStart, StringComparison.Ordinal);
+            if (startIndex < 0)
+                return prompt;
+
+            var endIndex = prompt.IndexOf(sectionEnd, startIndex, StringComparison.Ordinal);
+            if (endIndex < 0)
+                return prompt;
+
+            var afterEnd = endIndex + sectionEnd.Length;
+            if (prompt.AsSpan(afterEnd).Trim().Length > 0)
+                return prompt;
+
+            return prompt.Remove(startIndex);
+        }
+
+        /// <summary>
+        /// Rebuilds the agent's composed system prompt against the current workspace
+        /// (fresh directory view, rules, and skills catalog) and patches the live
+        /// session's system message so the next turn uses it.
+        /// </summary>
+        public static async Task<string> RecomposeAsync(AgentBase agent)
+        {
+            var basePrompt = ExtractBase(agent.Configuration.SystemPrompt);
+
+            var skillsSection = agent.Configuration.EnableSkills
+                ? Saturn.Skills.SkillPrompts.BuildSystemPromptSection(
+                    agent.Configuration.SkillAudience, agent.Configuration.SubAgentTypeName)
+                : null;
+
+            var freshSystemPrompt = await Create(
+                basePrompt,
+                includeDirectories: true,
+                includeUserRules: agent.Configuration.EnableUserRules,
+                skillsSection: skillsSection);
+
+            agent.Configuration.SystemPrompt = freshSystemPrompt;
+
+            if (agent.ChatHistory.Count > 0 && agent.ChatHistory[0].Role == "system")
+            {
+                agent.ChatHistory[0].Content = JsonDocument.Parse(
+                    JsonSerializer.Serialize(freshSystemPrompt)
+                ).RootElement;
+            }
+
+            return freshSystemPrompt;
         }
 
         private static async Task<string> GenerateDirectoryView()

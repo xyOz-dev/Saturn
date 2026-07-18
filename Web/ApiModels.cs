@@ -54,6 +54,8 @@ namespace Saturn.Web
 
     public record SessionRenameRequest(string? Title);
 
+    public record WorkspaceSwitchRequest(string? Path, bool? InitGit);
+
     public record ProviderSwitchRequest(string Provider, Dictionary<string, string?>? Settings, string? Model);
 
     public record SearchProviderSwitchRequest(string? Provider, Dictionary<string, string?>? Settings);
