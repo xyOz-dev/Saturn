@@ -22,7 +22,9 @@ namespace Saturn.Tests.Skills
             TempConfigDir = Path.Combine(Path.GetTempPath(), $"SaturnSkillTest_{Guid.NewGuid():N}");
             Directory.CreateDirectory(TempConfigDir);
             Environment.SetEnvironmentVariable("SATURN_CONFIG_DIR", TempConfigDir);
-            CleanWorkspaceSkills();
+            // Pin the workspace root: resolving it from the process cwd would race
+            // with the WorkingDirectory test collection running in parallel.
+            SkillManager.WorkspaceRootOverride = Path.Combine(TempConfigDir, "workspace");
         }
 
         protected static Skill NewSkill(string name, string content = "Some skill content.", params string[] triggers)
@@ -35,24 +37,10 @@ namespace Saturn.Tests.Skills
             };
         }
 
-        private static void CleanWorkspaceSkills()
-        {
-            try
-            {
-                if (Directory.Exists(SkillManager.WorkspaceSkillsDirectory))
-                {
-                    Directory.Delete(SkillManager.WorkspaceSkillsDirectory, recursive: true);
-                }
-            }
-            catch
-            {
-            }
-        }
-
         public virtual void Dispose()
         {
             Environment.SetEnvironmentVariable("SATURN_CONFIG_DIR", _originalConfigDir);
-            CleanWorkspaceSkills();
+            SkillManager.WorkspaceRootOverride = null;
             try
             {
                 Directory.Delete(TempConfigDir, recursive: true);

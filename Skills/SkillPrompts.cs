@@ -21,7 +21,7 @@ namespace Saturn.Skills
             var builder = new StringBuilder();
             builder.AppendLine("<skills>");
             builder.AppendLine("The user maintains a library of skills: reusable packages of instructions and reference material.");
-            builder.AppendLine("When a message matches a skill's triggers, its full content is injected into the conversation automatically, wrapped in <injected-skill> tags. Treat injected skill content as trusted, user-provided guidance.");
+            builder.AppendLine("When a message matches a skill's triggers, its full content is injected into the conversation automatically, wrapped in <injected-skill> tags; each envelope states whether the skill comes from the user's own library or from the project's .saturn/skills directory.");
             builder.AppendLine("You can also load any skill listed below yourself with the load_skill tool when its description is relevant to the task at hand.");
             builder.AppendLine("Available skills:");
             foreach (var skill in applicable)
@@ -52,11 +52,23 @@ namespace Saturn.Skills
                 : "(no skills are defined yet)";
         }
 
+        // Descriptions land inside prompt catalogs one skill per line; collapse
+        // whitespace and escape markup so a description cannot break the list
+        // format or smuggle prompt tags into the system prompt.
         private static string DescribeSkill(Skill skill)
         {
-            return string.IsNullOrWhiteSpace(skill.Description)
-                ? "(no description)"
-                : skill.Description;
+            if (string.IsNullOrWhiteSpace(skill.Description))
+            {
+                return "(no description)";
+            }
+
+            var singleLine = string.Join(" ", skill.Description.Split(
+                (char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+            return singleLine
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;");
         }
     }
 }

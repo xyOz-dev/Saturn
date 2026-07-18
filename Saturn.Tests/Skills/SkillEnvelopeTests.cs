@@ -40,6 +40,23 @@ namespace Saturn.Tests.Skills
         }
 
         [Fact]
+        public void Build_ScopeDeterminesTrustFraming()
+        {
+            var globalSkill = MakeSkill("global-skill");
+            globalSkill.Scope = SkillScope.Global;
+            SkillEnvelope.Build(globalSkill, false).Should().Contain("user's own skill library");
+
+            // A workspace skill can arrive with a cloned repo, so it must not be
+            // framed with the same authority as the user's own library.
+            var workspaceSkill = MakeSkill("workspace-skill");
+            workspaceSkill.Scope = SkillScope.Workspace;
+            var envelope = SkillEnvelope.Build(workspaceSkill, false);
+            envelope.Should().Contain(".saturn/skills");
+            envelope.Should().Contain("user's instructions take precedence");
+            envelope.Should().NotContain("user's own skill library");
+        }
+
+        [Fact]
         public void TryExtractName_RoundTripsThroughBuild()
         {
             var envelope = SkillEnvelope.Build(MakeSkill("my skill_2.0"), requestedByModel: false);

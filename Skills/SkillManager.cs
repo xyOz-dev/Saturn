@@ -35,8 +35,15 @@ namespace Saturn.Skills
             }
         }
 
+        /// <summary>
+        /// Test seam: workspace skills resolve against the process working
+        /// directory, which parallel test collections mutate; tests pin a
+        /// stable root here instead.
+        /// </summary>
+        internal static string? WorkspaceRootOverride { get; set; }
+
         public static string WorkspaceSkillsDirectory =>
-            Path.Combine(Environment.CurrentDirectory, ".saturn", "skills");
+            Path.Combine(WorkspaceRootOverride ?? Environment.CurrentDirectory, ".saturn", "skills");
 
         /// <summary>All skills, workspace skills shadowing global ones on a name collision.</summary>
         public static IReadOnlyList<Skill> GetAllSkills()
@@ -181,17 +188,25 @@ namespace Saturn.Skills
 
             var copy = original.Clone();
 
-            var baseName = original.Name;
-            var newName = $"{baseName}-copy";
             var copyNumber = 1;
+            var newName = BuildCopyName(original.Name, "-copy");
             while (GetSkillByName(newName) != null)
             {
                 copyNumber++;
-                newName = $"{baseName}-copy-{copyNumber}";
+                newName = BuildCopyName(original.Name, $"-copy-{copyNumber}");
             }
 
             copy.Name = newName;
             return await CreateSkillAsync(copy);
+        }
+
+        // Trim the base name if needed so the copy suffix never pushes the
+        // duplicate's name past the name-length cap.
+        private static string BuildCopyName(string baseName, string suffix)
+        {
+            var available = MaxNameLength - suffix.Length;
+            var trimmedBase = baseName.Length > available ? baseName.Substring(0, available) : baseName;
+            return $"{trimmedBase.TrimEnd()}{suffix}";
         }
 
         private static void Normalize(Skill skill)
@@ -294,8 +309,13 @@ namespace Saturn.Skills
                     // the whole library.
                 }
 
-                if (skill != null && !string.IsNullOrWhiteSpace(skill.Id) && !string.IsNullOrWhiteSpace(skill.Name))
+                if (skill != null && !string.IsNullOrWhiteSpace(skill.Name))
                 {
+                    // The file name is the identity. Never trust the Id stored inside
+                    // the file: a skill JSON shipped inside a cloned repo could carry
+                    // a crafted Id ("..\\..\\evil" or an absolute path) that Save/Delete
+                    // would otherwise turn into a write or delete outside this directory.
+                    skill.Id = Path.GetFileNameWithoutExtension(file);
                     skill.Scope = scope;
                     yield return skill;
                 }
@@ -307,7 +327,7 @@ namespace Saturn.Skills
             var directory = skill.Scope == SkillScope.Workspace ? WorkspaceSkillsDirectory : GlobalSkillsDirectory;
             Directory.CreateDirectory(directory);
 
-            var filePath = Path.Combine(directory, $"{skill.Id}.json");
+            var filePath = GetSkillFilePath(directory, skill.Id);
             var json = JsonSerializer.Serialize(skill, new JsonSerializerOptions { WriteIndented = true });
 
             var tempPath = filePath + ".tmp";
@@ -318,11 +338,30 @@ namespace Saturn.Skills
         private static void DeleteSkillFile(Skill skill)
         {
             var directory = skill.Scope == SkillScope.Workspace ? WorkspaceSkillsDirectory : GlobalSkillsDirectory;
-            var filePath = Path.Combine(directory, $"{skill.Id}.json");
+            var filePath = GetSkillFilePath(directory, skill.Id);
             if (File.Exists(filePath))
             {
                 File.Delete(filePath);
             }
+        }
+
+        /// <summary>
+        /// Resolves the file for a skill id, refusing any id that would resolve
+        /// outside the skills directory (path separators, "..", rooted paths).
+        /// </summary>
+        private static string GetSkillFilePath(string directory, string id)
+        {
+            var fileName = $"{id}.json";
+            var fullDirectory = Path.GetFullPath(directory);
+            var fullPath = Path.GetFullPath(Path.Combine(fullDirectory, fileName));
+
+            if (!string.Equals(Path.GetFileName(fullPath), fileName, StringComparison.Ordinal) ||
+                !string.Equals(Path.GetDirectoryName(fullPath), fullDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException($"Invalid skill id '{id}'");
+            }
+
+            return fullPath;
         }
     }
 }

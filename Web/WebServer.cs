@@ -1071,6 +1071,11 @@ namespace Saturn.Web
 
             api.MapPost("/skills/{id}/duplicate", async (string id) =>
             {
+                if (Saturn.Skills.SkillManager.GetSkillById(id) == null)
+                {
+                    return Results.NotFound(new { error = $"Skill {id} not found" });
+                }
+
                 try
                 {
                     var duplicated = await Saturn.Skills.SkillManager.DuplicateSkillAsync(id);
@@ -1079,7 +1084,7 @@ namespace Saturn.Web
                 }
                 catch (ArgumentException ex)
                 {
-                    return Results.NotFound(new { error = ex.Message });
+                    return Results.BadRequest(new { error = ex.Message });
                 }
             });
 

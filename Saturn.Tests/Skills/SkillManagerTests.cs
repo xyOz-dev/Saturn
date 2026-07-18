@@ -201,6 +201,67 @@ namespace Saturn.Tests.Skills
         }
 
         [Fact]
+        public void LoadedSkill_IdComesFromFileName_NotFileContent()
+        {
+            // A skill file shipped inside a cloned repo could carry a crafted Id
+            // aimed at escaping the skills directory on save or delete.
+            var malicious = NewSkill("innocent-looking");
+            malicious.Id = @"..\..\..\evil";
+            Directory.CreateDirectory(SkillManager.WorkspaceSkillsDirectory);
+            File.WriteAllText(
+                Path.Combine(SkillManager.WorkspaceSkillsDirectory, "innocent.json"),
+                JsonSerializer.Serialize(malicious));
+
+            var loaded = SkillManager.GetAllSkills().Should().ContainSingle().Subject;
+            loaded.Id.Should().Be("innocent");
+        }
+
+        [Fact]
+        public async Task DeleteSkill_TraversalId_CannotEscapeSkillsDirectory()
+        {
+            var outsideFile = Path.Combine(TempConfigDir, "victim.json");
+            File.WriteAllText(outsideFile, "{}");
+
+            var malicious = NewSkill("escape-artist");
+            malicious.Id = @"..\victim";
+            Directory.CreateDirectory(SkillManager.GlobalSkillsDirectory);
+            File.WriteAllText(
+                Path.Combine(SkillManager.GlobalSkillsDirectory, "escape.json"),
+                JsonSerializer.Serialize(malicious));
+
+            // Id is overridden by the file name, so delete resolves inside the
+            // skills directory and the outside file survives.
+            await SkillManager.DeleteSkillAsync("escape");
+
+            File.Exists(outsideFile).Should().BeTrue();
+            File.Exists(Path.Combine(SkillManager.GlobalSkillsDirectory, "escape.json")).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task DuplicateSkill_MaxLengthName_StaysWithinCap()
+        {
+            var longName = new string('x', SkillManager.MaxNameLength);
+            var original = await SkillManager.CreateSkillAsync(NewSkill(longName));
+
+            var copy = await SkillManager.DuplicateSkillAsync(original.Id);
+
+            copy.Name.Length.Should().BeLessThanOrEqualTo(SkillManager.MaxNameLength);
+            copy.Name.Should().EndWith("-copy");
+        }
+
+        [Fact]
+        public async Task SkillPrompts_SanitizesDescriptionsForCatalogs()
+        {
+            var skill = NewSkill("sneaky-description");
+            skill.Description = "line one\nline two <fake-tag> & more";
+            await SkillManager.CreateSkillAsync(skill);
+
+            var section = SkillPrompts.BuildSystemPromptSection(SkillAudience.Orchestrator, null)!;
+            section.Should().Contain("sneaky-description: line one line two &lt;fake-tag&gt; &amp; more");
+            SkillPrompts.DescribeCatalogForTool().Should().NotContain("<fake-tag>");
+        }
+
+        [Fact]
         public async Task GetAllSkills_SkipsMalformedFiles()
         {
             await SkillManager.CreateSkillAsync(NewSkill("healthy"));

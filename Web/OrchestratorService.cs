@@ -32,6 +32,7 @@ namespace Saturn.Web
         private int _busy;
         private bool _parentWired;
         private int _sessionEpoch; // guarded by _transcriptLock
+        private int _activeRunEpoch = -1; // guarded by _transcriptLock
 
         public event Action? OnIdle;
 
@@ -111,6 +112,7 @@ namespace Saturn.Web
             lock (_transcriptLock)
             {
                 epoch = _sessionEpoch;
+                _activeRunEpoch = epoch;
             }
 
             _ = Task.Run(async () =>
@@ -241,6 +243,12 @@ namespace Saturn.Web
             };
             lock (_transcriptLock)
             {
+                // Injection fires from inside a run; if a new session started while
+                // that run was unwinding, its entry belongs to the old transcript.
+                if (_sessionEpoch != _activeRunEpoch)
+                {
+                    return;
+                }
                 _transcript.Add(entry);
             }
             _hub.Publish("orchestrator.message", entry);
