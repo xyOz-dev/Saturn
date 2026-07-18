@@ -1019,9 +1019,12 @@ namespace Saturn.Web
                 }
                 if (request.Scope != null)
                 {
-                    skill.Scope = string.Equals(request.Scope, "workspace", StringComparison.OrdinalIgnoreCase)
-                        ? Saturn.Skills.SkillScope.Workspace
-                        : Saturn.Skills.SkillScope.Global;
+                    skill.Scope = request.Scope.Trim().ToLowerInvariant() switch
+                    {
+                        "workspace" => Saturn.Skills.SkillScope.Workspace,
+                        "global" => Saturn.Skills.SkillScope.Global,
+                        _ => throw new ArgumentException("scope must be 'global' or 'workspace'")
+                    };
                 }
             }
 

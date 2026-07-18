@@ -14,9 +14,9 @@ namespace Saturn.Tools
         // The catalog is rendered live from the skill store on every request, so
         // skills created or edited mid-session appear here without a restart.
         public override string Description =>
-            @"Load a skill from the user's skill library into the conversation. Skills are trusted, user-authored packages of instructions and reference material.
+            @"Load a skill from the user's skill library into the conversation. Skills are reusable packages of instructions and reference material from the user's global library or the project's .saturn/skills directory; each loaded skill states its provenance.
 
-Use this when a listed skill's description is relevant to the current task and its content has not already been injected. Skills whose triggers match the user's message are injected automatically; you only need this tool for skills you want proactively.
+Use this when a listed skill's description is relevant to the current task and its content has not already been injected. Skills whose triggers match the user's message are injected automatically; you only need this tool for skills you want proactively. Some skills are restricted to specific agents and are rejected when loaded from the wrong one.
 
 Available skills:
 " + SkillPrompts.DescribeCatalogForTool();
@@ -52,11 +52,13 @@ Available skills:
                 return Task.FromResult(CreateErrorResult("Parameter 'name' cannot be empty"));
             }
 
+            // Fail closed: without a known audience there is no basis to grant
+            // access, and audience None means this agent gets no skills at all.
             var context = AgentContext.Current;
             var configuration = context?.Configuration;
-            if (configuration != null && !configuration.EnableSkills)
+            if (configuration == null || !configuration.EnableSkills || configuration.SkillAudience == SkillAudience.None)
             {
-                return Task.FromResult(CreateErrorResult("Skills are disabled for this agent"));
+                return Task.FromResult(CreateErrorResult("Skills are not enabled for this agent"));
             }
 
             var skill = SkillManager.GetSkillByName(name);
@@ -66,9 +68,7 @@ Available skills:
                     $"No skill named '{name}' is available. Available skills:\n{SkillPrompts.DescribeCatalogForTool()}"));
             }
 
-            if (configuration != null &&
-                configuration.SkillAudience != SkillAudience.None &&
-                !skill.AppliesTo(configuration.SkillAudience, configuration.SubAgentTypeName))
+            if (!skill.AppliesTo(configuration.SkillAudience, configuration.SubAgentTypeName))
             {
                 return Task.FromResult(CreateErrorResult(
                     $"Skill '{skill.Name}' is not available to this agent"));

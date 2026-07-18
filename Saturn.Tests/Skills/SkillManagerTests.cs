@@ -271,6 +271,27 @@ namespace Saturn.Tests.Skills
         }
 
         [Fact]
+        public async Task GetAllSkills_NormalizesAndValidatesHandAuthoredFiles()
+        {
+            await SkillManager.CreateSkillAsync(NewSkill("healthy"));
+            Directory.CreateDirectory(SkillManager.GlobalSkillsDirectory);
+
+            // Explicit null Triggers must not reach the matcher as a null list.
+            File.WriteAllText(
+                Path.Combine(SkillManager.GlobalSkillsDirectory, "null-triggers.json"),
+                "{\"Id\":\"x\",\"Name\":\"null-triggers\",\"Content\":\"body\",\"Enabled\":true,\"Triggers\":null}");
+
+            // Values past the creation limits are held to the same bar and skipped.
+            File.WriteAllText(
+                Path.Combine(SkillManager.GlobalSkillsDirectory, "oversized.json"),
+                JsonSerializer.Serialize(NewSkill("oversized", new string('x', SkillManager.MaxContentLength + 1))));
+
+            var all = SkillManager.GetAllSkills();
+            all.Select(s => s.Name).Should().BeEquivalentTo(new[] { "healthy", "null-triggers" });
+            all.Single(s => s.Name == "null-triggers").Triggers.Should().NotBeNull();
+        }
+
+        [Fact]
         public async Task GetApplicableSkills_FiltersByAudienceTypeAndEnabled()
         {
             var orchestratorOnly = NewSkill("orch-only");

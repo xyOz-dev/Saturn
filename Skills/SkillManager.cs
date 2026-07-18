@@ -149,14 +149,13 @@ namespace Saturn.Skills
                 skill.CreatedAt = existing.CreatedAt;
                 skill.UpdatedAt = DateTime.UtcNow;
 
-                // Remove the old file first so a scope change does not leave a
-                // duplicate behind in the other directory.
+                // On a scope change, write the destination before removing the
+                // source: a failed save must not leave the skill deleted.
+                SaveSkillFile(skill);
                 if (existing.Scope != skill.Scope)
                 {
                     DeleteSkillFile(existing);
                 }
-
-                SaveSkillFile(skill);
             }
 
             return Task.FromResult(skill);
@@ -309,14 +308,35 @@ namespace Saturn.Skills
                     // the whole library.
                 }
 
-                if (skill != null && !string.IsNullOrWhiteSpace(skill.Name))
+                if (skill == null || string.IsNullOrWhiteSpace(skill.Name))
                 {
-                    // The file name is the identity. Never trust the Id stored inside
-                    // the file: a skill JSON shipped inside a cloned repo could carry
-                    // a crafted Id ("..\\..\\evil" or an absolute path) that Save/Delete
-                    // would otherwise turn into a write or delete outside this directory.
-                    skill.Id = Path.GetFileNameWithoutExtension(file);
-                    skill.Scope = scope;
+                    continue;
+                }
+
+                // The file name is the identity. Never trust the Id stored inside
+                // the file: a skill JSON shipped inside a cloned repo could carry
+                // a crafted Id ("..\\..\\evil" or an absolute path) that Save/Delete
+                // would otherwise turn into a write or delete outside this directory.
+                skill.Id = Path.GetFileNameWithoutExtension(file);
+                skill.Scope = scope;
+
+                // Hand-authored files can carry null collections or values past the
+                // creation limits; hold them to the same bar as the create path so
+                // the matcher and prompts never see a malformed skill.
+                bool valid;
+                try
+                {
+                    Normalize(skill);
+                    Validate(skill);
+                    valid = true;
+                }
+                catch (Exception)
+                {
+                    valid = false;
+                }
+
+                if (valid)
+                {
                     yield return skill;
                 }
             }

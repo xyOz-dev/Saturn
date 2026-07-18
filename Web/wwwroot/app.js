@@ -2238,7 +2238,7 @@ async function loadSkillsPanel() {
   $$("[data-skill-delete]").forEach((b) =>
     b.addEventListener("click", async () => {
       const skill = skillsData.find((s) => s.id === b.dataset.skillDelete);
-      const ok = await confirmModal("Delete skill", `Delete the skill "${skill?.name || "?"}"? This cannot be undone.`, "Delete");
+      const ok = await confirmModal("Delete skill", `Delete the skill "${esc(skill?.name || "?")}"? This cannot be undone.`, "Delete");
       if (!ok) return;
       try {
         await api.del(`/skills/${b.dataset.skillDelete}`);

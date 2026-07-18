@@ -284,5 +284,21 @@ namespace Saturn.Tests.Skills
 
             result.Success.Should().BeFalse();
         }
+
+        [Fact]
+        public async Task Execute_FailsClosedWithoutAValidAudience()
+        {
+            await SkillManager.CreateSkillAsync(NewSkill("guarded-skill"));
+            var tool = new LoadSkillTool();
+            var request = new Dictionary<string, object> { ["name"] = "guarded-skill" };
+
+            AgentContext.Current = null;
+            (await tool.ExecuteAsync(request)).Success.Should().BeFalse();
+
+            SetContext(CreateAgent(SkillAudience.None));
+            var result = await tool.ExecuteAsync(request);
+            result.Success.Should().BeFalse();
+            result.Error.Should().Contain("not enabled");
+        }
     }
 }

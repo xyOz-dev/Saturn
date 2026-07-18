@@ -40,6 +40,11 @@ namespace Saturn.UI
         private DateTime? lastRulesModifiedTime;
         private string? cachedSystemPromptWithRules;
 
+        private const string AssistantLabel = "\nAssistant: ";
+        // Start of the streaming response region in chatView; -1 outside a turn.
+        // Mutated only on the UI thread.
+        private int streamResponseStart = -1;
+
         public ChatInterface(Agent aiAgent, ILlmClientSource? client = null)
         {
             agent = aiAgent ?? throw new ArgumentNullException(nameof(aiAgent));
@@ -613,13 +618,15 @@ namespace Saturn.UI
                 if (agent.CurrentSessionId == null)
                 {
                     await agent.InitializeSessionAsync("main");
+                }
 
-                    if (agent.CurrentSessionId != null)
-                    {
-                        AgentManager.Instance.SetParentSessionId(agent.CurrentSessionId);
-                        AgentManager.Instance.SetParentEnableUserRules(agent.Configuration.EnableUserRules);
-                        AgentManager.Instance.SetParentEnableSkills(agent.Configuration.EnableSkills);
-                    }
+                // Propagate outside the initialization guard: a session restored via
+                // Load Chat arrives with a non-null id but stale parent settings.
+                if (agent.CurrentSessionId != null)
+                {
+                    AgentManager.Instance.SetParentSessionId(agent.CurrentSessionId);
+                    AgentManager.Instance.SetParentEnableUserRules(agent.Configuration.EnableUserRules);
+                    AgentManager.Instance.SetParentEnableSkills(agent.Configuration.EnableSkills);
                 }
 
                 AgentManager.Instance.SetParentModel(agent.Configuration.Model);
@@ -635,9 +642,9 @@ namespace Saturn.UI
                 Application.Refresh();
                 ScrollChatToBottom();
 
-                chatView.Text += "\nAssistant: ";
+                chatView.Text += AssistantLabel;
                 ScrollChatToBottom();
-                var startPosition = chatView.Text.Length;
+                streamResponseStart = chatView.Text.Length;
                 var responseBuilder = new StringBuilder();
 
                 await Task.Run(async () =>
@@ -655,7 +662,7 @@ namespace Saturn.UI
                                         responseBuilder.Clear();
                                         Application.MainLoop.Invoke(() =>
                                         {
-                                            chatView.Text = chatView.Text.Substring(0, startPosition);
+                                            chatView.Text = chatView.Text.Substring(0, streamResponseStart);
                                             ScrollChatToBottom();
                                             Application.Refresh();
                                         });
@@ -667,7 +674,7 @@ namespace Saturn.UI
                                         responseBuilder.Append(chunk.Content);
                                         Application.MainLoop.Invoke(() =>
                                         {
-                                            var currentText = chatView.Text.Substring(0, startPosition);
+                                            var currentText = chatView.Text.Substring(0, streamResponseStart);
                                             var renderedResponse = markdownRenderer.RenderToTerminal(responseBuilder.ToString());
                                             chatView.Text = currentText + renderedResponse;
                                             ScrollChatToBottom();
@@ -785,6 +792,7 @@ namespace Saturn.UI
             }
             finally
             {
+                streamResponseStart = -1;
                 if (ReferenceEquals(cancellationTokenSource, cts))
                 {
                     cancellationTokenSource = null;
@@ -1319,14 +1327,10 @@ namespace Saturn.UI
                 
                 chatView.Text += "\n[ Rules Update ]\n\n";
                 ScrollChatToBottom();
-                
-                UpdateAgentStatus("Ready");
-                
-                var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
-                var newSystemPrompt = await SystemPrompt.Create(basePrompt, includeDirectories: true, includeUserRules: dialog.RulesEnabled);
 
-                agent.Configuration.SystemPrompt = newSystemPrompt;
-                currentConfig.SystemPrompt = newSystemPrompt;
+                UpdateAgentStatus("Ready");
+
+                await RecomposeSystemPromptAsync();
 
                 await ConfigurationManager.SaveConfigurationAsync(
                     ConfigurationManager.FromAgentConfiguration(agent.Configuration));
@@ -1381,7 +1385,21 @@ namespace Saturn.UI
         {
             Application.MainLoop.Invoke(() =>
             {
-                chatView.Text += $"\n[Injected Skill: {skillName}]\n";
+                var notice = $"[Injected Skill: {skillName}]\n";
+                var text = chatView.Text.ToString();
+
+                // During a turn the streaming renderer rewrites everything after
+                // streamResponseStart on each chunk, which would erase an appended
+                // notice; insert it above the "Assistant:" label instead.
+                if (streamResponseStart >= AssistantLabel.Length && streamResponseStart <= text.Length)
+                {
+                    chatView.Text = text.Insert(streamResponseStart - AssistantLabel.Length, notice);
+                    streamResponseStart += notice.Length;
+                }
+                else
+                {
+                    chatView.Text += $"\n{notice}";
+                }
                 ScrollChatToBottom();
             });
         }
@@ -1402,11 +1420,17 @@ namespace Saturn.UI
             if (dialog.ShouldCreateNew)
             {
                 await ShowSkillEditorDialogAsync(null);
+                return;
             }
-            else if (dialog.SkillToEdit != null)
+            if (dialog.SkillToEdit != null)
             {
                 await ShowSkillEditorDialogAsync(dialog.SkillToEdit);
+                return;
             }
+
+            // Final close: fold toggle and catalog changes into the live system
+            // prompt so the model's skills section matches the library.
+            await RecomposeSystemPromptAsync();
         }
 
         private async Task ShowSkillEditorDialogAsync(Skills.Skill? skillToEdit)
@@ -1611,8 +1635,55 @@ namespace Saturn.UI
             {
                 fullPrompt = fullPrompt.Remove(rulesStartIndex, rulesEndIndex - rulesStartIndex + "</user_rules>\n".Length);
             }
-            
+
+            var skillsStartIndex = fullPrompt.IndexOf("\n<skills>");
+            var skillsEndIndex = fullPrompt.IndexOf("</skills>");
+            if (skillsStartIndex >= 0 && skillsEndIndex > skillsStartIndex)
+            {
+                fullPrompt = fullPrompt.Remove(skillsStartIndex, skillsEndIndex - skillsStartIndex + "</skills>".Length);
+            }
+
             return fullPrompt.TrimEnd();
+        }
+
+        private string? BuildSkillsSection()
+        {
+            return agent.Configuration.EnableSkills
+                ? Skills.SkillPrompts.BuildSystemPromptSection(
+                    agent.Configuration.SkillAudience, agent.Configuration.SubAgentTypeName)
+                : null;
+        }
+
+        /// <summary>
+        /// Recomposes the live system prompt (directory view, user rules, skills
+        /// catalog) and pushes it into the configuration and the active session's
+        /// system message.
+        /// </summary>
+        private async Task RecomposeSystemPromptAsync()
+        {
+            var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
+
+            var freshSystemPrompt = await SystemPrompt.Create(
+                basePrompt,
+                includeDirectories: true,
+                includeUserRules: currentConfig.EnableUserRules,
+                skillsSection: BuildSkillsSection()
+            );
+
+            cachedSystemPromptWithRules = freshSystemPrompt;
+            agent.Configuration.SystemPrompt = freshSystemPrompt;
+            currentConfig.SystemPrompt = freshSystemPrompt;
+
+            if (agent.CurrentSessionId != null && agent.ChatHistory.Count > 0)
+            {
+                var firstMessage = agent.ChatHistory[0];
+                if (firstMessage.Role == "system")
+                {
+                    firstMessage.Content = JsonDocument.Parse(
+                        JsonSerializer.Serialize(freshSystemPrompt)
+                    ).RootElement;
+                }
+            }
         }
         
         private async Task CheckAndUpdateSystemPromptIfNeeded()
@@ -1658,30 +1729,8 @@ namespace Saturn.UI
 
             if (needsUpdate)
             {
-                var basePrompt = ExtractBaseSystemPrompt(agent.Configuration.SystemPrompt);
-
-                var freshSystemPrompt = await SystemPrompt.Create(
-                    basePrompt,
-                    includeDirectories: true,
-                    includeUserRules: currentConfig.EnableUserRules
-                );
-
-                cachedSystemPromptWithRules = freshSystemPrompt;
+                await RecomposeSystemPromptAsync();
                 lastRulesModifiedTime = currentModifiedTime;
-
-                agent.Configuration.SystemPrompt = freshSystemPrompt;
-                currentConfig.SystemPrompt = freshSystemPrompt;
-
-                if (agent.CurrentSessionId != null && agent.ChatHistory.Count > 0)
-                {
-                    var firstMessage = agent.ChatHistory[0];
-                    if (firstMessage.Role == "system")
-                    {
-                        firstMessage.Content = JsonDocument.Parse(
-                            JsonSerializer.Serialize(freshSystemPrompt)
-                        ).RootElement;
-                    }
-                }
             }
         }
         
