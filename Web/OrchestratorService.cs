@@ -102,18 +102,25 @@ namespace Saturn.Web
                 return false;
             }
 
-            AddEntry("user", message, source);
-            _hub.Publish("orchestrator.state", new { busy = true });
-
-            var cts = new CancellationTokenSource();
-            _cts = cts;
-
+            // Epoch capture, transcript append, and the SSE publish are one atomic
+            // step: a concurrent session reset then lands entirely before this block
+            // (the turn simply runs in the fresh session) or entirely after it (the
+            // reset clears this entry and the epoch check discards the turn's later
+            // output). Publishing under the lock is safe: EventHub.Publish is a
+            // non-blocking TryWrite to per-subscriber channels.
+            var userEntry = new TranscriptEntry { Role = "user", Content = message, Source = source };
             int epoch;
             lock (_transcriptLock)
             {
                 epoch = _sessionEpoch;
                 _activeRunEpoch = epoch;
+                _transcript.Add(userEntry);
+                _hub.Publish("orchestrator.message", userEntry);
             }
+            _hub.Publish("orchestrator.state", new { busy = true });
+
+            var cts = new CancellationTokenSource();
+            _cts = cts;
 
             _ = Task.Run(async () =>
             {
@@ -223,8 +230,8 @@ namespace Saturn.Web
             lock (_transcriptLock)
             {
                 _transcript.Add(entry);
+                _hub.Publish("orchestrator.message", entry);
             }
-            _hub.Publish("orchestrator.message", entry);
         }
 
         /// <summary>
@@ -245,13 +252,16 @@ namespace Saturn.Web
             {
                 // Injection fires from inside a run; if a new session started while
                 // that run was unwinding, its entry belongs to the old transcript.
+                // Publish under the lock so a concurrent reset cannot emit its
+                // "cleared" event between this add and this publish, which would
+                // resurrect the entry on the client.
                 if (_sessionEpoch != _activeRunEpoch)
                 {
                     return;
                 }
                 _transcript.Add(entry);
+                _hub.Publish("orchestrator.message", entry);
             }
-            _hub.Publish("orchestrator.message", entry);
         }
 
         // Tool-call turns are stored with a literal "null" content; they are not part of the visible conversation.
@@ -306,8 +316,8 @@ namespace Saturn.Web
                 _sessionEpoch++;
                 _transcript.Clear();
                 _transcript.AddRange(restored);
+                _hub.Publish("orchestrator.session", new { sessionId });
             }
-            _hub.Publish("orchestrator.session", new { sessionId });
             return true;
         }
 
@@ -320,8 +330,8 @@ namespace Saturn.Web
             {
                 _sessionEpoch++;
                 _transcript.Clear();
+                _hub.Publish("orchestrator.cleared");
             }
-            _hub.Publish("orchestrator.cleared");
         }
 
         private void AddEntryIfCurrent(int epoch, string role, string content, string source = "user")
@@ -331,23 +341,15 @@ namespace Saturn.Web
             {
                 // A new session may have started while this run was unwinding;
                 // its entries belong to the old transcript and must not leak in.
+                // Publishing under the lock keeps the SSE stream ordered with the
+                // reset's "cleared" event.
                 if (_sessionEpoch != epoch)
                 {
                     return;
                 }
                 _transcript.Add(entry);
+                _hub.Publish("orchestrator.message", entry);
             }
-            _hub.Publish("orchestrator.message", entry);
-        }
-
-        private void AddEntry(string role, string content, string source = "user")
-        {
-            var entry = new TranscriptEntry { Role = role, Content = content, Source = source };
-            lock (_transcriptLock)
-            {
-                _transcript.Add(entry);
-            }
-            _hub.Publish("orchestrator.message", entry);
         }
     }
 }
