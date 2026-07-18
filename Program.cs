@@ -4,6 +4,7 @@ using Saturn.Agents.MultiAgent;
 using Saturn.Configuration;
 using Saturn.Core;
 using Saturn.Providers;
+using Saturn.Skills;
 using Saturn.UI;
 using System;
 using System.Collections.Generic;
@@ -151,11 +152,18 @@ namespace Saturn
             }
 
             bool enableUserRules = persistedConfig?.EnableUserRules ?? true;
-            
+            bool enableSkills = persistedConfig?.EnableSkills ?? true;
+
             var agentConfig = new Saturn.Agents.Core.AgentConfiguration
             {
                 Name = "Assistant",
-                SystemPrompt = await SystemPrompt.Create(BuildSystemPromptText(isWebMode), includeDirectories: true, includeUserRules: enableUserRules),
+                SystemPrompt = await SystemPrompt.Create(
+                    BuildSystemPromptText(isWebMode),
+                    includeDirectories: true,
+                    includeUserRules: enableUserRules,
+                    skillsSection: enableSkills
+                        ? SkillPrompts.BuildSystemPromptSection(SkillAudience.Orchestrator, null)
+                        : null),
                 ClientSource = manager,
                 Model = model,
                 Temperature = temperature,
@@ -167,13 +175,15 @@ namespace Saturn
                 EnableStreaming = true,
                 RequireCommandApproval = true,
                 EnableUserRules = enableUserRules,
+                EnableSkills = enableSkills,
+                SkillAudience = SkillAudience.Orchestrator,
                 ToolNames = BuildDefaultToolNames(isWebMode),
             };
 
             // Persisted configs predate newer tools; backfill only those.
             // Re-adding the full default set would silently restore tools
             // the user deliberately removed (e.g. execute_command).
-            var backfillTools = new List<string> { "update_todos", "web_search", "spawn_agent", "get_agent_status" };
+            var backfillTools = new List<string> { "update_todos", "web_search", "spawn_agent", "get_agent_status", "load_skill" };
             if (isWebMode)
             {
                 backfillTools.AddRange(WebModeTaskTools);
@@ -229,7 +239,7 @@ namespace Saturn
                 "spawn_agent", "get_agent_status",
                 "wait_for_agent", "get_task_result", "terminate_agent", "execute_command",
                 "get_command_output", "kill_command", "web_fetch", "web_search",
-                "update_todos"
+                "update_todos", "load_skill"
             };
 
             if (isWebMode)

@@ -14,6 +14,7 @@ using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.OpenRouter.Models.Api.Common;
 using Saturn.OpenRouter.Services;
 using Saturn.Providers;
+using Saturn.Skills;
 using Saturn.Tools.Core;
 
 namespace Saturn.Agents.Core
@@ -33,6 +34,9 @@ namespace Saturn.Agents.Core
         private readonly SemaphoreSlim _flushSerializer = new SemaphoreSlim(1, 1);
         
         public event Action<string, string>? OnToolCall;
+
+        /// <summary>Fires when a skill is auto-injected: (skill name, envelope text).</summary>
+        public event Action<string, string>? OnSkillInjected;
 
         public string Name => Configuration.Name;
         public string SystemPrompt => Configuration.SystemPrompt;
@@ -161,9 +165,11 @@ namespace Saturn.Agents.Core
             if (Configuration.MaintainHistory)
             {
                 ChatHistory.Add(userMessage);
-                TrimHistory();
-
                 EnqueuePendingMessage(userMessage);
+
+                InjectMatchedSkills(userInput);
+
+                TrimHistory();
 
                 return new List<Message>(ChatHistory);
             }
@@ -177,6 +183,59 @@ namespace Saturn.Agents.Core
                 },
                 userMessage
             };
+        }
+
+        /// <summary>
+        /// Appends any skill whose triggers match the user input as a marked user
+        /// message directly after it. Skills already present in the history (auto-
+        /// injected earlier or loaded via the load_skill tool) are detected by their
+        /// envelope marker and skipped, so a skill trimmed out of context simply
+        /// re-injects on its next match. Failures here must never break the turn.
+        /// </summary>
+        private void InjectMatchedSkills(string userInput)
+        {
+            if (!Configuration.EnableSkills || Configuration.SkillAudience == SkillAudience.None)
+            {
+                return;
+            }
+
+            List<Skill> matched;
+            try
+            {
+                var applicable = SkillManager.GetApplicableSkills(Configuration.SkillAudience, Configuration.SubAgentTypeName);
+                if (applicable.Count == 0)
+                {
+                    return;
+                }
+
+                var alreadyInjected = SkillEnvelope.FindInjectedSkillNames(ChatHistory);
+                matched = applicable
+                    .Where(s => !alreadyInjected.Contains(s.Name))
+                    .Where(s => SkillMatcher.Matches(s, userInput))
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Skill matching failed: {ex.Message}");
+                return;
+            }
+
+            foreach (var skill in matched)
+            {
+                var envelope = SkillEnvelope.Build(skill, requestedByModel: false);
+                var skillMessage = new Message { Role = "user", Content = JString(envelope) };
+                ChatHistory.Add(skillMessage);
+                EnqueuePendingMessage(skillMessage);
+
+                try
+                {
+                    OnSkillInjected?.Invoke(skill.Name, envelope);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"OnSkillInjected handler error: {ex.Message}");
+                }
+            }
         }
 
         protected virtual Message ProcessResponse(AssistantMessageResponse responseMessage)
@@ -650,7 +709,8 @@ namespace Saturn.Agents.Core
                                 SessionId = CurrentSessionId,
                                 ManagerAgentId = ManagerAgentId,
                                 AgentName = Name,
-                                IsOrchestrator = IsOrchestrator
+                                IsOrchestrator = IsOrchestrator,
+                                Agent = this
                             };
                             var parameters = new Dictionary<string, object>();
                             string? argumentError = null;

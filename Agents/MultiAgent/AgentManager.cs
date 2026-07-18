@@ -12,6 +12,7 @@ using Saturn.Config;
 using Saturn.Data;
 using Saturn.OpenRouter.Models.Api.Chat;
 using Saturn.Providers;
+using Saturn.Skills;
 using Saturn.Tools.Core;
 
 namespace Saturn.Agents.MultiAgent
@@ -40,6 +41,7 @@ namespace Saturn.Agents.MultiAgent
         private string? _parentSessionId;
         private string? _parentModel;
         private bool _parentEnableUserRules = true;
+        private bool _parentEnableSkills = true;
         
         public static AgentManager Instance => _lazyInstance.Value;
         
@@ -73,10 +75,20 @@ namespace Saturn.Agents.MultiAgent
         {
             _parentEnableUserRules = enableUserRules;
         }
-        
+
         public bool GetParentEnableUserRules()
         {
             return _parentEnableUserRules;
+        }
+
+        public void SetParentEnableSkills(bool enableSkills)
+        {
+            _parentEnableSkills = enableSkills;
+        }
+
+        public bool GetParentEnableSkills()
+        {
+            return _parentEnableSkills;
         }
         
         public async Task<(bool success, string result, List<string>? runningTaskIds)> TryCreateSubAgent(
@@ -91,7 +103,8 @@ namespace Saturn.Agents.MultiAgent
             bool? includeUserRules = null,
             bool disposeOnTaskCompletion = false,
             IReadOnlyList<string>? allowedTools = null,
-            string? systemPromptAddendum = null)
+            string? systemPromptAddendum = null,
+            string? agentTypeName = null)
         {
             var agentId = $"agent_{Guid.NewGuid():N}".Substring(0, 12);
 
@@ -163,7 +176,13 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                 var config = new AgentConfiguration
                 {
                     Name = name,
-                    SystemPrompt = await SystemPrompt.Create(systemPrompt, includeDirectories: true, includeUserRules: includeUserRules ?? _parentEnableUserRules),
+                    SystemPrompt = await SystemPrompt.Create(
+                        systemPrompt,
+                        includeDirectories: true,
+                        includeUserRules: includeUserRules ?? _parentEnableUserRules,
+                        skillsSection: _parentEnableSkills
+                            ? SkillPrompts.BuildSystemPromptSection(SkillAudience.SubAgent, agentTypeName)
+                            : null),
                     ClientSource = _clientSource,
                     Model = model,
                     Temperature = temperature ?? 0.3,
@@ -174,7 +193,10 @@ Your report is consumed by an orchestrator agent, so keep it factual and free of
                     MaintainHistory = true,
                     // A real coding task is routinely 25+ tool round-trips; a low cap
                     // makes the agent forget its own task mid-way.
-                    MaxHistoryMessages = 200
+                    MaxHistoryMessages = 200,
+                    EnableSkills = _parentEnableSkills,
+                    SkillAudience = SkillAudience.SubAgent,
+                    SubAgentTypeName = agentTypeName
                 };
 
                 var agent = new Agent(config);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Saturn.Providers;
+using Saturn.Skills;
 
 namespace Saturn.Agents.Core
 {
@@ -24,6 +25,9 @@ namespace Saturn.Agents.Core
         public int StreamBufferSize { get; set; } = 1024;
         public bool RequireCommandApproval { get; set; } = true;
         public bool EnableUserRules { get; set; } = true;
+        public bool EnableSkills { get; set; } = true;
+        public SkillAudience SkillAudience { get; set; } = SkillAudience.None;
+        public string? SubAgentTypeName { get; set; }
         public Guid? CurrentModeId { get; set; }
 
         public static AgentConfiguration FromMode(Mode mode, ILlmClientSource clientSource)

@@ -132,7 +132,8 @@ Rules:
                     config.SystemPromptOverride,
                     disposeOnTaskCompletion: true,
                     allowedTools: agentType.ToolNames,
-                    systemPromptAddendum: agentType.SystemPromptAddendum
+                    systemPromptAddendum: agentType.SystemPromptAddendum,
+                    agentTypeName: agentType.Name
                 );
 
                 if (!created.success)

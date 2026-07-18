@@ -1130,6 +1130,20 @@ function renderTranscript(opts = {}) {
       continue;
     }
 
+    if (e.role === "user" && e.source === "skill") {
+      const card = document.createElement("details");
+      card.className = "chat-skill";
+      const summary = document.createElement("summary");
+      summary.innerHTML = `<span class="chat-skill-mark">◆</span> Injected Skill: <b>${esc(e.agentName || "skill")}</b> <span class="chat-task-time">${e.timestamp ? fmtTime(e.timestamp) : ""}</span>`;
+      card.appendChild(summary);
+      const body = document.createElement("pre");
+      body.className = "chat-skill-body";
+      body.textContent = e.content;
+      card.appendChild(body);
+      log.appendChild(card);
+      continue;
+    }
+
     const div = document.createElement("div");
     div.className = `chat-msg ${e.role}${e.optimistic ? " pending" : ""}`;
     if (e.role === "user" && e.source === "scheduler") {
@@ -1929,6 +1943,7 @@ async function loadSettings() {
     withPanelFallback(loadSubAgentPanel, null),
     withPanelFallback(loadRulesPanel, "#rules-path"),
     withPanelFallback(loadModesPanel, "#modes-list"),
+    withPanelFallback(loadSkillsPanel, "#skills-list"),
   ]);
 }
 
@@ -2171,6 +2186,133 @@ $("#rules-save").addEventListener("click", async () => {
     toast("User rules <b>saved</b> — applies to newly created agents");
   } catch (err) {
     toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+/* ---- skills panel ---- */
+
+let skillsData = [];
+let skillAgentTypes = [];
+let editingSkillId = null;
+
+async function loadSkillsPanel() {
+  const r = await api.get("/skills");
+  skillsData = r.skills;
+  skillAgentTypes = r.agentTypes;
+  $("#skills-enabled").checked = r.enabled;
+  $("#skills-list").innerHTML = skillsData.length === 0
+    ? '<p class="hint">No skills defined yet.</p>'
+    : skillsData
+        .map((s) => {
+          const targets = [s.applyToOrchestrator ? "orchestrator" : null, s.applyToSubAgents ? "sub-agents" : null]
+            .filter(Boolean)
+            .join(" + ") || "no targets";
+          const triggers = s.triggers?.length ? s.triggers.join(", ") : "model-loaded only";
+          return `
+          <div class="kv">
+            <span><b>${esc(s.name)}</b>${s.enabled ? "" : " · disabled"}${s.description ? ` — ${esc(s.description)}` : ""}<br>
+              <span class="hint">${esc(s.scope)} · ${esc(targets)} · triggers: ${esc(triggers)}</span></span>
+            <span>
+              <button class="btn sm" data-skill-edit="${esc(s.id)}">Edit</button>
+              <button class="btn sm" data-skill-duplicate="${esc(s.id)}">Duplicate</button>
+              <button class="btn sm danger" data-skill-delete="${esc(s.id)}">Delete</button>
+            </span>
+          </div>`;
+        })
+        .join("");
+
+  $$("[data-skill-edit]").forEach((b) =>
+    b.addEventListener("click", () => openSkillEditor(skillsData.find((s) => s.id === b.dataset.skillEdit)))
+  );
+  $$("[data-skill-duplicate]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        const created = await api.post(`/skills/${b.dataset.skillDuplicate}/duplicate`, {});
+        toast(`Skill <b>${esc(created.name)}</b> created`);
+        await loadSkillsPanel();
+      } catch (err) {
+        toast(`<b>Error:</b> ${esc(err.message)}`);
+      }
+    })
+  );
+  $$("[data-skill-delete]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const skill = skillsData.find((s) => s.id === b.dataset.skillDelete);
+      const ok = await confirmModal("Delete skill", `Delete the skill "${esc(skill?.name || "?")}"? This cannot be undone.`, "Delete");
+      if (!ok) return;
+      try {
+        await api.del(`/skills/${b.dataset.skillDelete}`);
+        toast("Skill <b>deleted</b>");
+        if (editingSkillId === b.dataset.skillDelete) closeSkillEditor();
+        await loadSkillsPanel();
+      } catch (err) {
+        toast(`<b>Error:</b> ${esc(err.message)}`);
+      }
+    })
+  );
+}
+
+function openSkillEditor(skill) {
+  editingSkillId = skill?.id || null;
+  $("#skill-editor-title").textContent = skill ? `Edit Skill: ${skill.name}` : "New Skill";
+  $("#skill-name").value = skill?.name || "";
+  $("#skill-scope").value = skill?.scope || "global";
+  $("#skill-description").value = skill?.description || "";
+  $("#skill-triggers").value = skill?.triggers?.join(", ") || "";
+  $("#skill-content").value = skill?.content || "";
+  $("#skill-enabled").checked = skill ? skill.enabled : true;
+  $("#skill-orch").checked = skill ? skill.applyToOrchestrator : true;
+  $("#skill-subagents").checked = skill ? skill.applyToSubAgents : true;
+  const selectedTypes = (skill?.subAgentTypes || []).map((t) => t.toLowerCase());
+  $("#skill-types").innerHTML = skillAgentTypes
+    .map(
+      (t) => `<label class="switch-row" style="flex:1;margin:0"><span>${esc(t)}</span>
+        <input type="checkbox" class="switch skill-type" data-type="${esc(t)}" ${selectedTypes.includes(t.toLowerCase()) ? "checked" : ""}></label>`
+    )
+    .join("");
+  $("#skill-editor").hidden = false;
+  $("#skill-name").focus();
+}
+
+function closeSkillEditor() {
+  editingSkillId = null;
+  $("#skill-editor").hidden = true;
+}
+
+$("#skill-new").addEventListener("click", () => openSkillEditor(null));
+$("#skill-cancel").addEventListener("click", closeSkillEditor);
+
+$("#skill-save").addEventListener("click", async () => {
+  const body = {
+    name: $("#skill-name").value,
+    description: $("#skill-description").value,
+    triggers: $("#skill-triggers").value.split(",").map((t) => t.trim()).filter(Boolean),
+    content: $("#skill-content").value,
+    enabled: $("#skill-enabled").checked,
+    applyToOrchestrator: $("#skill-orch").checked,
+    applyToSubAgents: $("#skill-subagents").checked,
+    subAgentTypes: $$(".skill-type").filter((c) => c.checked).map((c) => c.dataset.type),
+    scope: $("#skill-scope").value,
+  };
+  try {
+    const saved = editingSkillId
+      ? await api.put(`/skills/${editingSkillId}`, body)
+      : await api.post("/skills", body);
+    toast(`Skill <b>${esc(saved.name)}</b> saved`);
+    closeSkillEditor();
+    await loadSkillsPanel();
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+  }
+});
+
+$("#skills-enabled").addEventListener("change", async (e) => {
+  try {
+    await api.put("/agent-config", { enableSkills: e.target.checked });
+    toast(`Skill injection ${e.target.checked ? "<b>enabled</b>" : "<b>disabled</b>"}`);
+  } catch (err) {
+    toast(`<b>Error:</b> ${esc(err.message)}`);
+    await loadSkillsPanel();
   }
 });
 
@@ -2455,6 +2597,10 @@ function connectEvents() {
   es.addEventListener("sessions.changed", () => {
     if (state.view === "orchestrator") loadChatSessions().catch(() => {});
     if (state.view === "sessions") loadSessions().catch(() => {});
+  });
+
+  es.addEventListener("skills.changed", () => {
+    if (state.view === "settings") loadSkillsPanel().catch(() => {});
   });
 
   es.addEventListener("provider.changed", (e) => {

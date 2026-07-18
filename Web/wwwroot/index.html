@@ -422,6 +422,38 @@
         </div>
           </div>
         </div>
+
+        <div class="settings-section">
+          <h3 class="settings-label">Skills</h3>
+          <div class="settings-row">
+        <div class="panel">
+          <div class="panel-head"><h2>Skill Library</h2></div>
+          <label class="switch-row"><span>Enable skill injection</span><input type="checkbox" id="skills-enabled" class="switch"></label>
+          <div id="skills-list"></div>
+          <button class="btn primary" id="skill-new" style="margin-top:10px">New skill</button>
+          <p class="hint">Skills are reusable instruction packages. They inject automatically when a message matches their triggers, and the model can load any of them on demand with the load_skill tool.</p>
+        </div>
+
+        <div class="panel" id="skill-editor" hidden>
+          <div class="panel-head"><h2 id="skill-editor-title">New Skill</h2></div>
+          <div class="field-row" style="margin-bottom:12px">
+            <label class="field" style="flex:2;margin:0"><span>Name</span><input class="input" id="skill-name" style="width:100%" placeholder="release-checklist"></label>
+            <label class="field" style="flex:1;margin:0"><span>Scope</span><select class="input" id="skill-scope" style="width:100%"><option value="global">Global</option><option value="workspace">Workspace</option></select></label>
+          </div>
+          <label class="field"><span>Description (shown to the model in its skill catalog)</span><input class="input" id="skill-description" style="width:100%"></label>
+          <label class="field"><span>Triggers (comma-separated; empty = model-loaded only)</span><input class="input" id="skill-triggers" style="width:100%" placeholder="release checklist, changelog"></label>
+          <label class="field"><span>Content</span><textarea class="input" id="skill-content" rows="8" style="width:100%;font-family:var(--font-mono);font-size:12px" placeholder="Instructions and reference material injected into the conversation…"></textarea></label>
+          <label class="switch-row"><span>Enabled</span><input type="checkbox" id="skill-enabled" class="switch"></label>
+          <label class="switch-row"><span>Apply to orchestrator</span><input type="checkbox" id="skill-orch" class="switch"></label>
+          <label class="switch-row"><span>Apply to sub-agents</span><input type="checkbox" id="skill-subagents" class="switch"></label>
+          <label class="field" style="margin-top:10px"><span>Sub-agent types (none checked = all types)</span><div class="field-row" id="skill-types"></div></label>
+          <div class="field-row" style="margin-top:12px">
+            <button class="btn primary" id="skill-save">Save skill</button>
+            <button class="btn" id="skill-cancel">Cancel</button>
+          </div>
+        </div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
