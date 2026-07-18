@@ -8,8 +8,8 @@ namespace Saturn.Skills
     /// Deterministic trigger matching: a skill matches a message when any of its
     /// triggers (or its name) appears in the message as a whole word or phrase.
     /// Matching is case-insensitive and treats punctuation, hyphens, and
-    /// underscores as word separators, so the trigger "valorant lockfile" matches
-    /// "the Valorant lock-file" but "lock" does not match "blocked".
+    /// underscores as word separators, so the trigger "api rate limit" matches
+    /// "the API rate-limit" but "lock" does not match "blocked".
     /// </summary>
     public static class SkillMatcher
     {

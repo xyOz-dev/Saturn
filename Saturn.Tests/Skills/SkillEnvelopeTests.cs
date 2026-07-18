@@ -22,18 +22,18 @@ namespace Saturn.Tests.Skills
         [Fact]
         public void Build_AutoInjected_ContainsMarkerContentAndTriggerWording()
         {
-            var envelope = SkillEnvelope.Build(MakeSkill("valorant-lockfile", "The lockfile lives in AppData."), requestedByModel: false);
+            var envelope = SkillEnvelope.Build(MakeSkill("release-checklist", "Steps for cutting a release."), requestedByModel: false);
 
-            envelope.Should().StartWith("<injected-skill name=\"valorant-lockfile\">");
+            envelope.Should().StartWith("<injected-skill name=\"release-checklist\">");
             envelope.Should().Contain("matched its triggers");
-            envelope.Should().Contain("The lockfile lives in AppData.");
+            envelope.Should().Contain("Steps for cutting a release.");
             envelope.Should().EndWith("</injected-skill>");
         }
 
         [Fact]
         public void Build_RequestedByModel_ContainsLoadSkillWording()
         {
-            var envelope = SkillEnvelope.Build(MakeSkill("valorant-lockfile"), requestedByModel: true);
+            var envelope = SkillEnvelope.Build(MakeSkill("release-checklist"), requestedByModel: true);
 
             envelope.Should().Contain("load_skill");
             envelope.Should().NotContain("matched its triggers");

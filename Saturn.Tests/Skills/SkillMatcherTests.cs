@@ -18,13 +18,13 @@ namespace Saturn.Tests.Skills
         }
 
         [Theory]
-        [InlineData("How do I read the valorant lock file?")]
-        [InlineData("interact with the VALORANT LOCK FILE")]
-        [InlineData("the valorant lock-file, please")]
-        [InlineData("valorant_lock_file")]
+        [InlineData("How do I handle the api rate limit?")]
+        [InlineData("respect the API RATE LIMIT")]
+        [InlineData("the api rate-limit, please")]
+        [InlineData("api_rate_limit")]
         public void Matches_TriggerPhrase_AcrossCaseAndPunctuation(string input)
         {
-            var skill = MakeSkill("some-skill", "valorant lock file");
+            var skill = MakeSkill("some-skill", "api rate limit");
 
             SkillMatcher.Matches(skill, input).Should().BeTrue();
         }
@@ -32,10 +32,10 @@ namespace Saturn.Tests.Skills
         [Fact]
         public void Matches_SkillName_IsAnImplicitTrigger()
         {
-            var skill = MakeSkill("valorant-lockfile");
+            var skill = MakeSkill("rate-limit-handling");
 
-            SkillMatcher.Matches(skill, "use the valorant lockfile approach").Should().BeTrue();
-            SkillMatcher.Matches(skill, "use Valorant-Lockfile now").Should().BeTrue();
+            SkillMatcher.Matches(skill, "use the rate limit handling approach").Should().BeTrue();
+            SkillMatcher.Matches(skill, "use Rate-Limit-Handling now").Should().BeTrue();
         }
 
         [Fact]

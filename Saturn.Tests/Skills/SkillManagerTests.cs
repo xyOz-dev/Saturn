@@ -16,8 +16,8 @@ namespace Saturn.Tests.Skills
         [Fact]
         public async Task CreateSkill_PersistsAndRoundTrips()
         {
-            var skill = NewSkill("valorant-lockfile", "The lockfile lives in AppData.", "valorant lock file", "lockfile");
-            skill.Description = "How to read the Valorant lockfile";
+            var skill = NewSkill("release-checklist", "Steps for cutting a release.", "release checklist", "changelog");
+            skill.Description = "How to cut a release";
             skill.ApplyToOrchestrator = true;
             skill.ApplyToSubAgents = false;
 
@@ -25,10 +25,10 @@ namespace Saturn.Tests.Skills
 
             var loaded = SkillManager.GetAllSkills().Should().ContainSingle().Subject;
             loaded.Id.Should().Be(created.Id);
-            loaded.Name.Should().Be("valorant-lockfile");
-            loaded.Description.Should().Be("How to read the Valorant lockfile");
-            loaded.Content.Should().Be("The lockfile lives in AppData.");
-            loaded.Triggers.Should().BeEquivalentTo(new[] { "valorant lock file", "lockfile" });
+            loaded.Name.Should().Be("release-checklist");
+            loaded.Description.Should().Be("How to cut a release");
+            loaded.Content.Should().Be("Steps for cutting a release.");
+            loaded.Triggers.Should().BeEquivalentTo(new[] { "release checklist", "changelog" });
             loaded.ApplyToOrchestrator.Should().BeTrue();
             loaded.ApplyToSubAgents.Should().BeFalse();
             loaded.Scope.Should().Be(SkillScope.Global);

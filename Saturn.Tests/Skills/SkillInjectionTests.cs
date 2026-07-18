@@ -56,25 +56,25 @@ namespace Saturn.Tests.Skills
         [Fact]
         public async Task Execute_MatchingMessage_InjectsSkillAfterUserMessage()
         {
-            await SkillManager.CreateSkillAsync(NewSkill("valorant-lockfile", "The lockfile lives in AppData.", "valorant lock file", "lockfile"));
+            await SkillManager.CreateSkillAsync(NewSkill("release-checklist", "Steps for cutting a release.", "release checklist", "changelog"));
 
             var agent = CreateAgent(SkillAudience.Orchestrator);
             var fired = new List<string>();
             agent.OnSkillInjected += (name, envelope) => fired.Add(name);
 
-            await agent.Execute<Message>("How do I read the valorant lock file?");
+            await agent.Execute<Message>("How do I run the release checklist?");
 
             var envelopes = EnvelopesIn(agent);
             envelopes.Should().ContainSingle();
             var content = ContentOf(envelopes[0]);
-            content.Should().StartWith("<injected-skill name=\"valorant-lockfile\">");
-            content.Should().Contain("The lockfile lives in AppData.");
+            content.Should().StartWith("<injected-skill name=\"release-checklist\">");
+            content.Should().Contain("Steps for cutting a release.");
 
             // The envelope sits directly after the triggering user message.
-            var userIndex = agent.ChatHistory.FindIndex(m => m.Role == "user" && ContentOf(m).Contains("How do I read"));
+            var userIndex = agent.ChatHistory.FindIndex(m => m.Role == "user" && ContentOf(m).Contains("How do I run"));
             agent.ChatHistory[userIndex + 1].Should().BeSameAs(envelopes[0]);
 
-            fired.Should().BeEquivalentTo(new[] { "valorant-lockfile" });
+            fired.Should().BeEquivalentTo(new[] { "release-checklist" });
         }
 
         [Fact]
